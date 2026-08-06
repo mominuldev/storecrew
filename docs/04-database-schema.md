@@ -1,0 +1,451 @@
+# 04 — Database Schema
+
+**Status:** Draft complete — awaiting Gate 2 review
+**Version:** 0.1
+**Date:** 2026-08-07
+**Implements:** FR-CORE-04, FR-AGENT-07, FR-KB-01…10, FR-SUPPORT-01/02, FR-AI-04, FR-LIC-02, FR-ADMIN-04/06/08
+**Addresses:** R-TECH-01, R-TECH-03, assumption A3
+
+---
+
+## 1. Conventions
+
+| Concern | Decision |
+|---|---|
+| Prefix | `{$wpdb->prefix}scr_` — e.g. `wp_scr_conversations` |
+| Engine | InnoDB, always |
+| Charset | `$wpdb->get_charset_collate()` — never hardcoded |
+| Primary keys | `BIGINT UNSIGNED AUTO_INCREMENT` |
+| Public identifiers | A separate `uuid CHAR(36)`. Auto-increment IDs are never exposed in a URL, REST payload, or the widget |
+| Timestamps | `DATETIME` in UTC. Not `TIMESTAMP` — the 2038 limit is inside a plausible support window |
+| JSON columns | `LONGTEXT` holding JSON, not the native `JSON` type — MariaDB 10.6 and MySQL 8 disagree on behaviour, and `dbDelta` handles `LONGTEXT` predictably |
+| Money | `BIGINT` micros (millionths). No floats anywhere near cost |
+| Foreign keys | **None.** `dbDelta` cannot manage them, and a constraint failure during an upgrade would brick a merchant's site. Integrity is enforced in repositories, and orphan sweeps run as scheduled maintenance |
+| Booleans | `TINYINT(1) UNSIGNED NOT NULL DEFAULT 0` |
+
+**On WooCommerce data.** No table below duplicates a product, order, or customer record, and nothing joins to a WooCommerce table directly. Order and product access goes through the CRUD/data-store layer, which is what keeps HPOS compatibility real rather than declared (FR-CORE-02). Where a Woo entity is referenced it is stored as a bare ID with no constraint.
+
+---
+
+## 2. Entity Overview
+
+```
+conversations ──< messages
+      │              │
+      │              └──< agent_runs ──< tool_calls
+      │
+      └──< usage_events ──(rollup)──> usage_counters
+
+knowledge_sources ──< knowledge_chunks
+
+index_runs          audit_log          agent_configs
+```
+
+**Eleven** tables in the free plugin. Premium owns four more (§10).
+
+### Reserved-word deviations
+
+Three column names differ from the first draft of this document, changed during implementation and verified against MySQL:
+
+| Draft | Actual | Reason |
+|---|---|---|
+| `index_runs.cursor` | `index_runs.cursor_position` | `CURSOR` is a **reserved word in MySQL** |
+| `tool_calls.authorization` | `tool_calls.auth_mode` | `AUTHORIZATION` is reserved in the SQL standard |
+| `knowledge_sources` composite unique on `(source_type, object_id, external_ref(64))` | `source_key char(64)` unique | `dbDelta` handles prefixed index columns unreliably |
+
+Renamed rather than backtick-escaped: a column that needs escaping forever is a trap for every query written after it. `source_key` is a SHA-256 of the identity tuple, which also sidesteps InnoDB index key-length limits under `utf8mb4`.
+
+---
+
+## 3. Conversation Tables
+
+### 3.1 `scr_conversations`
+
+```sql
+CREATE TABLE {prefix}scr_conversations (
+  id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  uuid              CHAR(36)        NOT NULL,
+  session_token     CHAR(64)        NOT NULL DEFAULT '',
+  customer_id       BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  status            VARCHAR(20)     NOT NULL DEFAULT 'open',
+  channel           VARCHAR(32)     NOT NULL DEFAULT 'widget',
+  locale            VARCHAR(10)     NOT NULL DEFAULT '',
+  identity_verified TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
+  verified_order_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  verified_at       DATETIME        DEFAULT NULL,
+  message_count     INT UNSIGNED    NOT NULL DEFAULT 0,
+  run_count         INT UNSIGNED    NOT NULL DEFAULT 0,
+  escalated_at      DATETIME        DEFAULT NULL,
+  started_at        DATETIME        NOT NULL,
+  last_activity_at  DATETIME        NOT NULL,
+  closed_at         DATETIME        DEFAULT NULL,
+  meta              LONGTEXT        NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY uuid (uuid),
+  KEY session_token (session_token),
+  KEY customer_id (customer_id),
+  KEY status_activity (status, last_activity_at),
+  KEY started_at (started_at)
+) {charset_collate};
+```
+
+`status` ∈ `open | closed | escalated | abandoned`.
+`channel` ∈ `widget | shortcode | block | rest`.
+
+**`identity_verified` is a security column, not a convenience flag.** FR-SUPPORT-02 forbids disclosing any order, customer, or address data until identity is proven. It is set only by the verification tool — either a logged-in session, or an order number matched against its billing email. Every order-reading tool checks it. It resets to `0` if `customer_id` changes mid-conversation, so a session cannot inherit a previous visitor's verification on a shared device.
+
+**No raw email is stored here.** Verification compares a hash and records only which order was proven, so a leaked conversations table does not leak a customer list.
+
+### 3.2 `scr_messages`
+
+```sql
+CREATE TABLE {prefix}scr_messages (
+  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  conversation_id BIGINT UNSIGNED NOT NULL,
+  role            VARCHAR(16)     NOT NULL,
+  agent_id        VARCHAR(64)     NOT NULL DEFAULT '',
+  content         LONGTEXT        NOT NULL,
+  content_format  VARCHAR(16)     NOT NULL DEFAULT 'markdown',
+  tokens_in       INT UNSIGNED    NOT NULL DEFAULT 0,
+  tokens_out      INT UNSIGNED    NOT NULL DEFAULT 0,
+  created_at      DATETIME        NOT NULL,
+  PRIMARY KEY  (id),
+  KEY conversation_seq (conversation_id, id),
+  KEY created_at (created_at)
+) {charset_collate};
+```
+
+`role` ∈ `user | assistant | system | tool | handoff`.
+
+`conversation_seq` is `(conversation_id, id)` rather than `(conversation_id, created_at)` deliberately: `id` is monotonic and unique, so transcript ordering is stable even when two messages land in the same second.
+
+---
+
+## 4. Agent Observability
+
+FR-AGENT-07 requires every run persisted. This is what makes the conversation inspector (FR-ADMIN-04) possible, and it is the only way to answer "why did the agent say that" after the fact.
+
+### 4.1 `scr_agent_runs`
+
+```sql
+CREATE TABLE {prefix}scr_agent_runs (
+  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  conversation_id BIGINT UNSIGNED NOT NULL,
+  message_id      BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  agent_id        VARCHAR(64)     NOT NULL,
+  provider        VARCHAR(32)     NOT NULL DEFAULT '',
+  model           VARCHAR(64)     NOT NULL DEFAULT '',
+  prompt_hash     CHAR(64)        NOT NULL DEFAULT '',
+  status          VARCHAR(24)     NOT NULL DEFAULT 'running',
+  tool_call_count SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  tokens_in       INT UNSIGNED    NOT NULL DEFAULT 0,
+  tokens_out      INT UNSIGNED    NOT NULL DEFAULT 0,
+  cost_micros     BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  latency_ms      INT UNSIGNED    NOT NULL DEFAULT 0,
+  retrieved       LONGTEXT        NULL,
+  error_code      VARCHAR(64)     NOT NULL DEFAULT '',
+  error_message   TEXT            NULL,
+  started_at      DATETIME        NOT NULL,
+  finished_at     DATETIME        DEFAULT NULL,
+  PRIMARY KEY  (id),
+  KEY conversation_id (conversation_id),
+  KEY agent_started (agent_id, started_at),
+  KEY status (status)
+) {charset_collate};
+```
+
+`status` ∈ `running | completed | failed | budget_exceeded | timeout | cancelled`.
+
+**`prompt_hash` not the prompt.** System prompts are long, largely identical across runs, and would dominate the table. The hash lets you prove which prompt version produced an answer; the prompt bodies live in `agent_configs`.
+
+**`retrieved` stores chunk IDs and scores, not chunk text** — that satisfies FR-KB-10 (merchant can inspect what was retrieved) without duplicating the corpus into every run row.
+
+`budget_exceeded` is a first-class status because FR-AGENT-06 requires a hard turn budget. A run that hits the ceiling is a recorded outcome, not an error to be swallowed.
+
+### 4.2 `scr_tool_calls`
+
+```sql
+CREATE TABLE {prefix}scr_tool_calls (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  agent_run_id  BIGINT UNSIGNED NOT NULL,
+  conversation_id BIGINT UNSIGNED NOT NULL,
+  tool_id       VARCHAR(64)     NOT NULL,
+  intent        VARCHAR(8)      NOT NULL DEFAULT 'read',
+  auth_mode     VARCHAR(16)     NOT NULL DEFAULT 'auto',
+  arguments     LONGTEXT        NULL,
+  result        LONGTEXT        NULL,
+  status        VARCHAR(16)     NOT NULL DEFAULT 'pending',
+  approved_by   BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  approved_at   DATETIME        DEFAULT NULL,
+  duration_ms   INT UNSIGNED    NOT NULL DEFAULT 0,
+  error_message TEXT            NULL,
+  created_at    DATETIME        NOT NULL,
+  PRIMARY KEY  (id),
+  KEY agent_run_id (agent_run_id),
+  KEY conversation_id (conversation_id),
+  KEY approval_queue (auth_mode, status, created_at),
+  KEY tool_created (tool_id, created_at)
+) {charset_collate};
+```
+
+`intent` ∈ `read | write`. `auth_mode` ∈ `auto | required | approved | denied`. `status` ∈ `pending | succeeded | failed | skipped`.
+
+**The approval queue is this table, not a separate one** (FR-ADMIN-06). A pending write is a tool call that has not executed yet; modelling it separately would mean two rows describing one act, and an opportunity for them to disagree about whether it ran. `approval_queue` on `(auth_mode, status, created_at)` serves the queue view directly.
+
+`arguments` and `result` are capped at 64 KB by the repository before write. A tool returning a 5 MB payload is a bug, and the log should not amplify it into a disk problem.
+
+---
+
+## 5. Knowledge Base
+
+### 5.1 `scr_knowledge_sources`
+
+```sql
+CREATE TABLE {prefix}scr_knowledge_sources (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  source_key    CHAR(64)        NOT NULL,
+  source_type   VARCHAR(32)     NOT NULL,
+  object_id     BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  external_ref  VARCHAR(191)    NOT NULL DEFAULT '',
+  title         TEXT            NULL,
+  url           TEXT            NULL,
+  content_hash  CHAR(64)        NOT NULL DEFAULT '',
+  status        VARCHAR(16)     NOT NULL DEFAULT 'pending',
+  chunk_count   INT UNSIGNED    NOT NULL DEFAULT 0,
+  error_message TEXT            NULL,
+  indexed_at    DATETIME        DEFAULT NULL,
+  updated_at    DATETIME        NOT NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY source_key (source_key),
+  KEY source_type_object (source_type, object_id),
+  KEY status (status),
+  KEY content_hash (content_hash)
+) {charset_collate};
+```
+
+`source_type` ∈ `product | product_variation | category | attribute | page | post | document | faq | policy`.
+
+**`content_hash` is what makes FR-KB-07 work.** On `save_post` / product save, the extractor hashes the extracted text. Unchanged hash means no re-embedding — which matters because a merchant bulk-editing stock would otherwise trigger a full re-embed and a provider bill. This is the single most important cost control in the indexing pipeline.
+
+### 5.2 `scr_knowledge_chunks`
+
+```sql
+CREATE TABLE {prefix}scr_knowledge_chunks (
+  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  source_id       BIGINT UNSIGNED NOT NULL,
+  chunk_index     INT UNSIGNED    NOT NULL DEFAULT 0,
+  content         LONGTEXT        NOT NULL,
+  content_tokens  INT UNSIGNED    NOT NULL DEFAULT 0,
+  embedding       LONGBLOB        NULL,
+  embedding_model VARCHAR(64)     NOT NULL DEFAULT '',
+  embedding_dims  SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  embedded_at     DATETIME        DEFAULT NULL,
+  created_at      DATETIME        NOT NULL,
+  PRIMARY KEY  (id),
+  KEY source_chunk (source_id, chunk_index),
+  KEY embedding_model (embedding_model),
+  FULLTEXT KEY content_ft (content)
+) {charset_collate};
+```
+
+**Embeddings are packed float32 in a `LONGBLOB`, not JSON.** A 1536-dimension vector is 6,144 bytes packed versus roughly 20 KB as a JSON array — a 3× storage difference and a much larger parsing difference on every retrieval.
+
+**`FULLTEXT` on `content` is what makes hybrid retrieval possible** (FR-KB-05). It is also the answer to assumption A3, below.
+
+> **FR-KB-08 is a schema-level rule, not a runtime one.** Price, stock status, and order state are **never** written into `content`. Extractors emit descriptive text only. A chunk that embedded "£24.99, 3 in stock" would keep asserting that after the merchant changed it, and no amount of prompt engineering fixes a stale corpus. Volatile fields are read live at request time and injected into the prompt separately.
+
+---
+
+## 6. Vector Search at Scale — R-TECH-01 / Assumption A3
+
+Assumption A3 was that MySQL cosine similarity over a custom table is fast enough at 10k–50k chunks. **Scanning every vector on every query does not survive that claim.** The schema is therefore designed for a two-stage retrieval, not a full scan:
+
+1. **Lexical prefilter.** `MATCH(content) AGAINST(...)` in boolean mode narrows the corpus to the top *N* candidates (default 200), using the `content_ft` index. This is an indexed operation.
+2. **Dense rerank.** Cosine similarity is computed in PHP over only those *N* packed vectors — 200 × 1536 floats is roughly 1.2 MB of arithmetic, comfortably inside the 300 ms p95 budget.
+3. **Fusion.** Scores combine with configurable weighting (FR-KB-05).
+
+The cost is recall on queries where the lexical arm surfaces nothing useful. That is a measurable quantity, and FR-KB-09 already requires a recall figure against a fixture set before launch. **If measured recall falls below 0.88, the fallback is a widened prefilter, then an external vector store** — which is why nothing outside the retrieval repository knows how vectors are stored.
+
+### Storage sizing
+
+| Chunks | Corpus scale | Embedding bytes (1536-d f32) | Table size, approx |
+|---|---|---|---|
+| 5,000 | ~1,500 products | 29 MB | 45 MB |
+| 30,000 | ~10,000 products | 176 MB | 260 MB |
+| 150,000 | ~50,000 products | 879 MB | 1.3 GB |
+
+At 50k products the embedding column alone approaches a gigabyte, which is a real problem on budget shared hosting where the entire database quota may be 1 GB. Two mitigations are available and should be decided at Gate 2: **float16 quantisation** (halves storage, costs ~1% recall) or a **smaller embedding model** (768-d halves it again). A pre-flight estimate must be shown before indexing begins so a merchant is never surprised — the same discipline as the cost estimate in R-COST-01.
+
+---
+
+## 7. Metering
+
+### 7.1 `scr_usage_events`
+
+```sql
+CREATE TABLE {prefix}scr_usage_events (
+  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  metric          VARCHAR(32)     NOT NULL,
+  quantity        BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  period          CHAR(7)         NOT NULL,
+  conversation_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  agent_id        VARCHAR(64)     NOT NULL DEFAULT '',
+  provider        VARCHAR(32)     NOT NULL DEFAULT '',
+  model           VARCHAR(64)     NOT NULL DEFAULT '',
+  cost_micros     BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  recorded_at     DATETIME        NOT NULL,
+  PRIMARY KEY  (id),
+  KEY metric_period (metric, period),
+  KEY period (period),
+  KEY conversation_id (conversation_id),
+  KEY recorded_at (recorded_at)
+) {charset_collate};
+```
+
+`metric` ∈ `conversation | message | agent_run | document_indexed | chunk_embedded | tokens_in | tokens_out`.
+
+**This design deliberately outlives PRD open question 1.** Whether the free tier meters *conversations* or *indexed documents* is still undecided. Rather than block, the table records every metric and the limit is expressed as `(metric, ceiling)` configuration. Changing the meter later is an options change, not a migration — and both figures are already being collected, so the decision can be made from this installation's own data.
+
+`period` is a denormalised `YYYY-MM` string so a monthly rollup is an indexed equality match rather than a date-range scan.
+
+### 7.2 `scr_usage_counters`
+
+```sql
+CREATE TABLE {prefix}scr_usage_counters (
+  metric      VARCHAR(32)     NOT NULL,
+  period      CHAR(7)         NOT NULL,
+  total       BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  cost_micros BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  updated_at  DATETIME        NOT NULL,
+  PRIMARY KEY  (metric, period)
+) {charset_collate};
+```
+
+The free-tier limit check (FR-LIC-02) runs on **every** conversation start. Doing that as `COUNT(*)` over `usage_events` would degrade as the table grows — precisely as a store gets busier. Counters are incremented in the same transaction as the event via `INSERT … ON DUPLICATE KEY UPDATE total = total + VALUES(total)`, which is atomic and needs no read-modify-write.
+
+`usage_events` remains the source of truth; counters are a cache and can be rebuilt from it.
+
+---
+
+## 8. Operations
+
+### 8.1 `scr_index_runs`
+
+```sql
+CREATE TABLE {prefix}scr_index_runs (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  type          VARCHAR(32)     NOT NULL DEFAULT 'full',
+  status        VARCHAR(16)     NOT NULL DEFAULT 'queued',
+  total         INT UNSIGNED    NOT NULL DEFAULT 0,
+  processed     INT UNSIGNED    NOT NULL DEFAULT 0,
+  failed        INT UNSIGNED    NOT NULL DEFAULT 0,
+  cursor_position VARCHAR(191)  NOT NULL DEFAULT '',
+  cost_micros   BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  last_error    TEXT            NULL,
+  heartbeat_at  DATETIME        DEFAULT NULL,
+  started_at    DATETIME        NOT NULL,
+  finished_at   DATETIME        DEFAULT NULL,
+  PRIMARY KEY  (id),
+  KEY status_started (status, started_at)
+) {charset_collate};
+```
+
+**`cursor_position` and `heartbeat_at` exist because of R-TECH-03.** Budget hosts kill long-running processes without warning, and some run different PHP for web and CLI. `cursor_position` makes a run resumable from where it died rather than restarting (and re-billing) from zero. `heartbeat_at` is how the dashboard distinguishes *running* from *dead but still marked running* — a distinction FR-ADMIN-08 requires, because a job that silently stopped is the failure mode merchants actually hit.
+
+### 8.2 `scr_audit_log`
+
+```sql
+CREATE TABLE {prefix}scr_audit_log (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  actor_type  VARCHAR(16)     NOT NULL DEFAULT 'system',
+  actor_id    VARCHAR(64)     NOT NULL DEFAULT '',
+  action      VARCHAR(64)     NOT NULL,
+  object_type VARCHAR(32)     NOT NULL DEFAULT '',
+  object_id   BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  ip_hash     CHAR(64)        NOT NULL DEFAULT '',
+  data        LONGTEXT        NULL,
+  created_at  DATETIME        NOT NULL,
+  PRIMARY KEY  (id),
+  KEY action_created (action, created_at),
+  KEY actor (actor_type, actor_id),
+  KEY object (object_type, object_id)
+) {charset_collate};
+```
+
+`actor_type` ∈ `user | agent | system`. Every agent write action, every approval, every licence transition, every settings change lands here.
+
+**`ip_hash`, never a raw IP.** Rate limiting and abuse detection need to recognise a repeat visitor, not identify them. A salted hash does that and keeps the table out of GDPR scope as personal data.
+
+### 8.3 `scr_agent_configs`
+
+```sql
+CREATE TABLE {prefix}scr_agent_configs (
+  agent_id     VARCHAR(64)  NOT NULL,
+  enabled      TINYINT(1) UNSIGNED NOT NULL DEFAULT 1,
+  persona      LONGTEXT     NULL,
+  guardrails   LONGTEXT     NULL,
+  model_policy LONGTEXT     NULL,
+  tool_modes   LONGTEXT     NULL,
+  version      INT UNSIGNED NOT NULL DEFAULT 1,
+  updated_at   DATETIME     NOT NULL,
+  PRIMARY KEY  (agent_id)
+) {charset_collate};
+```
+
+`tool_modes` is the JSON map backing FR-AGENT-05 — `{"coupon.create": "required", "order.note": "auto"}`. **Autonomy is stored per tool, never as a global switch**, because "let it write order notes" and "let it issue coupons" are not the same decision.
+
+`version` increments on every save and is what `agent_runs.prompt_hash` is reconciled against, so a merchant can tell whether an answer predates a persona change.
+
+---
+
+## 9. Migrations
+
+Forward-only, idempotent, versioned (FR-CORE-04).
+
+- Each migration is a class with an integer `version()` and an `up()`. There is no `down()` — a rollback that has to reverse a data transform on a live store is more dangerous than rolling forward.
+- The runner compares `storecrew_schema_version` against the highest registered migration and applies the gap in order.
+- It runs on `admin_init` when `storecrew_needs_upgrade` is set — **not during activation**. A fatal mid-schema during activation leaves a site that cannot retry, and updating by file upload never calls the activation hook at all.
+- Schema creation uses `dbDelta()`, which imposes real formatting constraints: two spaces after `PRIMARY KEY`, `KEY` not `INDEX`, one field per line, and lowercase types. These are not style preferences; `dbDelta` silently fails to apply changes when they are violated.
+- A migration lock (`storecrew_migration_lock`, 5-minute TTL) prevents two concurrent admin requests running the same migration twice.
+- Add-ons contribute their own migrations via `storecrew_register_migrations` and own their own version series.
+
+---
+
+## 10. Premium Tables
+
+Owned by `storecrew-pro`, created by its own migrations, sharing the `scr_` prefix. Detailed at Gate 4.
+
+| Table | Purpose |
+|---|---|
+| `scr_segments` | Customer segment definitions and cached membership |
+| `scr_campaigns` | Campaign records, targeting, status, attribution |
+| `scr_workflows` | Workflow graph definitions |
+| `scr_workflow_runs` | Per-execution log with node-level results |
+
+**Premium tables are not dropped when the free plugin is uninstalled**, and vice versa. Each plugin's uninstall removes only what it created (FR-DIST-06).
+
+---
+
+## 11. Retention & Privacy
+
+| Data | Default | Configurable |
+|---|---|---|
+| Conversations and messages | 12 months | Yes, 1–60 months or never |
+| Agent runs and tool calls | 6 months | Yes |
+| Usage events | 24 months | Yes — counters retained indefinitely |
+| Audit log | 24 months | Yes, minimum 6 months |
+| Knowledge chunks | Until source deleted or reindexed | n/a |
+
+- Pruning runs as a scheduled Action Scheduler job, batched, never as a single mass `DELETE`.
+- **GDPR erasure** is wired to the WordPress personal-data exporter and eraser. Erasing a customer anonymises `customer_id`, `verified_order_id`, and any message content attributable to them, while leaving aggregate usage counters intact — those contain no personal data and removing them would corrupt billing history.
+- No raw email addresses or IP addresses are stored in any table above.
+
+---
+
+## 12. Open Questions for Gate 2 Review
+
+1. **Embedding precision** — float32, float16, or a 768-dimension model? At 50k products this is the difference between 880 MB and 220 MB, and it changes which hosting tier the product is viable on. Needs a recall measurement to decide honestly.
+2. **Is the two-stage retrieval acceptable?** It trades recall on lexically-poor queries for the ability to run on shared hosting without a vector database. FR-KB-09's measurement should gate this before implementation, not after.
+3. **Conversation retention default** — 12 months is generous for storage and useful for analytics. A shorter default is safer for privacy and cheaper to host.
+4. **Should `scr_messages.content` be encrypted at rest?** It can contain anything a customer typed. Encryption blocks the `FULLTEXT` search that conversation history search would want.
+5. **The metering decision from PRD Q1** is now deferrable rather than blocking, but still wants answering before the free tier ships.

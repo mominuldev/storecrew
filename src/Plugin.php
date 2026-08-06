@@ -14,6 +14,9 @@ use StoreCrew\Api\Feature;
 use StoreCrew\Api\Registry\AdminRouteRegistry;
 use StoreCrew\Api\Registry\FeatureRegistry;
 use StoreCrew\Core\Container\Container;
+use StoreCrew\Database\MigrationInterface;
+use StoreCrew\Database\Migrations\Migration001InitialSchema;
+use StoreCrew\Database\Migrator;
 use StoreCrew\Licensing\FeatureGate;
 
 defined( 'ABSPATH' ) || exit;
@@ -84,6 +87,58 @@ final class Plugin {
 		add_action( 'plugins_loaded', array( $this->api, 'freeze' ), 20 );
 
 		add_action( 'init', array( $this, 'load_textdomain' ) );
+
+		// Schema reconciliation runs here rather than on activation: a fatal
+		// mid-migration during activation leaves a site with no way to retry,
+		// and updating by file upload never fires the activation hook at all.
+		add_action( 'admin_init', array( $this, 'maybe_migrate' ) );
+
+		// admin_init never fires under WP-CLI, so a site administered purely by
+		// `wp` would never get its tables.
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			add_action( 'init', array( $this, 'maybe_migrate' ), 5 );
+		}
+	}
+
+	/**
+	 * Apply pending migrations, if any.
+	 */
+	public function maybe_migrate(): void {
+		$migrator = $this->container->get( Migrator::class );
+
+		if ( ! $migrator->needs_migration() ) {
+			return;
+		}
+
+		$result = $migrator->run();
+
+		if ( null === $result['failed'] ) {
+			return;
+		}
+
+		$failed = $result['failed'];
+		$error  = $result['error'];
+
+		add_action(
+			'admin_notices',
+			static function () use ( $failed, $error ) {
+				if ( ! current_user_can( 'activate_plugins' ) ) {
+					return;
+				}
+
+				echo '<div class="notice notice-error"><p>';
+				printf(
+					/* translators: 1: migration version, 2: error message */
+					esc_html__(
+						'StoreCrew AI could not apply database migration %1$d: %2$s',
+						'storecrew'
+					),
+					(int) $failed,
+					esc_html( $error )
+				);
+				echo '</p></div>';
+			}
+		);
 	}
 
 	/**
@@ -106,6 +161,38 @@ final class Plugin {
 				$c->get( FeatureRegistry::class ),
 				$c->get( AdminRouteRegistry::class )
 			)
+		);
+
+		$this->container->set(
+			Migrator::class,
+			static function (): Migrator {
+				$migrations = array( new Migration001InitialSchema() );
+
+				/**
+				 * Contribute database migrations.
+				 *
+				 * Add-ons own their own version series and must not reuse core
+				 * numbers. Resolved lazily on admin_init, well after the
+				 * registration window, so add-on callbacks are always present.
+				 *
+				 * @param list<MigrationInterface> $migrations Registered migrations.
+				 */
+				$migrations = apply_filters( 'storecrew_register_migrations', $migrations );
+
+				if ( ! is_array( $migrations ) ) {
+					$migrations = array();
+				}
+
+				// A malformed contribution must not take the schema down with it.
+				$migrations = array_values(
+					array_filter(
+						$migrations,
+						static fn ( $m ): bool => $m instanceof MigrationInterface
+					)
+				);
+
+				return new Migrator( $migrations );
+			}
 		);
 
 		$this->container->set(

@@ -95,7 +95,7 @@ Mitigation carried into [01-prd.md](01-prd.md) § Risks as **R-BRAND-01**. The l
 | # | Document | Status |
 |---|---|---|
 | 3 | [Technical Architecture](03-technical-architecture.md) | ⬜ Not started |
-| 4 | [Database Schema](04-database-schema.md) | ⬜ Not started |
+| 4 | [Database Schema](04-database-schema.md) | ✅ Draft complete |
 | 5 | [REST API Specification](05-api-specification.md) | ⬜ Not started |
 | 7 | [Plugin Folder Structure](07-folder-structure.md) | ⬜ Not started — covers **both** plugin trees |
 
