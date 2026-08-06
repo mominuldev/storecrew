@@ -11,6 +11,7 @@ namespace StoreCrew\Api;
 
 use StoreCrew\Api\Registry\AdminRouteRegistry;
 use StoreCrew\Api\Registry\FeatureRegistry;
+use StoreCrew\Api\Registry\ProviderRegistry;
 use StoreCrew\Core\Container\Container;
 
 defined( 'ABSPATH' ) || exit;
@@ -39,6 +40,7 @@ final class ExtensionApi {
 		private readonly Container $container,
 		private readonly FeatureRegistry $features,
 		private readonly AdminRouteRegistry $admin_routes,
+		private readonly ProviderRegistry $providers,
 	) {}
 
 	/**
@@ -69,6 +71,13 @@ final class ExtensionApi {
 	 */
 	public function admin_routes(): AdminRouteRegistry {
 		return $this->admin_routes;
+	}
+
+	/**
+	 * Registry of AI providers.
+	 */
+	public function providers(): ProviderRegistry {
+		return $this->providers;
 	}
 
 	/**
@@ -116,6 +125,13 @@ final class ExtensionApi {
 		 * @param AdminRouteRegistry $admin_routes The admin route registry.
 		 */
 		apply_filters( 'storecrew_register_admin_routes', $this->admin_routes );
+
+		/**
+		 * Contribute AI providers.
+		 *
+		 * @param ProviderRegistry $providers The provider registry.
+		 */
+		apply_filters( 'storecrew_register_providers', $this->providers );
 	}
 
 	/**
@@ -124,6 +140,7 @@ final class ExtensionApi {
 	public function freeze(): void {
 		$this->features->freeze();
 		$this->admin_routes->freeze();
+		$this->providers->freeze();
 
 		/**
 		 * Fires after every registry has been frozen.
@@ -144,7 +161,13 @@ final class ExtensionApi {
 	public function contributions(): array {
 		$snapshot = array();
 
-		foreach ( array( 'features' => $this->features, 'admin_routes' => $this->admin_routes ) as $key => $registry ) {
+		$registries = array(
+			'features'     => $this->features,
+			'admin_routes' => $this->admin_routes,
+			'providers'    => $this->providers,
+		);
+
+		foreach ( $registries as $key => $registry ) {
 			$owners = array();
 
 			foreach ( array_keys( $registry->all() ) as $id ) {

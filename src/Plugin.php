@@ -9,10 +9,20 @@ declare( strict_types=1 );
 
 namespace StoreCrew;
 
+use StoreCrew\Ai\Http\HttpClient;
+use StoreCrew\Ai\ModelPolicy;
+use StoreCrew\Ai\Providers\AnthropicProvider;
+use StoreCrew\Ai\Providers\DeepSeekProvider;
+use StoreCrew\Ai\Providers\GeminiProvider;
+use StoreCrew\Ai\Providers\OpenAiProvider;
+use StoreCrew\Ai\Providers\OpenRouterProvider;
+use StoreCrew\Ai\SpendGuard;
 use StoreCrew\Api\ExtensionApi;
 use StoreCrew\Api\Feature;
 use StoreCrew\Api\Registry\AdminRouteRegistry;
 use StoreCrew\Api\Registry\FeatureRegistry;
+use StoreCrew\Api\Registry\ProviderRegistry;
+use StoreCrew\Security\SecretStore;
 use StoreCrew\Core\Container\Container;
 use StoreCrew\Database\MigrationInterface;
 use StoreCrew\Database\Migrations\Migration001InitialSchema;
@@ -87,6 +97,7 @@ final class Plugin {
 
 		$this->register_services();
 		$this->register_core_features();
+		$this->register_core_providers();
 
 		$this->api = $this->container->get( ExtensionApi::class );
 
@@ -166,6 +177,35 @@ final class Plugin {
 		);
 
 		$this->container->set(
+			ProviderRegistry::class,
+			static fn (): ProviderRegistry => new ProviderRegistry()
+		);
+
+		$this->container->set(
+			SecretStore::class,
+			static fn (): SecretStore => new SecretStore()
+		);
+
+		$this->container->set(
+			HttpClient::class,
+			static fn (): HttpClient => new HttpClient()
+		);
+
+		$this->container->set(
+			ModelPolicy::class,
+			static fn ( Container $c ): ModelPolicy => new ModelPolicy(
+				$c->get( ProviderRegistry::class )
+			)
+		);
+
+		$this->container->set(
+			SpendGuard::class,
+			static fn ( Container $c ): SpendGuard => new SpendGuard(
+				$c->get( UsageRepository::class )
+			)
+		);
+
+		$this->container->set(
 			FeatureGate::class,
 			static fn ( Container $c ): FeatureGate => new FeatureGate(
 				$c->get( FeatureRegistry::class ),
@@ -232,7 +272,8 @@ final class Plugin {
 			static fn ( Container $c ): ExtensionApi => new ExtensionApi(
 				$c,
 				$c->get( FeatureRegistry::class ),
-				$c->get( AdminRouteRegistry::class )
+				$c->get( AdminRouteRegistry::class ),
+				$c->get( ProviderRegistry::class )
 			)
 		);
 	}
@@ -286,6 +327,27 @@ final class Plugin {
 				description: __( 'The customer-facing chat widget.', 'storecrew' ),
 			)
 		);
+	}
+
+	/**
+	 * Register the AI providers this plugin ships.
+	 *
+	 * All five are registered regardless of whether a key is configured — the
+	 * settings screen needs to offer them before they can be configured, and
+	 * `is_configured()` is what gates actual use.
+	 *
+	 * @see docs/01-prd.md FR-AI-01
+	 */
+	private function register_core_providers(): void {
+		$registry = $this->container->get( ProviderRegistry::class );
+		$secrets  = $this->container->get( SecretStore::class );
+		$http     = $this->container->get( HttpClient::class );
+
+		$registry->register( new AnthropicProvider( $secrets, $http ) );
+		$registry->register( new OpenAiProvider( $secrets, $http ) );
+		$registry->register( new GeminiProvider( $secrets, $http ) );
+		$registry->register( new OpenRouterProvider( $secrets, $http ) );
+		$registry->register( new DeepSeekProvider( $secrets, $http ) );
 	}
 
 	/**
