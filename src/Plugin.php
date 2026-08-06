@@ -17,6 +17,16 @@ use StoreCrew\Core\Container\Container;
 use StoreCrew\Database\MigrationInterface;
 use StoreCrew\Database\Migrations\Migration001InitialSchema;
 use StoreCrew\Database\Migrator;
+use StoreCrew\Database\Repositories\AgentConfigRepository;
+use StoreCrew\Database\Repositories\AgentRunRepository;
+use StoreCrew\Database\Repositories\AuditLogRepository;
+use StoreCrew\Database\Repositories\ConversationRepository;
+use StoreCrew\Database\Repositories\IndexRunRepository;
+use StoreCrew\Database\Repositories\KnowledgeChunkRepository;
+use StoreCrew\Database\Repositories\KnowledgeSourceRepository;
+use StoreCrew\Database\Repositories\MessageRepository;
+use StoreCrew\Database\Repositories\ToolCallRepository;
+use StoreCrew\Database\Repositories\UsageRepository;
 use StoreCrew\Licensing\FeatureGate;
 
 defined( 'ABSPATH' ) || exit;
@@ -162,6 +172,28 @@ final class Plugin {
 				$c->get( AdminRouteRegistry::class )
 			)
 		);
+
+		// Repositories are the only things that touch the database. They take
+		// $wpdb from the global by default so a test can inject a double.
+		$repositories = array(
+			ConversationRepository::class,
+			MessageRepository::class,
+			AgentRunRepository::class,
+			ToolCallRepository::class,
+			KnowledgeSourceRepository::class,
+			KnowledgeChunkRepository::class,
+			UsageRepository::class,
+			IndexRunRepository::class,
+			AuditLogRepository::class,
+			AgentConfigRepository::class,
+		);
+
+		foreach ( $repositories as $repository ) {
+			$this->container->set(
+				$repository,
+				static fn (): object => new $repository()
+			);
+		}
 
 		$this->container->set(
 			Migrator::class,
