@@ -46,8 +46,10 @@ latency, for backup-size reasons alone.
 
 **Two structural exclusions keep the index small and stable:** volatile
 fields never enter it (FR-KB-08 — also why bulk stock edits re-embed
-nothing), and SKU/exact-identifier lookup will be its own cheap tool rather
-than a semantic query (known gap; it fails at every fusion weight).
+nothing), and SKU/exact-identifier lookup **is** its own cheap tool
+(`product.lookup`, exact resolution — the recall harness scores its
+identifier fixtures against that path, 3/3, with the semantic path never
+consulted).
 
 ---
 

@@ -37,6 +37,7 @@ use StoreCrew\Agent\Tools\IdentityVerifyTool;
 use StoreCrew\Agent\Tools\OrderLookupTool;
 use StoreCrew\Agent\Tools\OrderNoteTool;
 use StoreCrew\Agent\Tools\PolicyLookupTool;
+use StoreCrew\Agent\Tools\ProductLookupTool;
 use StoreCrew\Agent\Tools\ProductSearchTool;
 use StoreCrew\Api\Registry\AgentRegistry;
 use StoreCrew\Api\Registry\ControllerRegistry;
@@ -610,6 +611,8 @@ final class Plugin {
 			PolicyLookupTool::ID,
 			static fn (): PolicyLookupTool => new PolicyLookupTool( $c->get( Retriever::class ) )
 		);
+
+		$registry->register( ProductLookupTool::ID, static fn (): ProductLookupTool => new ProductLookupTool() );
 
 		$registry->register(
 			IdentityVerifyTool::ID,

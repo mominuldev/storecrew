@@ -183,6 +183,55 @@ if ( $has_woo ) {
 	$product->save();
 }
 
+if ( $has_woo && $product_id > 0 ) {
+	echo "\n== Exact-identifier lookup (product.lookup, 14 § M1) ==\n";
+
+	$lookup = new StoreCrew\Agent\Tools\ProductLookupTool();
+	$ctx    = new StoreCrew\Agent\Tool\ToolContext( 0 );
+
+	$hit = $lookup->execute( $ctx, array( 'sku' => 'SCR-PROBE-001' ) );
+	$t( 'an exact SKU resolves', $hit->is_ok(), $hit->message );
+	$t( 'to the right product', str_contains( (string) ( $hit->data['name'] ?? '' ), 'Trail Runner' ) );
+	$t( 'with a live price, not an indexed one', '' !== (string) ( $hit->data['price'] ?? '' ) );
+
+	$miss = $lookup->execute( $ctx, array( 'sku' => 'SCR-NOPE-999' ) );
+	$t( 'PROBE: an unknown SKU is an honest miss', ! $miss->is_ok() );
+	$t( 'that points the model at the semantic fallback', str_contains( $miss->message, 'catalogue search' ) );
+
+	// A draft product's SKU must be the SAME sentence as a true miss — the
+	// lookup must not become an oracle for unpublished catalogue.
+	$probe_product = wc_get_product( $product_id );
+	$probe_product->set_status( 'draft' );
+	$probe_product->save();
+
+	$hidden = $lookup->execute( $ctx, array( 'sku' => 'SCR-PROBE-001' ) );
+	$t( 'PROBE: a draft product reads as not existing', ! $hidden->is_ok() );
+	$t(
+		'PROBE: indistinguishably from a true miss',
+		str_replace( 'SCR-PROBE-001', 'X', $hidden->message ) === str_replace( 'SCR-NOPE-999', 'X', $miss->message )
+	);
+
+	$probe_product = wc_get_product( $product_id );
+	$probe_product->set_status( 'publish' );
+	$probe_product->save();
+
+	// Out of stock is named, not hidden: someone asking for a specific code
+	// deserves "unavailable", not "no such product".
+	$probe_product = wc_get_product( $product_id );
+	$probe_product->set_stock_quantity( 0 );
+	$probe_product->set_stock_status( 'outofstock' );
+	$probe_product->save();
+
+	$oos = $lookup->execute( $ctx, array( 'sku' => 'SCR-PROBE-001' ) );
+	$t( 'PROBE: an out-of-stock product is found and named unavailable', $oos->is_ok() && str_contains( $oos->message, 'not available' ) );
+	$t( 'and reports its stock state truthfully', false === ( $oos->data['inStock'] ?? true ) );
+
+	$probe_product = wc_get_product( $product_id );
+	$probe_product->set_stock_quantity( 7 );
+	$probe_product->set_stock_status( 'instock' );
+	$probe_product->save();
+}
+
 echo "\n== Post extraction ==\n";
 $page_id = wp_insert_post(
 	array(

@@ -160,3 +160,40 @@ printf(
 	Indexer::dimensions(),
 	KnowledgeChunkRepository::DENSE_SCAN_THRESHOLD
 );
+
+// ---------------------------------------------------------------------------
+// Exact-identifier fixtures (14 § M1's SKU tool).
+//
+// These are deliberately NOT in the semantic fixture set above: the original
+// measurement showed identifier queries failing at every fusion weight, and
+// the conclusion was structural — an embedding of "DEMO-003" carries nothing
+// for cosine similarity to find. Identifiers are answered by product.lookup's
+// exact resolution, and this section asserts that path instead: the harness
+// scores each surface on the queries that surface exists for.
+// ---------------------------------------------------------------------------
+
+echo "\nExact identifiers (product.lookup path):\n";
+
+$lookup    = new StoreCrew\Agent\Tools\ProductLookupTool();
+$id_pass   = 0;
+$id_total  = 0;
+$identifiers = array( 'DEMO-001', 'DEMO-003', 'DEMO-012' );
+
+foreach ( $identifiers as $sku ) {
+	++$id_total;
+
+	$result = $lookup->execute(
+		new StoreCrew\Agent\Tool\ToolContext( 0 ),
+		array( 'sku' => $sku )
+	);
+
+	$hit = $result->is_ok() && ( $result->data['sku'] ?? '' ) === $sku;
+
+	if ( $hit ) {
+		++$id_pass;
+	}
+
+	printf( "  %s %s%s\n", $hit ? 'HIT ' : 'MISS', $sku, $hit ? ' -> ' . $result->data['name'] : '' );
+}
+
+printf( "identifier resolution: %d/%d via exact lookup (semantic path not consulted)\n", $id_pass, $id_total );

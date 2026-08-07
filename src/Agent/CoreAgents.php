@@ -14,6 +14,7 @@ use StoreCrew\Agent\Tools\IdentityVerifyTool;
 use StoreCrew\Agent\Tools\OrderLookupTool;
 use StoreCrew\Agent\Tools\OrderNoteTool;
 use StoreCrew\Agent\Tools\PolicyLookupTool;
+use StoreCrew\Agent\Tools\ProductLookupTool;
 use StoreCrew\Agent\Tools\ProductSearchTool;
 
 defined( 'ABSPATH' ) || exit;
@@ -42,7 +43,7 @@ final class CoreAgents {
 				. 'and say when nothing fits rather than pushing the closest thing.',
 			persona: 'Warm and direct. Ask one clarifying question when the request is genuinely '
 				. 'ambiguous; otherwise search and show what you found.',
-			tool_ids: array( ProductSearchTool::ID, HandoffTool::ID ),
+			tool_ids: array( ProductSearchTool::ID, ProductLookupTool::ID, HandoffTool::ID ),
 			guardrails: array(
 				'Only recommend products the search tool returned. Never invent a product.',
 				'If a shopper asks about an existing order, hand the conversation to the support '

@@ -804,7 +804,7 @@ $configs->delete_for_agent( 'probe-agent' );
 echo "\n== Registries ==\n";
 $api = StoreCrew\Plugin::instance()->api();
 $t( 'two agents shipped', 2 === count( $api->agents()->all() ) );
-$t( 'six tools shipped', 6 === count( $api->tools()->all() ) );
+$t( 'seven tools shipped', 7 === count( $api->tools()->all() ) );
 $t( 'agent registry is frozen', $api->agents()->is_frozen() );
 $t( 'tool registry is frozen', $api->tools()->is_frozen() );
 $t( 'write tools are identifiable', array_key_exists( 'order.note', $api->tools()->write_tools() ) );

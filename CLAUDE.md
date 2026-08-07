@@ -360,15 +360,17 @@ ciphertext, ragged embedding vectors, and the migration lock.
   prefilter is only used above 2,000 chunks where a full scan is too slow.
   **Large-corpus recall is still unmeasured and expected to be worse** — that
   case needs the external vector index R-TECH-01 named.
-- SKU lookup fails at every fusion weight. Exact-identifier search needs its own
-  tool, not semantic retrieval.
+- ~~SKU lookup~~ — `product.lookup` (2026-08-07) resolves identifiers exactly;
+  the recall harness scores identifier fixtures against it, semantic path
+  unconsulted.
 - **No streaming — FR-CHAT-02 is unmet.** The widget uses the buffered path
   everywhere, not only on the hosts the requirement's fallback clause is for.
   SSE needs raw cURL with a write callback, which `wp_remote_post` cannot do, and
   a streaming variant of the provider interface. This is the largest remaining
   hole in the chat surface.
-- No failover execution. `ModelPolicy::fallback()` resolves a target; nothing
-  calls it yet.
+- ~~No failover execution~~ — done (2026-08-07): one switch to the configured
+  fallback mid-turn, continuing from the request state so executed tools never
+  re-run; both attempts on the run record.
 - `Pro\Licence` is a **stub** — local option, no remote validation, no grace
   period. Not a security boundary; must not ship as-is.
 - **The storefront chat surface is live-verified** (21 REST routes). Five turns
