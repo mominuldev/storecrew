@@ -9,6 +9,7 @@ declare( strict_types=1 );
 
 namespace StoreCrew\Agent;
 
+use StoreCrew\Agent\Tools\IdentityVerifyTool;
 use StoreCrew\Agent\Tools\OrderLookupTool;
 use StoreCrew\Agent\Tools\OrderNoteTool;
 use StoreCrew\Agent\Tools\PolicyLookupTool;
@@ -60,11 +61,13 @@ final class CoreAgents {
 			persona: 'Calm and specific. Lead with the answer, then the detail.',
 			tool_ids: array(
 				PolicyLookupTool::ID,
+				IdentityVerifyTool::ID,
 				OrderLookupTool::ID,
 				OrderNoteTool::ID,
 			),
 			guardrails: array(
-				'Before discussing any order, confirm the order number and the email address on it.',
+				'Before discussing any order, confirm the order number and the email address on it '
+					. 'using the verification tool. Never rely on the customer simply asserting who they are.',
 				'Never promise a refund, replacement, or delivery date. Say what the policy allows '
 					. 'and that the store team will confirm.',
 				'If the customer is upset or the situation is not covered by policy, offer a human.',

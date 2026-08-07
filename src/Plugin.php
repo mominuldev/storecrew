@@ -20,6 +20,7 @@ use StoreCrew\Ai\SpendGuard;
 use StoreCrew\Api\ExtensionApi;
 use StoreCrew\Api\Feature;
 use StoreCrew\Api\Rest\Controllers\BootstrapController;
+use StoreCrew\Api\Rest\Controllers\ChatController;
 use StoreCrew\Api\Rest\Controllers\ConversationController;
 use StoreCrew\Api\Rest\Controllers\HealthController;
 use StoreCrew\Api\Rest\Controllers\IndexController;
@@ -31,6 +32,7 @@ use StoreCrew\Agent\AgentRunner;
 use StoreCrew\Agent\CoreAgents;
 use StoreCrew\Agent\Orchestrator;
 use StoreCrew\Agent\Tool\ToolExecutor;
+use StoreCrew\Agent\Tools\IdentityVerifyTool;
 use StoreCrew\Agent\Tools\OrderLookupTool;
 use StoreCrew\Agent\Tools\OrderNoteTool;
 use StoreCrew\Agent\Tools\PolicyLookupTool;
@@ -50,6 +52,8 @@ use StoreCrew\Knowledge\Jobs\IndexJob;
 use StoreCrew\Knowledge\Jobs\ReindexJob;
 use StoreCrew\Knowledge\Retriever;
 use StoreCrew\Security\SecretStore;
+use StoreCrew\Chat\ChatService;
+use StoreCrew\Chat\Widget;
 use StoreCrew\Core\Admin\AdminPage;
 use StoreCrew\Core\Container\Container;
 use StoreCrew\Core\Queue\MaintenanceJob;
@@ -152,6 +156,12 @@ final class Plugin {
 		// under WP-CLI, where is_admin() is false, hiding menu bugs from the
 		// only harness that could catch them.
 		( new AdminPage() )->register();
+
+		// The storefront widget. Registered unconditionally for the same reason
+		// as the admin page: the hooks it attaches already decide for themselves
+		// whether this request is one they belong on, and a guard here would
+		// only hide them from WP-CLI — where the tests run.
+		( new Widget() )->register();
 
 		// Routes register on rest_api_init, which fires long after the
 		// registries freeze, so the contributed set is always final by then.
@@ -277,6 +287,15 @@ final class Plugin {
 				$c->get( ModelPolicy::class ),
 				$c->get( FeatureGate::class ),
 				$c->get( AgentConfigRepository::class )
+			)
+		);
+
+		$this->container->set(
+			ChatService::class,
+			static fn ( Container $c ): ChatService => new ChatService(
+				$c->get( ConversationRepository::class ),
+				$c->get( MessageRepository::class ),
+				$c->get( Orchestrator::class )
 			)
 		);
 
@@ -553,6 +572,14 @@ final class Plugin {
 			static fn (): PolicyLookupTool => new PolicyLookupTool( $c->get( Retriever::class ) )
 		);
 
+		$registry->register(
+			IdentityVerifyTool::ID,
+			static fn (): IdentityVerifyTool => new IdentityVerifyTool(
+				$c->get( ConversationRepository::class ),
+				$c->get( AuditLogRepository::class )
+			)
+		);
+
 		$registry->register( OrderLookupTool::ID, static fn (): OrderLookupTool => new OrderLookupTool() );
 		$registry->register( OrderNoteTool::ID, static fn (): OrderNoteTool => new OrderNoteTool() );
 	}
@@ -638,6 +665,16 @@ final class Plugin {
 				$gate(),
 				$c->get( Retriever::class ),
 				$c->get( KnowledgeSourceRepository::class )
+			)
+		);
+
+		$registry->register(
+			'chat',
+			static fn (): ChatController => new ChatController(
+				$gate(),
+				$c->get( ChatService::class ),
+				$c->get( Orchestrator::class ),
+				$c->get( ModelPolicy::class )
 			)
 		);
 

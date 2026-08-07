@@ -35,6 +35,19 @@ export type Settings = {
   pricing: { ratesVerified: string };
   canEmbed: boolean;
   tasks: string[];
+  chat: ChatSettings;
+};
+
+export type ChatSettings = {
+  enabled: boolean;
+  autoPlace: boolean;
+  position: 'left' | 'right';
+  accent: string;
+  title: string;
+  launcher: string;
+  greeting: string;
+  placeholder: string;
+  offlineNotice: string;
 };
 
 export type IndexStatus = {

@@ -298,7 +298,7 @@ $t( 'PROBE: approving twice is a 409, not a silent success', 409 === $status, (s
 
 echo "\n== Registry ==\n";
 $registry = $c->get( ControllerRegistry::class );
-$t( 'seven controllers registered', 7 === count( $registry->all() ), (string) count( $registry->all() ) );
+$t( 'eight controllers registered', 8 === count( $registry->all() ), (string) count( $registry->all() ) );
 $t( 'the registry is frozen', $registry->is_frozen() );
 $t( 'ownership is tracked', 'storecrew' === $registry->owner( 'health' ) );
 $t(

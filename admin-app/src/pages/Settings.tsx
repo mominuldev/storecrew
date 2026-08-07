@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { Provider, Settings as SettingsData } from '../lib/types';
+import type { ChatSettings, Provider, Settings as SettingsData } from '../lib/types';
 import { Button, Card, Label, Problem, Section, Spinner } from '../components/primitives';
 
 const TASK_COPY: Record<string, { title: string; hint: string }> = {
@@ -43,6 +43,11 @@ export function Settings() {
   const savePolicy = useMutation({
     mutationFn: (policy: Record<string, { provider: string; model: string }>) =>
       api.post('/settings', { modelPolicy: policy }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }),
+  });
+
+  const saveChat = useMutation({
+    mutationFn: (chat: Partial<ChatSettings>) => api.post('/settings', { chat }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }),
   });
 
@@ -159,6 +164,140 @@ export function Settings() {
           counted as unknown rather than free.
         </p>
       </Section>
+
+      <Storefront chat={s.chat} canAnswer={Boolean(s.resolved.chat)} save={saveChat.mutate} busy={saveChat.isPending} />
     </>
+  );
+}
+
+/**
+ * Putting the crew on the shop floor.
+ *
+ * The switch is the whole point of this panel, so it is the first thing in it —
+ * and it is disabled until a chat model is set, because a widget that appears
+ * and then cannot answer is worse than no widget. The wording says so rather
+ * than leaving the merchant to work out why the control is greyed.
+ */
+function Storefront({
+  chat,
+  canAnswer,
+  save,
+  busy,
+}: {
+  chat: ChatSettings;
+  canAnswer: boolean;
+  save: (patch: Partial<ChatSettings>) => void;
+  busy: boolean;
+}) {
+  const [draft, setDraft] = useState(chat);
+
+  const field = 'w-full rounded-md border px-3 py-2 text-[13px] outline-none';
+  const style = { borderColor: 'var(--line)', background: 'var(--bg)', color: 'var(--text)' };
+
+  return (
+    <Section title="On the storefront">
+      {!canAnswer ? (
+        <div className="mb-3">
+          <Problem message="No model is set for talking to customers, so the widget stays off. Choose one above first." />
+        </div>
+      ) : null}
+
+      <Card edge={chat.enabled ? 'var(--color-crew-500)' : undefined} className="px-4 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[13px] font-semibold">
+              {chat.enabled ? 'On duty on your storefront' : 'Off the floor'}
+            </p>
+            <p className="mt-0.5 text-[12px]" style={{ color: 'var(--text-dim)' }}>
+              {chat.enabled
+                ? 'Shoppers can start a conversation from any page.'
+                : 'Nothing is loaded on the storefront at all — not even the script.'}
+            </p>
+          </div>
+          <Button
+            variant={chat.enabled ? 'danger' : 'primary'}
+            disabled={busy || (!canAnswer && !chat.enabled)}
+            onClick={() => save({ enabled: !chat.enabled })}
+          >
+            {chat.enabled ? 'Stand down' : 'Put on duty'}
+          </Button>
+        </div>
+      </Card>
+
+      <Card className="mt-2 px-4 py-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label>Launcher label</Label>
+            <input
+              className={`mt-1.5 ${field}`}
+              style={style}
+              value={draft.launcher}
+              onChange={(e) => setDraft({ ...draft, launcher: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label>Panel title</Label>
+            <input
+              className={`mt-1.5 ${field}`}
+              style={style}
+              value={draft.title}
+              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+            />
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <Label>First thing they see</Label>
+          <textarea
+            rows={2}
+            className={`mt-1.5 ${field}`}
+            style={style}
+            value={draft.greeting}
+            onChange={(e) => setDraft({ ...draft, greeting: e.target.value })}
+          />
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-end gap-4">
+          <div>
+            <Label>Accent</Label>
+            <input
+              type="color"
+              className="mt-1.5 h-9 w-16 rounded-md border"
+              style={{ borderColor: 'var(--line)', background: 'var(--bg)' }}
+              value={draft.accent}
+              onChange={(e) => setDraft({ ...draft, accent: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label>Corner</Label>
+            <select
+              className="mt-1.5 rounded-md border px-2.5 py-2 text-[13px]"
+              style={style}
+              value={draft.position}
+              onChange={(e) => setDraft({ ...draft, position: e.target.value as 'left' | 'right' })}
+            >
+              <option value="right">Bottom right</option>
+              <option value="left">Bottom left</option>
+            </select>
+          </div>
+          <label className="flex items-center gap-2 text-[13px]">
+            <input
+              type="checkbox"
+              checked={draft.autoPlace}
+              onChange={(e) => setDraft({ ...draft, autoPlace: e.target.checked })}
+            />
+            Float on every page
+          </label>
+          <div className="ms-auto">
+            <Button variant="primary" disabled={busy} onClick={() => save(draft)}>Save</Button>
+          </div>
+        </div>
+
+        <p className="mt-3 text-[12px]" style={{ color: 'var(--text-dim)' }}>
+          Turn the floating launcher off to place the panel yourself with the{' '}
+          <code className="scr-num">[storecrew_chat]</code> shortcode or the StoreCrew chat block.
+        </p>
+      </Card>
+    </Section>
   );
 }

@@ -26,6 +26,15 @@ final class ConversationRepository extends Repository {
 	public const STATUS_ESCALATED = 'escalated';
 	public const STATUS_ABANDONED = 'abandoned';
 
+	/**
+	 * Statuses a customer may still talk into.
+	 *
+	 * Escalated belongs here: a conversation waiting for a human is not over,
+	 * and telling the customer to start again — losing everything they already
+	 * explained — is the opposite of what escalation is for.
+	 */
+	public const LIVE_STATUSES = array( self::STATUS_OPEN, self::STATUS_ESCALATED );
+
 	protected function table(): string {
 		return Tables::CONVERSATIONS;
 	}
@@ -69,6 +78,74 @@ final class ConversationRepository extends Repository {
 
 	public function find( int $id ): ?object {
 		return $this->find_row( $id );
+	}
+
+	/**
+	 * The open conversation belonging to a session, if there is one.
+	 *
+	 * The token stored here is a **hash** of the one the visitor holds, so a
+	 * dump of this table hands an attacker nothing they can present. Callers
+	 * pass the hash; the raw token never reaches a repository.
+	 */
+	public function find_open_for_session( string $session_token_hash ): ?object {
+		if ( '' === $session_token_hash ) {
+			return null;
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$row = $this->db->get_row(
+			$this->db->prepare(
+				'SELECT * FROM ' . $this->table_name()
+					. ' WHERE session_token = %s AND status IN (' . $this->live_placeholders() . ') ORDER BY id DESC LIMIT 1',
+				array_merge( array( $session_token_hash ), self::LIVE_STATUSES )
+			)
+		);
+
+		return $row ?: null;
+	}
+
+	/**
+	 * The most recent open conversation for a signed-in customer.
+	 *
+	 * FR-CHAT-05 requires a conversation to survive across sessions for an
+	 * identified customer — a new browser, or a cleared cookie, must not lose
+	 * the thread. Anonymous visitors have no such handle, which is why this is
+	 * keyed on the WordPress user id rather than on the session token.
+	 */
+	public function find_open_for_customer( int $customer_id ): ?object {
+		if ( $customer_id <= 0 ) {
+			return null;
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$row = $this->db->get_row(
+			$this->db->prepare(
+				'SELECT * FROM ' . $this->table_name()
+					. ' WHERE customer_id = %d AND status IN (' . $this->live_placeholders() . ') ORDER BY id DESC LIMIT 1',
+				array_merge( array( $customer_id ), self::LIVE_STATUSES )
+			)
+		);
+
+		return $row ?: null;
+	}
+
+	/**
+	 * Placeholder list for LIVE_STATUSES, so the constant stays the single
+	 * definition of what "still live" means.
+	 */
+	private function live_placeholders(): string {
+		return implode( ', ', array_fill( 0, count( self::LIVE_STATUSES ), '%s' ) );
+	}
+
+	/**
+	 * Re-point a conversation at the session now holding it.
+	 *
+	 * A customer resuming on a second device presents a different token for the
+	 * same conversation. Rotating rather than accepting both is what keeps the
+	 * token a single-holder credential.
+	 */
+	public function rebind_session( int $id, string $session_token_hash ): bool {
+		return $this->update_by_id( $id, array( 'session_token' => $session_token_hash ), array( '%s' ) );
 	}
 
 	/**
@@ -161,6 +238,34 @@ final class ConversationRepository extends Repository {
 			$this->db->prepare(
 				'SELECT identity_verified FROM ' . $this->table_name() . ' WHERE id = %d',
 				$id
+			)
+		);
+	}
+
+	/**
+	 * Flag a conversation for a human without ending it (FR-SUPPORT-07).
+	 *
+	 * Distinct from `close( STATUS_ESCALATED )`, which stamps `closed_at` and
+	 * takes the conversation out of the customer's hands. Escalation is a
+	 * request for help *during* a conversation — the customer keeps typing, and
+	 * a merchant who opens it finds the whole thread rather than a transcript
+	 * that stops at the moment it got difficult.
+	 *
+	 * Already-escalated conversations are left alone so the first escalation
+	 * timestamp survives; that is the one the response-time figure is measured
+	 * against.
+	 */
+	public function escalate( int $id ): bool {
+		$table = $this->table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		return false !== $this->db->query(
+			$this->db->prepare(
+				"UPDATE {$table} SET status = %s, escalated_at = %s WHERE id = %d AND status = %s",
+				self::STATUS_ESCALATED,
+				$this->now(),
+				$id,
+				self::STATUS_OPEN
 			)
 		);
 	}

@@ -136,7 +136,33 @@ The admin app uses **no `@wordpress/*` packages** and bundles its own React.
 Core ships whichever version its release pins; depending on it means inheriting
 every future core upgrade as an untested breaking change.
 
-### 9. Never bundle an HTTP client
+### 9. On the storefront, a uuid is an address and never a credential
+
+Conversations are addressed publicly by uuid — it travels in URLs, screenshots
+and support emails. Reading or writing one requires the **session token** the
+server issued, which lives in an HttpOnly cookie and is stored only as
+`sha256(token)`. An unknown uuid and an unowned one return the **same 404**, so
+the API cannot be used to confirm that a conversation exists.
+
+The public chat routes are the only unauthenticated routes in the plugin.
+`public_access()` marks each one, so an open route is always a visible decision
+rather than a forgotten `permission_callback`.
+
+Two things follow that are easy to undo by accident:
+
+- **The storefront page carries no nonce and no conversation state.** Woo stores
+  are page-cached; anything printed into the document is served to the next
+  thousand visitors. `Widget` prints one `async` script tag and the REST root.
+  Everything else comes from `/chat/boot`, which is never cached.
+- **History is rebuilt from the database on every turn.** The widget posts one
+  message, never a transcript. A client that could supply history could plant an
+  assistant turn claiming identity was verified.
+
+The widget renders model output with `createTextNode` / `createElement` only —
+**never `innerHTML`**. That text was written by a model that has been reading
+indexed product descriptions and customer reviews.
+
+### 10. Never bundle an HTTP client
 
 Use the WordPress HTTP API. Shipping Guzzle in a `.org` plugin collides with
 every other plugin shipping a different Guzzle, and `wp_remote_post` honours the
@@ -162,7 +188,7 @@ src/
     Feature.php            Gateable feature + tier
     AdminRoute.php         SPA route declaration
     Registry/              Freezable registries
-    Rest/                  RestController base + 7 controllers, storecrew/v1
+    Rest/                  RestController base + 8 controllers, storecrew/v1
   Database/
     Tables.php             The only place table names are built
     Migrator.php           Forward-only, locked, admin_init
@@ -179,7 +205,14 @@ src/
   Agent/
     Agent, AgentRunner, AgentTurn, Orchestrator, TurnBudget, SharedContext
     Tool/                  ToolInterface, ToolExecutor (the security boundary)
-    Tools/                 product.search, policy.lookup, order.lookup, order.note
+    Tools/                 product.search, policy.lookup, identity.verify,
+                           order.lookup, order.note
+  Chat/
+    ChatService            One customer turn, end to end
+    Session                Session token: issue, digest, cookie
+    RateLimiter            Per session and per IP (FR-CHAT-06)
+    ChatSettings           Widget appearance and placement
+    Widget                 Async enqueue, shortcode, block
   Licensing/FeatureGate.php
   Security/SecretStore.php Envelope encryption, rotatable
 docs/                      Architecture deliverables
@@ -214,10 +247,15 @@ because it runs with no database at all.
 
 ## Testing
 
-Eight suites, 483 assertions, green in any run order.
+Nine suites, 566 assertions, green in any run order.
 
 `verify-rest.php` needs `--user=1`: it dispatches through the real REST
 server, and its permission probes deliberately start unauthenticated.
+`verify-chat.php` takes it for the same reason and then drops to user 0 for the
+storefront probes — **run those as an administrator and they prove nothing**,
+because a signed-in customer legitimately reclaims their own conversation from
+any device, so "a stranger" who is really the same logged-in user passes every
+ownership check.
 
 ```bash
 # Real MySQL / real WooCommerce / real Action Scheduler / real WP_REST_Server
@@ -229,6 +267,7 @@ wp eval-file wp-content/plugins/storecrew/tests/schema/verify-providers.php
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-knowledge.php
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-jobs.php
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-admin.php --user=1
+wp eval-file wp-content/plugins/storecrew/tests/schema/verify-chat.php --user=1
 
 # No database, no WordPress — boots both plugins against a hook shim
 ./tests/integration/run.sh
@@ -263,6 +302,9 @@ ciphertext, ragged embedding vectors, and the migration lock.
 | `index_object()` never marked sources indexed | Sources sat at `pending` forever; the dashboard would show an index that never finishes. |
 | Gemini `thoughtSignature` not replayed | Tool calls executed, then the continuation turn 400'd. Only a live call finds this. |
 | Providers depending on concrete `HttpClient` | Request shaping was untestable without network. |
+| Widget Markdown classified a whole block as list-or-paragraph | "Here is what I can tell you:" then three dashed lines is the shape models actually produce, and it fell to the paragraph branch and printed literal hyphens. Group lines into runs. |
+| `null === ( $x['k'] ?? 'fallback' )` in a probe | `??` treats a **null value** as absent, so the assertion could never pass whatever the endpoint returned. Use `array_key_exists` when null is the expected value. |
+| Ownership probes run as an administrator | A signed-in customer may reclaim their own conversation from any device, so a "stranger" who is the same logged-in user passes every check. Storefront probes must run as user 0. |
 
 ---
 
@@ -290,17 +332,22 @@ ciphertext, ragged embedding vectors, and the migration lock.
   case needs the external vector index R-TECH-01 named.
 - SKU lookup fails at every fusion weight. Exact-identifier search needs its own
   tool, not semantic retrieval.
-- No streaming. FR-CHAT-02 needs SSE, which `wp_remote_post` cannot do — it
-  needs raw cURL with a write callback.
+- **No streaming — FR-CHAT-02 is unmet.** The widget uses the buffered path
+  everywhere, not only on the hosts the requirement's fallback clause is for.
+  SSE needs raw cURL with a write callback, which `wp_remote_post` cannot do, and
+  a streaming variant of the provider interface. This is the largest remaining
+  hole in the chat surface.
 - No failover execution. `ModelPolicy::fallback()` resolves a target; nothing
   calls it yet.
 - `Pro\Licence` is a **stub** — local option, no remote validation, no grace
   period. Not a security boundary; must not ship as-is.
-- No chat surface. The admin app, the REST API (18 routes), and the agent
-  framework all exist, but nothing has run an agent against a real model — the
-  suite drives a scripted provider.
+- **The storefront chat surface exists** (21 REST routes now) and has been driven
+  end to end in a real browser — mount, keyboard open, a full turn, Markdown
+  rendering, resume across a page load, dark mode, mobile. That run used a
+  scripted provider registered from a temporary mu-plugin, because no API key was
+  configured. **No agent has yet answered a customer from a real model on the
+  storefront.**
 - The admin app has been verified in a real browser (Playwright: all six
-  screens, both themes, mobile, and a settings write round-trip). It has never
-  been seen with a *populated* inbox or a live conversation, because no agent
-  has run for real.
+  screens, both themes, mobile, and a settings write round-trip). It has still
+  never been seen with a *populated* inbox against live traffic.
 - Model IDs and pricing are point-in-time (verified 2026-06-24) and will drift.

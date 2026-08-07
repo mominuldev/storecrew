@@ -14,6 +14,98 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**The storefront chat surface** — 2026-08-07
+
+The first customer-facing surface in the product. Everything before this could
+answer a question; nothing could be asked one.
+
+- `src/Chat/ChatService.php` — the path from a typed message to a persisted
+  answer. History is rebuilt from the database on every turn and never read from
+  the request: a client that could supply its own transcript could plant an
+  assistant turn saying identity had been verified.
+- `src/Api/Rest/Controllers/ChatController.php` — four public routes
+  (`/chat/boot`, `/chat/session`, `/chat/{uuid}/messages`, `/chat/{uuid}/close`),
+  the only unauthenticated routes in the plugin. **The uuid is an address, not a
+  credential** — reading or writing a conversation requires a session token the
+  server issued, and an unknown uuid and an unowned one return the same 404 so
+  the API cannot confirm that a given conversation exists.
+- `src/Chat/Session.php` — only a `sha256` digest of the token is stored, so a
+  dump of the conversations table hands an attacker nothing they can present.
+- `src/Chat/RateLimiter.php` — fixed windows per session *and* per address
+  (FR-CHAT-06). Either alone is trivially beaten: a session limit by discarding
+  the cookie, an IP limit by putting a school or a mobile carrier's NAT behind
+  one counter. Addresses are stored as the same salted hash the audit log uses.
+- `src/Agent/Tools/IdentityVerifyTool.php` — order number plus the email on that
+  order (FR-SUPPORT-01). The executor already told customers to supply exactly
+  this and nothing received it; `order.lookup` was unreachable from a storefront
+  until now. A wrong email and an unknown order return the *same* sentence —
+  distinguishing them makes an oracle for which order numbers exist — and
+  attempts are capped per conversation.
+- `src/Chat/Widget.php` + `widget-app/` — the widget itself. Vanilla TypeScript
+  in a shadow root, **5.3 KB gzipped** against the 45 KB budget. The page carries
+  a single `async` script tag and the REST root; it carries **no nonce and no
+  conversation state**, because a WooCommerce storefront is page-cached and
+  anything printed into the document is served to the next thousand visitors.
+  Configuration comes from `/chat/boot`, which is not.
+- Shortcode `[storecrew_chat]` and a `storecrew/chat` block (FR-CHAT-07). The
+  block's editor script is hand-written against the `wp.blocks` globals — no
+  build step, and no `@wordpress/*` package enters the dependency tree.
+- Settings gained an **On the storefront** panel: the on-duty switch, launcher
+  and panel wording, accent colour, corner, and floating-versus-manual placement.
+  The switch is disabled until a chat model is set, because a widget that appears
+  and then cannot answer is worse than no widget.
+- `tests/schema/verify-chat.php` — 83 assertions, most of them a guard being
+  deliberately violated.
+
+Verified in a real browser against a scripted provider: mount, keyboard open,
+focus into the box, a full turn, Markdown rendering, conversation surviving a
+page reload, Escape returning focus to the launcher, and the panel going
+full-screen on a phone in dark mode. Two bugs surfaced that no PHP test could
+have (below).
+
+### Fixed
+
+- **A model's most common answer shape rendered as literal hyphens.** The
+  Markdown renderer classified a whole block as either a list or a paragraph, so
+  "Here is what I can tell you:" followed by three dashed lines — which is what
+  models actually produce — fell through to the paragraph branch and printed the
+  dashes. Lines are grouped into runs now.
+- **The chat session cookie is `SameSite=Lax`, not `Strict`**, so a customer
+  arriving from an order-confirmation email is still recognised.
+- `ConversationRepository::escalate()` added, distinct from
+  `close( STATUS_ESCALATED )`. Escalation is a request for help *during* a
+  conversation; stamping `closed_at` would have taken the thread out of the
+  customer's hands at the exact moment it got difficult.
+
+### Changed
+
+- The support agent declares `identity.verify`, and its guardrail now names the
+  tool rather than asking the model to "confirm" identity conversationally.
+- `SettingsController` reads and writes the chat settings block.
+
+### Security
+
+- Retrieved and generated text reaches the DOM through `document.createTextNode`
+  and `createElement` only. Nothing in the widget ever assigns `innerHTML` — the
+  text being rendered was written by a model that has been reading indexed
+  product descriptions and customer reviews all along. Bare URLs become links
+  only after the parsed scheme is checked, and carry
+  `rel="noopener noreferrer nofollow"`.
+- A live provider failure during the browser run proved FR-CHAT-03 rather than
+  breaking it: the exception was contained, the customer got a sentence, and the
+  conversation was escalated with the reason recorded.
+
+### Known gap
+
+**FR-CHAT-02 (streamed responses) is still unmet.** The widget uses the buffered
+path everywhere, not only on hosts that buffer. Streaming needs SSE, which
+`wp_remote_post` cannot do — it needs raw cURL with a write callback, and a
+streaming variant of the provider interface.
+
+---
+
+### Added
+
 **The admin application** — 2026-08-07
 
 - `src/Core/Admin/AdminPage.php` — the host page. Registers a top-level menu

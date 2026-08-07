@@ -1,0 +1,361 @@
+/*
+ * Widget styles.
+ *
+ * Injected into a shadow root, never into the page. A storefront theme is
+ * entitled to write `button { border-radius: 0 }` and `* { box-sizing: content-box }`
+ * and thousands of them do; a widget that has to out-specify every theme on
+ * WordPress.org loses eventually. The shadow boundary makes that fight
+ * unnecessary in both directions — nothing here escapes onto the merchant's
+ * page either.
+ *
+ * :host carries the tokens so a merchant's accent colour is one custom property
+ * set from JavaScript rather than a stylesheet rebuilt per store.
+ */
+
+:host {
+  --scr-accent: #111827;
+  --scr-accent-ink: #ffffff;
+  --scr-surface: #ffffff;
+  --scr-raised: #f6f7f9;
+  --scr-ink: #16191f;
+  --scr-muted: #5b6472;
+  --scr-line: #e2e5ea;
+  --scr-radius: 14px;
+  --scr-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  --scr-font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* Every inherited property the theme could have set is re-stated rather than
+     reset with `all: initial`, which would also flatten the host to an inline
+     box and break the inline placement's layout. */
+  display: block;
+  font-family: var(--scr-font);
+  font-size: 16px;
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: normal;
+  text-transform: none;
+  text-align: start;
+  color: var(--scr-ink);
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :host {
+    --scr-surface: #16181d;
+    --scr-raised: #22252c;
+    --scr-ink: #e8eaed;
+    --scr-muted: #a2a9b4;
+    --scr-line: #31353d;
+    --scr-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+  margin: 0;
+}
+
+/* Focus is never removed, only restyled. A keyboard user who cannot see where
+   they are cannot use this at all. */
+:focus-visible {
+  outline: 2px solid var(--scr-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.scr-launcher {
+  position: fixed;
+  bottom: 20px;
+  inset-inline-end: 20px;
+  z-index: 2147483000;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--scr-accent);
+  color: var(--scr-accent-ink);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  box-shadow: var(--scr-shadow);
+  transition: transform 0.15s ease;
+}
+
+.scr-launcher[data-position='left'] {
+  inset-inline-end: auto;
+  inset-inline-start: 20px;
+}
+
+.scr-launcher:hover {
+  transform: translateY(-1px);
+}
+
+.scr-panel {
+  position: fixed;
+  bottom: 84px;
+  inset-inline-end: 20px;
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  height: 560px;
+  max-height: calc(100vh - 120px);
+  background: var(--scr-surface);
+  border: 1px solid var(--scr-line);
+  border-radius: var(--scr-radius);
+  box-shadow: var(--scr-shadow);
+  overflow: hidden;
+}
+
+.scr-panel[data-position='left'] {
+  inset-inline-end: auto;
+  inset-inline-start: 20px;
+}
+
+/* Inline placement — shortcode and block. Not fixed, not a dialog, and it
+   inherits the width of whatever column the merchant dropped it into. */
+.scr-panel[data-mode='inline'] {
+  position: static;
+  width: 100%;
+  max-width: none;
+  height: 520px;
+  max-height: none;
+  box-shadow: none;
+}
+
+@media (max-width: 480px) {
+  .scr-panel[data-mode='floating'] {
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+    border: 0;
+  }
+}
+
+.scr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--scr-line);
+  background: var(--scr-raised);
+}
+
+.scr-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.scr-agent {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--scr-muted);
+}
+
+.scr-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -8px -8px -8px 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--scr-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.scr-close:hover {
+  background: var(--scr-line);
+  color: var(--scr-ink);
+}
+
+.scr-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scr-msg {
+  max-width: 85%;
+  padding: 10px 13px;
+  border-radius: var(--scr-radius);
+  font-size: 14.5px;
+  overflow-wrap: anywhere;
+}
+
+.scr-msg p {
+  margin: 0 0 0.6em;
+}
+
+.scr-msg p:last-child {
+  margin-bottom: 0;
+}
+
+.scr-msg ul {
+  margin: 0.2em 0 0.6em;
+  padding-inline-start: 1.1em;
+}
+
+.scr-msg a {
+  color: inherit;
+  text-underline-offset: 2px;
+}
+
+.scr-msg[data-role='assistant'] {
+  align-self: flex-start;
+  background: var(--scr-raised);
+  border-end-start-radius: 4px;
+}
+
+.scr-msg[data-role='user'] {
+  align-self: flex-end;
+  background: var(--scr-accent);
+  color: var(--scr-accent-ink);
+  border-end-end-radius: 4px;
+}
+
+.scr-note {
+  align-self: center;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--scr-raised);
+  color: var(--scr-muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.scr-typing {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.scr-typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--scr-muted);
+  animation: scr-bounce 1.2s infinite ease-in-out;
+}
+
+.scr-typing i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.scr-typing i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes scr-bounce {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+.scr-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--scr-line);
+  background: var(--scr-surface);
+}
+
+.scr-input {
+  flex: 1;
+  min-height: 44px;
+  max-height: 120px;
+  padding: 11px 12px;
+  border: 1px solid var(--scr-line);
+  border-radius: 10px;
+  background: var(--scr-surface);
+  font-size: 15px;
+  resize: none;
+}
+
+.scr-input::placeholder {
+  color: var(--scr-muted);
+}
+
+.scr-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--scr-accent);
+  color: var(--scr-accent-ink);
+  cursor: pointer;
+}
+
+.scr-send[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.scr-count {
+  padding: 0 12px 10px;
+  font-size: 12px;
+  color: var(--scr-muted);
+  text-align: end;
+}
+
+.scr-hidden {
+  display: none !important;
+}
+
+/* A visually hidden live region. Screen readers announce arriving answers even
+   when the log is scrolled away from the newest message. */
+.scr-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scr-launcher,
+  .scr-typing i {
+    transition: none;
+    animation: none;
+  }
+}

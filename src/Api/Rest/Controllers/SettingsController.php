@@ -14,6 +14,7 @@ use StoreCrew\Ai\Pricing;
 use StoreCrew\Ai\SpendGuard;
 use StoreCrew\Api\Registry\ProviderRegistry;
 use StoreCrew\Api\Rest\RestController;
+use StoreCrew\Chat\ChatSettings;
 use StoreCrew\Core\Capabilities\Capabilities;
 use StoreCrew\Database\Repositories\AuditLogRepository;
 use StoreCrew\Licensing\FeatureGate;
@@ -72,6 +73,7 @@ final class SettingsController extends RestController {
 				),
 				'canEmbed'      => $this->providers->can_embed(),
 				'tasks'         => ModelPolicy::tasks(),
+				'chat'          => ChatSettings::all(),
 			)
 		);
 	}
@@ -103,6 +105,10 @@ final class SettingsController extends RestController {
 			}
 
 			$this->spend->set_cap( max( 0, $cap ), $behaviour );
+		}
+
+		if ( isset( $body['chat'] ) && is_array( $body['chat'] ) ) {
+			ChatSettings::save( $body['chat'] );
 		}
 
 		$this->audit->record(

@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite build --watch --mode development",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && vite build --config vite.widget.config.ts",
+    "build:admin": "vite build",
+    "build:widget": "vite build --config vite.widget.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
