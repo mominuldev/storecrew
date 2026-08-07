@@ -10,6 +10,7 @@ declare( strict_types=1 );
 namespace StoreCrew\Api;
 
 use StoreCrew\Api\Registry\AdminRouteRegistry;
+use StoreCrew\Api\Registry\ExtractorRegistry;
 use StoreCrew\Api\Registry\FeatureRegistry;
 use StoreCrew\Api\Registry\ProviderRegistry;
 use StoreCrew\Core\Container\Container;
@@ -41,6 +42,7 @@ final class ExtensionApi {
 		private readonly FeatureRegistry $features,
 		private readonly AdminRouteRegistry $admin_routes,
 		private readonly ProviderRegistry $providers,
+		private readonly ExtractorRegistry $extractors,
 	) {}
 
 	/**
@@ -78,6 +80,13 @@ final class ExtensionApi {
 	 */
 	public function providers(): ProviderRegistry {
 		return $this->providers;
+	}
+
+	/**
+	 * Registry of knowledge-base extractors.
+	 */
+	public function extractors(): ExtractorRegistry {
+		return $this->extractors;
 	}
 
 	/**
@@ -132,6 +141,13 @@ final class ExtensionApi {
 		 * @param ProviderRegistry $providers The provider registry.
 		 */
 		apply_filters( 'storecrew_register_providers', $this->providers );
+
+		/**
+		 * Contribute knowledge-base extractors.
+		 *
+		 * @param ExtractorRegistry $extractors The extractor registry.
+		 */
+		apply_filters( 'storecrew_register_extractors', $this->extractors );
 	}
 
 	/**
@@ -141,6 +157,7 @@ final class ExtensionApi {
 		$this->features->freeze();
 		$this->admin_routes->freeze();
 		$this->providers->freeze();
+		$this->extractors->freeze();
 
 		/**
 		 * Fires after every registry has been frozen.
@@ -165,6 +182,7 @@ final class ExtensionApi {
 			'features'     => $this->features,
 			'admin_routes' => $this->admin_routes,
 			'providers'    => $this->providers,
+			'extractors'   => $this->extractors,
 		);
 
 		foreach ( $registries as $key => $registry ) {

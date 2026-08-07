@@ -20,8 +20,14 @@ use StoreCrew\Ai\SpendGuard;
 use StoreCrew\Api\ExtensionApi;
 use StoreCrew\Api\Feature;
 use StoreCrew\Api\Registry\AdminRouteRegistry;
+use StoreCrew\Api\Registry\ExtractorRegistry;
 use StoreCrew\Api\Registry\FeatureRegistry;
 use StoreCrew\Api\Registry\ProviderRegistry;
+use StoreCrew\Knowledge\Chunker;
+use StoreCrew\Knowledge\Extractor\PostExtractor;
+use StoreCrew\Knowledge\Extractor\ProductExtractor;
+use StoreCrew\Knowledge\Indexer;
+use StoreCrew\Knowledge\Retriever;
 use StoreCrew\Security\SecretStore;
 use StoreCrew\Core\Container\Container;
 use StoreCrew\Database\MigrationInterface;
@@ -98,6 +104,7 @@ final class Plugin {
 		$this->register_services();
 		$this->register_core_features();
 		$this->register_core_providers();
+		$this->register_core_extractors();
 
 		$this->api = $this->container->get( ExtensionApi::class );
 
@@ -108,6 +115,8 @@ final class Plugin {
 		add_action( 'plugins_loaded', array( $this->api, 'freeze' ), 20 );
 
 		add_action( 'init', array( $this, 'load_textdomain' ) );
+
+		$this->register_reindex_hooks();
 
 		// Schema reconciliation runs here rather than on activation: a fatal
 		// mid-migration during activation leaves a site with no way to retry,
@@ -179,6 +188,40 @@ final class Plugin {
 		$this->container->set(
 			ProviderRegistry::class,
 			static fn (): ProviderRegistry => new ProviderRegistry()
+		);
+
+		$this->container->set(
+			ExtractorRegistry::class,
+			static fn (): ExtractorRegistry => new ExtractorRegistry()
+		);
+
+		$this->container->set(
+			Chunker::class,
+			static fn (): Chunker => new Chunker()
+		);
+
+		$this->container->set(
+			Indexer::class,
+			static fn ( Container $c ): Indexer => new Indexer(
+				$c->get( ExtractorRegistry::class ),
+				$c->get( ProviderRegistry::class ),
+				$c->get( ModelPolicy::class ),
+				$c->get( Chunker::class ),
+				$c->get( KnowledgeSourceRepository::class ),
+				$c->get( KnowledgeChunkRepository::class ),
+				$c->get( UsageRepository::class ),
+				$c->get( SpendGuard::class )
+			)
+		);
+
+		$this->container->set(
+			Retriever::class,
+			static fn ( Container $c ): Retriever => new Retriever(
+				$c->get( ProviderRegistry::class ),
+				$c->get( ModelPolicy::class ),
+				$c->get( KnowledgeChunkRepository::class ),
+				$c->get( KnowledgeSourceRepository::class )
+			)
 		);
 
 		$this->container->set(
@@ -273,7 +316,8 @@ final class Plugin {
 				$c,
 				$c->get( FeatureRegistry::class ),
 				$c->get( AdminRouteRegistry::class ),
-				$c->get( ProviderRegistry::class )
+				$c->get( ProviderRegistry::class ),
+				$c->get( ExtractorRegistry::class )
 			)
 		);
 	}
@@ -348,6 +392,81 @@ final class Plugin {
 		$registry->register( new GeminiProvider( $secrets, $http ) );
 		$registry->register( new OpenRouterProvider( $secrets, $http ) );
 		$registry->register( new DeepSeekProvider( $secrets, $http ) );
+	}
+
+	/**
+	 * Register the knowledge-base extractors this plugin ships.
+	 */
+	private function register_core_extractors(): void {
+		$registry = $this->container->get( ExtractorRegistry::class );
+
+		$registry->register( new ProductExtractor() );
+		$registry->register( new PostExtractor() );
+	}
+
+	/**
+	 * Keep the index current as content changes.
+	 *
+	 * FR-KB-07 requires incremental re-indexing — a single product edit must
+	 * never force a full rebuild. The work is queued rather than done inline:
+	 * embedding on a save_post request would make the merchant's editor wait on
+	 * a provider round trip, and a bulk edit would make it wait on hundreds.
+	 */
+	private function register_reindex_hooks(): void {
+		$queue = static function ( int $object_id, string $source_type ): void {
+			if ( wp_is_post_revision( $object_id ) || wp_is_post_autosave( $object_id ) ) {
+				return;
+			}
+
+			/**
+			 * Fires when an object needs re-indexing.
+			 *
+			 * @param string $source_type Extractor source type.
+			 * @param int    $object_id   Object id.
+			 */
+			do_action( 'storecrew_queue_reindex', $source_type, $object_id );
+		};
+
+		add_action(
+			'woocommerce_update_product',
+			static fn ( $id ) => $queue( (int) $id, ProductExtractor::SOURCE_TYPE )
+		);
+
+		add_action(
+			'woocommerce_new_product',
+			static fn ( $id ) => $queue( (int) $id, ProductExtractor::SOURCE_TYPE )
+		);
+
+		add_action(
+			'save_post',
+			static function ( $id, $post ) use ( $queue ): void {
+				if ( $post instanceof \WP_Post && in_array( $post->post_type, array( 'page', 'post' ), true ) ) {
+					$queue( (int) $id, PostExtractor::SOURCE_TYPE );
+				}
+			},
+			10,
+			2
+		);
+
+		// Deletions must drop the source immediately. A retrievable chunk for a
+		// deleted product is worse than a stale one — the agent would recommend
+		// something that no longer exists.
+		add_action(
+			'before_delete_post',
+			function ( $id, $post ): void {
+				if ( ! $post instanceof \WP_Post ) {
+					return;
+				}
+
+				$type = 'product' === $post->post_type
+					? ProductExtractor::SOURCE_TYPE
+					: PostExtractor::SOURCE_TYPE;
+
+				$this->container->get( Indexer::class )->forget( $type, (int) $id );
+			},
+			10,
+			2
+		);
 	}
 
 	/**
