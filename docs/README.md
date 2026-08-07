@@ -147,10 +147,18 @@ exit criteria. Findings and outcomes:
 | 11 | [UI/UX Wireframes](11-wireframes.md) | ✅ Draft complete — as-built |
 | 10 | [SaaS Subscription Architecture](10-saas-subscription.md) | ✅ Draft complete — **design ahead of code**; consumes strategy D1–D5 |
 
-**Gate 4:** 🟡 All drafts complete — **next to review** (Gate 3 approved). 06 and 11
-document built, browser-verified surfaces; 10 is the one forward-looking
-design in the set and says so, with its build order and the ship-blocking
-licence-stub replacement called out.
+**Gate 4:** 🔴 **Review run 2026-08-07 — not approvable as written.** Three
+verification passes found no security defect (the widget's no-`innerHTML`
+rule, link hardening, the admin nonce, and server-side entitlement re-checks
+all hold), but six code findings and three specification defects. The
+recurring shape is here a fourth time: the feature `catalog` is computed on
+every `/bootstrap` and read by no component — and `CrewBar` hardcodes
+premium agents and their copy in its place. 11 § 3's Inbox and Overview
+wireframes describe screens that were then built differently. 10's
+entitlement keys match **no** registered slug, which would silently degrade
+a paying customer, since an unknown slug evaluates as not-entitled. Four
+decisions await the product owner. Findings:
+[reviews/gate-4-review.md](reviews/gate-4-review.md).
 
 ### Gate 5 — Engineering Readiness
 | # | Document | Status |
