@@ -214,9 +214,11 @@ export class ChatApi {
     }
 
     // Sent so a signed-in customer is recognised as one. WordPress treats a
-    // cookie-authenticated REST request without a nonce as anonymous, which is
-    // a degradation rather than a failure — so a stale nonce from a cached page
-    // costs personalisation, never the conversation.
+    // cookie-authenticated REST request without a nonce as anonymous — a
+    // degradation — but a present-and-wrong nonce is a 403 before any route
+    // callback runs. boot() therefore mints the nonce for the user the login
+    // cookie proves; if it ever goes stale mid-session (expiry, login state
+    // changed in another tab), every call fails until the page is reloaded.
     if (this.nonce) {
       headers['X-WP-Nonce'] = this.nonce;
     }

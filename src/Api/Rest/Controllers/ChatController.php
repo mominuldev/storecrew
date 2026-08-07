@@ -39,8 +39,12 @@ defined( 'ABSPATH' ) || exit;
  * The nonce is deliberately not a gate. WordPress treats a cookie-authenticated
  * REST request with no nonce as anonymous, so a nonce here would be the
  * difference between a signed-in customer being recognised and being treated as
- * a guest — useful, and supplied by the widget, but a stale one from a cached
- * page must degrade to "guest", never to "refused".
+ * a guest. But absent and wrong are not the same thing: a request that carries
+ * the login cookie *and* a nonce minted for a different identity is refused
+ * outright (403 rest_cookie_invalid_nonce), before any route callback runs.
+ * That is why boot() must mint its nonce for the user the cookie proves — the
+ * boot request itself arrives nonce-less and is demoted to anonymous, and a
+ * user-0 nonce handed to a signed-in browser kills every call that follows.
  *
  * @see docs/01-prd.md FR-CHAT-01 … FR-CHAT-07
  */
@@ -156,7 +160,7 @@ final class ChatController extends RestController {
 		$payload = array(
 			'enabled'      => (bool) $settings['enabled'] && $this->features->enabled( self::FEATURE ),
 			'ready'        => $ready,
-			'nonce'        => wp_create_nonce( 'wp_rest' ),
+			'nonce'        => $this->rest_nonce(),
 			'maxChars'     => ChatService::MAX_MESSAGE_CHARS,
 			'appearance'   => array(
 				'position'    => (string) $settings['position'],
@@ -180,6 +184,32 @@ final class ChatController extends RestController {
 		}
 
 		return $this->ok( $payload );
+	}
+
+	/**
+	 * A nonce the widget's *next* request will actually pass.
+	 *
+	 * The boot request carries no nonce, so for a signed-in visitor core
+	 * demotes it to anonymous before this code runs. A nonce minted as user 0
+	 * is then rejected on every later call — those arrive with the same login
+	 * cookie and are verified as the signed-in user, and WordPress answers a
+	 * present-but-wrong nonce with a 403, not with "guest". Mint it as the
+	 * user the cookie proves; the session token half of the hash comes from
+	 * the cookie either way, so only the user id needs correcting.
+	 */
+	private function rest_nonce(): string {
+		$cookie_user = (int) wp_validate_auth_cookie( '', 'logged_in' );
+
+		if ( $cookie_user > 0 && get_current_user_id() !== $cookie_user ) {
+			$restore = get_current_user_id();
+			wp_set_current_user( $cookie_user );
+			$nonce = wp_create_nonce( 'wp_rest' );
+			wp_set_current_user( $restore );
+
+			return $nonce;
+		}
+
+		return wp_create_nonce( 'wp_rest' );
 	}
 
 	/**

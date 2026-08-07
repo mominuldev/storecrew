@@ -185,6 +185,38 @@ $t(
 );
 $t( 'boot never carries a session token', ! array_key_exists( 'token', $boot ) );
 
+// A signed-in visitor's boot arrives with the login cookie but no nonce, so
+// core demotes it to anonymous before the handler runs. The nonce boot mints
+// must still verify as the *signed-in* user — the follow-up POSTs carry the
+// same cookie and are verified as that user, and WordPress answers a
+// present-but-wrong nonce with a 403 before any route callback runs. Minting
+// as user 0 here made the widget dead for every logged-in merchant.
+$session_manager = WP_Session_Tokens::get_instance( $was_user );
+$session_expiry  = time() + 300;
+$session_token   = $session_manager->create( $session_expiry );
+
+$_COOKIE[ LOGGED_IN_COOKIE ] = wp_generate_auth_cookie( $was_user, $session_expiry, 'logged_in', $session_token );
+
+$response   = $server->dispatch( new WP_REST_Request( 'GET', '/storecrew/v1/chat/boot' ) );
+$boot_nonce = (string) ( ( (array) ( $response->get_data()['data'] ?? array() ) )['nonce'] ?? '' );
+
+$t(
+	'minting the nonce does not leak the signed-in user into the rest of boot',
+	0 === get_current_user_id(),
+	(string) get_current_user_id()
+);
+
+wp_set_current_user( $was_user );
+$t(
+	'PROBE: the boot nonce verifies for the user the login cookie proves, not for user 0',
+	false !== wp_verify_nonce( $boot_nonce, 'wp_rest' ),
+	'nonce minted while demoted to anonymous is refused on every later call'
+);
+wp_set_current_user( 0 );
+
+unset( $_COOKIE[ LOGGED_IN_COOKIE ] );
+$session_manager->destroy( $session_token );
+
 $response = $server->dispatch( new WP_REST_Request( 'POST', '/storecrew/v1/chat/session' ) );
 $t(
 	'PROBE: no conversation is opened while chat is switched off',
