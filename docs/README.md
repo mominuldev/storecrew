@@ -132,11 +132,22 @@ licence-stub replacement called out.
 ### Gate 5 — Engineering Readiness
 | # | Document | Status |
 |---|---|---|
-| 12 | [Security Architecture](12-security-architecture.md) | ⬜ Not started |
-| 13 | [Scalability Plan](13-scalability-plan.md) | ⬜ Not started |
-| 14 | [Development Milestone Plan](14-milestone-plan.md) | ⬜ Not started |
+| 12 | [Security Architecture](12-security-architecture.md) | ✅ Draft complete — threat-model-ordered, probe-referenced |
+| 13 | [Scalability Plan](13-scalability-plan.md) | ✅ Draft complete — measured numbers, named cliffs |
+| 14 | [Development Milestone Plan](14-milestone-plan.md) | ✅ Draft complete — exit-criteria-gated, no dates |
 
-**Gate 5:** ⬜ Blocked by Gate 4
+**Gate 5:** 🟡 All drafts complete — awaiting review (after Gate 4).
+
+---
+
+## All fifteen deliverables are drafted (2026-08-07)
+
+The set was completed *after* most of the system was built, and the documents
+say so where it matters: 03–09, 06, 11–13 describe verified reality and record
+where implementation amended intent; 10 designs ahead of code and opens by
+saying so; 02 § 9 carries the ten decisions (D1–D10) Gate 1 must ratify.
+Review proceeds in gate order; a decision at an earlier gate that changes a
+later document is applied as an edit with requirement IDs preserved.
 
 ---
 

@@ -36,9 +36,12 @@ Documents come before code. `docs/README.md` is the index and tracks gate
 status. Requirement IDs (`FR-KB-08`, `R-TECH-03`, …) are **permanent** — code
 and commits reference them, so never renumber.
 
-Written so far: `01-prd.md`, `04-database-schema.md`,
-`15-free-premium-split.md`. Still unwritten: 02 (Product Strategy), 03
-(Technical Architecture), 05 (REST API Spec), 06–14.
+**All fifteen deliverables are drafted** (2026-08-07). Most document the
+built system and record where implementation amended intent; 10 (SaaS
+Subscription) is the one design ahead of code. Gate reviews are pending in
+order; 02 § 9 carries the ten decisions (D1–D10) awaiting the product owner.
+A code change that alters documented behaviour edits the document in the
+same change-set.
 
 Deliverable 15 is numbered out of sequence deliberately — it was added after
 the original 14 and appending beat renumbering every cross-reference.
