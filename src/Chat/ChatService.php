@@ -338,15 +338,21 @@ final class ChatService {
 			'text'
 		);
 
-		$this->conversations->escalate( $conversation_id );
+		// True only when the status actually transitioned — an already
+		// escalated conversation failing again is the same problem, not a
+		// new one, and must not ring the doorbell twice.
+		$transitioned = $this->conversations->escalate( $conversation_id );
 
 		/**
 		 * Fires when a conversation needs a human.
 		 *
 		 * @param int       $conversation_id Conversation.
 		 * @param AgentTurn $turn            The turn that triggered it.
+		 * @param bool      $transitioned    True on the open → escalated
+		 *                                   transition; false on every
+		 *                                   further troubled turn.
 		 */
-		do_action( 'storecrew_conversation_escalated', $conversation_id, $turn );
+		do_action( 'storecrew_conversation_escalated', $conversation_id, $turn, $transitioned );
 	}
 
 	/**

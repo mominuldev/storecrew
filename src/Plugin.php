@@ -54,6 +54,7 @@ use StoreCrew\Knowledge\Jobs\ReindexJob;
 use StoreCrew\Knowledge\Retriever;
 use StoreCrew\Security\SecretStore;
 use StoreCrew\Chat\ChatService;
+use StoreCrew\Chat\EscalationNotifier;
 use StoreCrew\Chat\Widget;
 use StoreCrew\Core\Admin\AdminPage;
 use StoreCrew\Core\Container\Container;
@@ -383,6 +384,13 @@ final class Plugin {
 			static fn ( Container $c ): ReindexJob => new ReindexJob(
 				$c->get( Indexer::class ),
 				$c->get( Scheduler::class )
+			)
+		);
+
+		$this->container->set(
+			EscalationNotifier::class,
+			static fn ( Container $c ): EscalationNotifier => new EscalationNotifier(
+				$c->get( ConversationRepository::class )
 			)
 		);
 
@@ -761,6 +769,20 @@ final class Plugin {
 
 		// The kernel's save hooks emit this; the reindex job consumes it.
 		add_action( 'storecrew_queue_reindex', $lazy( ReindexJob::class, 'queue' ), 10, 2 );
+
+		// The escalation doorbell (FR-SUPPORT-07's push half). Lazy like every
+		// other deferred consumer, and gated on the transition flag so one
+		// escalation is one email however many turns fail after it.
+		add_action(
+			'storecrew_conversation_escalated',
+			static function ( $conversation_id, $turn, $transitioned = false ) use ( $container ): void {
+				if ( true === $transitioned && $turn instanceof \StoreCrew\Agent\AgentTurn ) {
+					$container->get( EscalationNotifier::class )->notify( (int) $conversation_id, $turn );
+				}
+			},
+			10,
+			3
+		);
 
 		// Scheduling the recurring sweep belongs on an admin request, not on
 		// every storefront hit.

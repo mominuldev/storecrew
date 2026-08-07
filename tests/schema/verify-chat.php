@@ -440,6 +440,17 @@ $t( 'a cleared session starts with a full allowance', $fresh->remaining( $owner_
 
 echo "\n== Escalation (FR-SUPPORT-07) ==\n";
 
+// Capture the doorbell email without sending anything. pre_wp_mail
+// short-circuits core's mailer entirely — a suite must no more send real
+// email than make a live model call.
+$sent_mail = array();
+$catch_mail = static function ( $short_circuit, $atts ) use ( &$sent_mail ) {
+	$sent_mail[] = $atts;
+
+	return true;
+};
+add_filter( 'pre_wp_mail', $catch_mail, 10, 2 );
+
 $scripted->calls  = 0;
 $scripted->script = array( new ProviderException( 'upstream is down', 503 ) );
 
@@ -469,6 +480,29 @@ $t(
 	'PROBE: the operator note is never shown to the customer',
 	! str_contains( wp_json_encode( $chat->public_history( (int) $conversation->id ) ), 'Escalated:' )
 );
+
+$t( 'the merchant is emailed', 1 === count( $sent_mail ), (string) count( $sent_mail ) );
+$t(
+	'to the admin address',
+	( $sent_mail[0]['to'] ?? '' ) === get_option( 'admin_email' ),
+	(string) ( $sent_mail[0]['to'] ?? '' )
+);
+$t(
+	'the email links into the inspector, not at the transcript',
+	str_contains( (string) ( $sent_mail[0]['message'] ?? '' ), 'page=storecrew#/conversation/' . $uuid )
+);
+$t(
+	'PROBE: the customer\'s words are not forwarded by mail',
+	! str_contains( (string) ( $sent_mail[0]['message'] ?? '' ), 'anyone there' )
+);
+
+// A second failing turn while already escalated: same problem, no new email.
+$scripted->calls  = 0;
+$scripted->script = array( new ProviderException( 'still down', 503 ) );
+$controller->send( $request( 'POST', array( 'uuid' => $uuid, 'message' => 'hello?' ), $owner_token ) );
+$t( 'PROBE: a further failed turn does not ring the doorbell again', 1 === count( $sent_mail ), (string) count( $sent_mail ) );
+
+remove_filter( 'pre_wp_mail', $catch_mail, 10 );
 
 $scripted->script = array();
 $result = $controller->send( $request( 'POST', array( 'uuid' => $uuid, 'message' => 'still here?' ), $owner_token ) );

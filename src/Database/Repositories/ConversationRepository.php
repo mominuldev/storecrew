@@ -259,7 +259,7 @@ final class ConversationRepository extends Repository {
 		$table = $this->table_name();
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
-		return false !== $this->db->query(
+		$affected = $this->db->query(
 			$this->db->prepare(
 				"UPDATE {$table} SET status = %s, escalated_at = %s WHERE id = %d AND status = %s",
 				self::STATUS_ESCALATED,
@@ -268,6 +268,11 @@ final class ConversationRepository extends Repository {
 				self::STATUS_OPEN
 			)
 		);
+
+		// True only when a row actually transitioned. An already-escalated
+		// conversation returns false, which is what lets the notifier email
+		// once per escalation rather than once per failed turn.
+		return false !== $affected && (int) $affected > 0;
 	}
 
 	/**
