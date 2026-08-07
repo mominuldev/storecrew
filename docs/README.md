@@ -120,11 +120,14 @@ gaps (streaming, failover execution) rather than leaving them implicit.
 ### Gate 4 — Application, UX & Commercial
 | # | Document | Status |
 |---|---|---|
-| 6 | [React Application Structure](06-react-app-structure.md) | ⬜ Not started |
-| 11 | [UI/UX Wireframes](11-wireframes.md) | ⬜ Not started |
-| 10 | [SaaS Subscription Architecture](10-saas-subscription.md) | ⬜ Not started |
+| 6 | [React Application Structure](06-react-app-structure.md) | ✅ Draft complete |
+| 11 | [UI/UX Wireframes](11-wireframes.md) | ✅ Draft complete — as-built |
+| 10 | [SaaS Subscription Architecture](10-saas-subscription.md) | ✅ Draft complete — **design ahead of code**; consumes strategy D1–D5 |
 
-**Gate 4:** ⬜ Blocked by Gate 3
+**Gate 4:** 🟡 All drafts complete — awaiting review (after Gate 3). 06 and 11
+document built, browser-verified surfaces; 10 is the one forward-looking
+design in the set and says so, with its build order and the ship-blocking
+licence-stub replacement called out.
 
 ### Gate 5 — Engineering Readiness
 | # | Document | Status |
