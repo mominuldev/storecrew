@@ -2,9 +2,9 @@
 
 **Product:** StoreCrew AI — The AI Employee Platform for WooCommerce
 **Owner:** Decent Themes
-**Status:** Draft complete — awaiting Gate 1 review
-**Version:** 0.1
-**Date:** 2026-08-07
+**Status:** Gate 1 approved — § 13 open questions resolved by 02 § 9 (D1–D10)
+**Version:** 1.0
+**Date:** 2026-08-07 (ratified 2026-08-07)
 
 ---
 
@@ -425,11 +425,20 @@ A3 and A4 are **material architectural risks** and must be resolved by spike bef
 
 ## 13. Open Questions for Gate 1 Review
 
+**All resolved at the Gate 1 review, 2026-08-07** — decisions recorded in
+[02-product-strategy.md](02-product-strategy.md) § 9. Kept here with their
+resolutions because downstream documents cite these by number.
+
 1. **Free tier shape** — is 100 conversations/month the right meter, or should it be indexed documents, or agent count? The meter chosen determines the entire usage-tracking schema.
+   **Resolved (D1):** conversations, 100/month, as FR-LIC-02 states — the number is tunable configuration, not a promise.
 2. **BYO key vs hosted proxy** — is a Decent Themes-operated inference proxy on the Phase 3 roadmap? This decides whether SaaS billing infrastructure is designed now or bolted on later.
+   **Resolved (D8):** design nothing now; decide at Phase 3 with onboarding data. Deliverable 10 sketches the seam only. Tripwire: a flat install curve 90 days post-launch with setup-difficulty reviews pulls the decision forward.
 3. **Agency white-label depth** — reskin only, or full vendor rebrand including the plugin name in the admin menu?
+   **Resolved (D4):** reskin in v1 — logo, colours, product name in SPA and widget. No directory/text-domain/update-source rename.
 4. **Refund autonomy** — FR-SUPPORT-08 forbids automatic refunds in Phase 1. Confirm this is a product decision, not just a caution.
+   **Resolved (D7):** confirmed as a product decision. "Prepares refunds for one-click approval" is a selling line; FR-SUPPORT-08 stands.
 5. **Launch domain** — required to resolve R-BRAND-01.
+   **Resolved (D10):** candidates selected at Gate 5; USPTO/EUIPO Class 9 + 42 trademark search commissioned before Pro launch.
 
 ---
 

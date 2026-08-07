@@ -38,10 +38,11 @@ and commits reference them, so never renumber.
 
 **All fifteen deliverables are drafted** (2026-08-07). Most document the
 built system and record where implementation amended intent; 10 (SaaS
-Subscription) is the one design ahead of code. Gate reviews are pending in
-order; 02 § 9 carries the ten decisions (D1–D10) awaiting the product owner.
-A code change that alters documented behaviour edits the document in the
-same change-set.
+Subscription) is the one design ahead of code. **Gate 1 is approved**
+(2026-08-07): the product owner ratified all ten decisions (D1–D10) as
+recommended — recorded in 02 § 9, resolutions inline in 01 § 13 and 15 § 9.
+Gates 2–5 reviews are pending in order. A code change that alters documented
+behaviour edits the document in the same change-set.
 
 Deliverable 15 is numbered out of sequence deliberately — it was added after
 the original 14 and appending beat renumbering every cross-reference.

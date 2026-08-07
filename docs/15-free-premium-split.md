@@ -1,8 +1,8 @@
 # 15 — Free/Premium Split & Extension API
 
-**Status:** Draft complete — awaiting Gate 1 review
-**Version:** 0.1
-**Date:** 2026-08-07
+**Status:** Gate 1 approved — § 9 open questions resolved by 02 § 9 (D1–D10)
+**Version:** 1.0
+**Date:** 2026-08-07 (ratified 2026-08-07)
 **Implements:** FR-DIST-01 … FR-DIST-12, FR-LIC-03, FR-CORE-10
 
 ---
@@ -219,7 +219,15 @@ Constraints the free plugin must satisfy for directory acceptance:
 
 ## 9. Open Questions for Gate 1 Review
 
+**All resolved at the Gate 1 review, 2026-08-07** — decisions recorded in
+[02-product-strategy.md](02-product-strategy.md) § 9. Kept here with their
+resolutions because downstream documents cite these by number.
+
 1. **Is the Sales agent free?** Currently yes, per the master brief's "Basic Sales Agent" on the free tier. But Sales is the clearest revenue driver — placing it behind Pro would convert harder while making free markedly less compelling. Needs an explicit decision, since it moves code between plugins.
+   **Resolved (D2):** Sales stays free, exactly as built. Sales is the demo; the conversion driver is showing Sales and selling its amplification, not withholding it.
 2. **Does the free tier meter conversations or agents?** PRD open question 1. This determines whether metering lives in free (it must, if free enforces a cap) and how premium lifts the cap.
+   **Resolved (D1):** conversations, 100/month, tunable configuration. Metering lives in free; premium lifts the cap through entitlements (§ 9.2's design stands).
 3. **Single premium plugin, or Pro + Agency as separate add-ons?** Current design is one premium plugin with tiered entitlements. Splitting Agency into a third plugin is possible but triples the release surface.
+   **Resolved (D5):** one premium plugin, tiered entitlements. Revisit only if Agency-only code grows past roughly a third of the premium tree.
 4. **Do third parties get the workflow node API in v1**, or is it premium-internal until stable?
+   **Resolved (D6):** premium-internal. The node API is published once it has survived one minor version unchanged.

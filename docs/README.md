@@ -83,13 +83,14 @@ Mitigation carried into [01-prd.md](01-prd.md) § Risks as **R-BRAND-01**. The l
 ### Gate 1 — Product & Strategy
 | # | Document | Status |
 |---|---|---|
-| 1 | [Product Requirements Document](01-prd.md) | ✅ Draft complete |
-| 15 | [Free/Premium Split & Extension API](15-free-premium-split.md) | ✅ Draft complete |
-| 2 | [Product Strategy](02-product-strategy.md) | ✅ Draft complete |
+| 1 | [Product Requirements Document](01-prd.md) | ✅ Approved (v1.0) |
+| 15 | [Free/Premium Split & Extension API](15-free-premium-split.md) | ✅ Approved (v1.0) |
+| 2 | [Product Strategy](02-product-strategy.md) | ✅ Approved (v1.0) |
 
-**Gate 1:** 🟡 All drafts complete — awaiting review. Deliverable 02 § 9 lists
-the ten decisions (D1–D10) the review must ratify; it consolidates the open
-questions from 01 § 13 and 15 § 9 with recommendations.
+**Gate 1:** ✅ **Approved 2026-08-07.** All ten decisions (D1–D10) ratified as
+recommended, without amendment — recorded in 02 § 9; the open questions in
+01 § 13 and 15 § 9 carry their resolutions inline. No requirement changed:
+D1 confirms FR-LIC-02, D7 confirms FR-SUPPORT-08.
 
 > Deliverable 15 is an addition to the original 14, requested 2026-08-07. It sits in Gate 1 because the freemium split is a commercial packaging decision before it is a technical one — it determines what is sold, and therefore what each plugin may contain.
 
@@ -101,7 +102,7 @@ questions from 01 § 13 and 15 § 9 with recommendations.
 | 5 | [REST API Specification](05-api-specification.md) | ✅ Draft complete |
 | 7 | [Plugin Folder Structure](07-folder-structure.md) | ✅ Draft complete — covers **both** plugin trees |
 
-**Gate 2:** 🟡 All drafts complete — awaiting review (after Gate 1).
+**Gate 2:** 🟡 **Next up** — all drafts complete, Gate 1 approved.
 Deliverables 03/05/07 document the **built and verified** system rather than a
 proposal; each records where implementation experience amended the original
 intent (e.g. the measured retrieval findings in 03 § 6, the two spikes A3/A4
@@ -145,9 +146,9 @@ licence-stub replacement called out.
 The set was completed *after* most of the system was built, and the documents
 say so where it matters: 03–09, 06, 11–13 describe verified reality and record
 where implementation amended intent; 10 designs ahead of code and opens by
-saying so; 02 § 9 carries the ten decisions (D1–D10) Gate 1 must ratify.
-Review proceeds in gate order; a decision at an earlier gate that changes a
-later document is applied as an edit with requirement IDs preserved.
+saying so; 02 § 9 carries the ten decisions (D1–D10), ratified at Gate 1 on
+2026-08-07. Review proceeds in gate order; a decision at an earlier gate that
+changes a later document is applied as an edit with requirement IDs preserved.
 
 ---
 

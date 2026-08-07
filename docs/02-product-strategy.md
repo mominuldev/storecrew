@@ -2,9 +2,9 @@
 
 **Product:** StoreCrew AI — The AI Employee Platform for WooCommerce
 **Owner:** Decent Themes
-**Status:** Draft complete — awaiting Gate 1 review
-**Version:** 0.1
-**Date:** 2026-08-07
+**Status:** Gate 1 approved — D1–D10 ratified as recommended
+**Version:** 1.0
+**Date:** 2026-08-07 (ratified 2026-08-07)
 
 This document turns the PRD's positioning into decisions: who pays, what they
 pay for, how they find the product, and in what order the market is attacked.
@@ -360,7 +360,10 @@ recur, refused for a reason:
 
 ## 9. Gate 1 Decision List
 
-For the review, in one place — approve, amend, or reject each:
+**Ratified at the Gate 1 review, 2026-08-07: all ten decisions approved as
+recommended, without amendment.** The table below is now the record of what
+was decided, not a proposal. The recommendations marked ⚖️ throughout this
+document are therefore settled positions.
 
 | # | Decision | Recommendation | § |
 |---|---|---|---|
@@ -385,6 +388,7 @@ For the review, in one place — approve, amend, or reject each:
 | 15-free-premium-split.md § 2, § 9 (the line, open questions) | 14 Milestone Plan (phase ordering, launch gates) |
 | FR-LIC-02..06, FR-DIST-01..12 | 11 Wireframes (onboarding flow, upsell surfaces) |
 
-Decisions D1–D10, once ratified, are recorded back into this document with
-the gate date, and any that change requirements flow into the PRD as edits
-with their IDs preserved.
+Decisions D1–D10 were ratified 2026-08-07 and are recorded in § 9 with the
+gate date. None changed a requirement — D1 confirms FR-LIC-02 and D7 confirms
+FR-SUPPORT-08 as written — so the PRD edits were limited to marking its § 13
+open questions resolved; every requirement ID is preserved.
