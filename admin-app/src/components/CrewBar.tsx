@@ -1,13 +1,13 @@
-import { Card, Label } from './primitives';
+import { Card, Pill } from './primitives';
 import type { Bootstrap, Health } from '../lib/types';
 
 /**
  * The signature element: a shift board.
  *
- * Each agent is a card with its state carried on a left edge-bar, the way a
- * roster reads by colour down the margin. The merchant's first question every
- * morning is "is the crew working", and this answers it before they read a
- * single number.
+ * Each agent is a card on the roster — a monogram, a name, and a status pill,
+ * with the state repeated on a left edge-bar so a column of cards still reads
+ * by colour down the margin. The merchant's first question every morning is
+ * "is the crew working", and this answers it before they read a single number.
  */
 
 /**
@@ -17,6 +17,12 @@ import type { Bootstrap, Health } from '../lib/types';
  * needing one, which errs toward "needs setup" rather than a false "on duty".
  */
 const INDEX_FREE = new Set(['agent.analytics']);
+
+const monogram = (label: string): string => {
+  const words = label.trim().split(/\s+/);
+
+  return (words.length > 1 ? `${words[0][0]}${words[1][0]}` : label.slice(0, 2)).toUpperCase();
+};
 
 export function CrewBar({ boot, health }: { boot: Bootstrap; health?: Health }) {
   const indexReady = (health?.index.embedded ?? 0) > 0;
@@ -28,12 +34,14 @@ export function CrewBar({ boot, health }: { boot: Bootstrap; health?: Health }) 
   const agents = boot.catalog.filter((f) => f.slug.startsWith('agent.'));
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {agents.map((agent) => {
         const entitled = boot.features[agent.slug] === true;
         // On duty means entitled *and* able to do the job. An agent with no
         // knowledge base is not working, however green its licence is.
         const onDuty = entitled && (INDEX_FREE.has(agent.slug) || indexReady);
+
+        const tone = !entitled ? ('neutral' as const) : onDuty ? ('crew' as const) : ('signal' as const);
 
         const edge = !entitled
           ? 'var(--line)'
@@ -43,24 +51,34 @@ export function CrewBar({ boot, health }: { boot: Bootstrap; health?: Health }) 
 
         const state = !entitled ? 'Not on your plan' : onDuty ? 'On duty' : 'Needs setup';
 
+        const avatar = {
+          crew: { background: 'var(--tint-crew)', color: 'var(--fg-crew)' },
+          signal: { background: 'var(--tint-signal)', color: 'var(--fg-signal)' },
+          neutral: { background: 'var(--tint-neutral)', color: 'var(--text-dim)' },
+        }[tone];
+
         return (
-          <Card key={agent.slug} edge={edge} className="px-4 py-3.5">
-            <div className="flex items-start justify-between gap-2">
+          <Card key={agent.slug} edge={edge} className="flex flex-col px-4 py-4">
+            <div className="flex items-start gap-3">
+              <span className="scr-avatar" style={avatar}>
+                {monogram(agent.label)}
+              </span>
               <div className="min-w-0">
                 <p className="truncate text-[13px] font-semibold">{agent.label}</p>
-                <p className="mt-0.5 truncate text-[12px]" style={{ color: 'var(--text-dim)' }} title={agent.description}>
+                <p
+                  className="mt-0.5 line-clamp-2 text-[12px] leading-snug"
+                  style={{ color: 'var(--text-dim)' }}
+                  title={agent.description}
+                >
                   {agent.description}
                 </p>
               </div>
-              {onDuty ? (
-                <span
-                  className="scr-live mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ background: 'var(--color-crew-500)' }}
-                  aria-hidden
-                />
-              ) : null}
             </div>
-            <Label className="mt-3">{state}</Label>
+            <div className="mt-3.5">
+              <Pill tone={tone} live={onDuty}>
+                {state}
+              </Pill>
+            </div>
           </Card>
         );
       })}

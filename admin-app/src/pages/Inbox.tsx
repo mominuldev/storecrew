@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Approval, ConversationSummary } from '../lib/types';
 import { ArgumentList } from '../components/ArgumentList';
-import { Button, Card, Empty, Label, Section, Spinner } from '../components/primitives';
+import { Button, Card, Empty, IconChip, Label, PageHeader, Section, Spinner } from '../components/primitives';
 
 /**
  * Everything the crew asked permission for.
@@ -53,9 +53,11 @@ export function Inbox() {
 
   return (
     <>
+    <PageHeader title="Inbox" sub="Actions the crew wants approved, and conversations handed to a person." />
+
     <Section title={`Needs you${items.length ? ` (${items.length})` : ''}`}>
       {items.length ? (
-        <div className="grid gap-2">
+        <div className="grid gap-2.5">
           {items.map((item) => {
             const failed = problem?.id === item.id ? problem.message : null;
             // Only the card being decided goes busy — one pending mutation must
@@ -66,21 +68,24 @@ export function Inbox() {
               <Card
                 key={item.id}
                 edge={failed ? 'var(--color-alert-500)' : 'var(--color-signal-500)'}
-                className="px-4 py-3.5"
+                className="px-5 py-4"
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="scr-num text-[13px] font-semibold">{item.toolId}</p>
-                    <div className="mt-2">
-                      <ArgumentList args={item.arguments} />
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <IconChip name="check" tone="signal" />
+                    <div className="min-w-0">
+                      <p className="scr-num text-[13px] font-semibold">{item.toolId}</p>
+                      <div className="mt-2">
+                        <ArgumentList args={item.arguments} />
+                      </div>
+                      <Label className="mt-2.5">Asked {item.createdAt}</Label>
                     </div>
-                    <Label className="mt-2">Asked {item.createdAt}</Label>
                   </div>
                   <div className="flex shrink-0 gap-2">
-                    <Button variant="primary" disabled={busy} onClick={() => decide.mutate({ id: item.id, decision: 'approve' })}>
+                    <Button variant="primary" icon="check" disabled={busy} onClick={() => decide.mutate({ id: item.id, decision: 'approve' })}>
                       Approve
                     </Button>
-                    <Button variant="danger" disabled={busy} onClick={() => decide.mutate({ id: item.id, decision: 'deny' })}>
+                    <Button variant="danger" icon="x" disabled={busy} onClick={() => decide.mutate({ id: item.id, decision: 'deny' })}>
                       Decline
                     </Button>
                   </div>
@@ -91,10 +96,10 @@ export function Inbox() {
                     className="mt-3 flex flex-wrap items-center gap-3 border-t pt-3"
                     style={{ borderColor: 'var(--line)' }}
                   >
-                    <p className="text-[13px]" style={{ color: 'var(--color-alert-500)' }}>
+                    <p className="text-[13px]" style={{ color: 'var(--fg-alert)' }}>
                       {failed}
                     </p>
-                    <Button onClick={refresh}>Refresh the queue</Button>
+                    <Button icon="refresh" onClick={refresh}>Refresh the queue</Button>
                   </div>
                 ) : null}
               </Card>
@@ -103,6 +108,7 @@ export function Inbox() {
         </div>
       ) : (
         <Empty
+          icon="check"
           title="Nothing waiting"
           hint="The crew answers questions on its own. It only asks here before doing something that changes an order."
         />
@@ -114,8 +120,9 @@ export function Inbox() {
         <div className="grid gap-2">
           {escalated.data.map((c) => (
             <Link key={c.uuid} to={`/conversation/${c.uuid}`}>
-              <Card edge="var(--color-alert-500)" className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <div className="min-w-0">
+              <Card edge="var(--color-alert-500)" interactive className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <IconChip name="message" tone="alert" size={30} />
+                <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-medium">
                     {c.identityVerified ? 'Identified customer' : 'Visitor'} · {c.messageCount} messages
                   </p>
@@ -127,7 +134,8 @@ export function Inbox() {
           ))}
         </div>
       ) : (
-        <Card className="px-4 py-3.5">
+        <Card className="flex items-center gap-3 px-4 py-3.5">
+          <IconChip name="users" size={30} />
           <p className="text-[13px]" style={{ color: 'var(--text-dim)' }}>
             No conversation is waiting for a person. When an agent hands one over, it appears here with the reason.
           </p>

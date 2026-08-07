@@ -135,16 +135,20 @@ final class AdminPage {
 	 * Strip the admin chrome that fights a full-viewport application.
 	 *
 	 * Kept minimal and scoped to this page only. A plugin that restyles the
-	 * whole admin is a plugin merchants uninstall.
+	 * whole admin is a plugin merchants uninstall. The admin menu is left
+	 * standing deliberately — a takeover was tried and rejected; the console
+	 * lives beside WordPress, not instead of it.
 	 */
 	public static function inline_reset(): string {
+		// No negative margin on the root: the padding rules above already put
+		// the app flush against the admin menu, and pulling it further left
+		// slides it *under* the menu — invisible behind the menu's background,
+		// but bleeding out as a stray light block below where the menu ends.
 		return '
 			#wpcontent, #wpbody-content { padding: 0 !important; }
 			#wpbody-content { padding-bottom: 0 !important; }
 			#wpfooter { display: none; }
 			.wrap { margin: 0; }
-			#storecrew-root { margin-left: -20px; }
-			@media screen and (max-width: 782px) { #storecrew-root { margin-left: -10px; } }
 		';
 	}
 }

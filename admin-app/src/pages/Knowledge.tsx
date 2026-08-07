@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { IndexStatus, SearchResult } from '../lib/types';
-import { Button, Card, Empty, Label, Section, Spinner, Stat, Problem } from '../components/primitives';
+import { Icon } from '../components/Icon';
+import { Button, Card, Empty, Label, PageHeader, Section, Spinner, Stat, StatCard, Problem } from '../components/primitives';
 
 /**
  * Knowledge is where a merchant answers "why did it say that?".
@@ -40,10 +41,12 @@ export function Knowledge() {
 
   return (
     <>
+      <PageHeader title="Knowledge" sub="What the crew has read, and the passages it would answer from." />
+
       <Section
         title="What the crew has read"
         action={
-          <Button variant="primary" onClick={() => start.mutate()} disabled={start.isPending || !!active?.alive}>
+          <Button variant="primary" icon="refresh" onClick={() => start.mutate()} disabled={start.isPending || !!active?.alive}>
             {active?.alive ? 'Reading…' : 'Read everything again'}
           </Button>
         }
@@ -51,18 +54,15 @@ export function Knowledge() {
         {start.isError ? <div className="mb-3"><Problem message={(start.error as Error).message} /></div> : null}
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <Card className="px-4 py-4">
-            <Label>Ready to search</Label>
-            <div className="mt-2"><Stat value={s.health.embedded} unit={`of ${s.health.chunks} passages`} /></div>
-          </Card>
-          <Card className="px-4 py-4">
-            <Label>Products</Label>
-            <div className="mt-2"><Stat value={s.sources.product ?? 0} unit="in the catalogue" /></div>
-          </Card>
-          <Card className="px-4 py-4">
-            <Label>Pages</Label>
-            <div className="mt-2"><Stat value={s.sources.post ?? 0} unit="policies and guides" /></div>
-          </Card>
+          <StatCard icon="book" tone="crew" label="Ready to search">
+            <Stat value={s.health.embedded} unit={`of ${s.health.chunks} passages`} />
+          </StatCard>
+          <StatCard icon="store" tone="signal" label="Products">
+            <Stat value={s.sources.product ?? 0} unit="in the catalogue" />
+          </StatCard>
+          <StatCard icon="layers" label="Pages">
+            <Stat value={s.sources.post ?? 0} unit="policies and guides" />
+          </StatCard>
         </div>
 
         {active ? (
@@ -73,11 +73,11 @@ export function Knowledge() {
                   ? `Reading — ${active.processed} of ${active.total} done`
                   : 'The last read stopped without finishing. Starting again picks up where it left off.'}
               </p>
-              <span className="scr-num text-[13px]">
+              <span className="scr-num text-[13px] font-semibold">
                 {active.total ? Math.round((active.processed / active.total) * 100) : 0}%
               </span>
             </div>
-            <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full" style={{ background: 'var(--line)' }}>
+            <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full" style={{ background: 'var(--surface-2)' }}>
               <div
                 className="h-full rounded-full transition-[width] duration-500"
                 style={{
@@ -91,24 +91,32 @@ export function Knowledge() {
       </Section>
 
       <Section title="Try a question">
-        <Card className="px-4 py-4">
+        <Card className="px-5 py-5">
           <p className="mb-3 text-[13px]" style={{ color: 'var(--text-dim)' }}>
             Ask what a customer would ask. You will see the exact passages the crew would answer from.
           </p>
           <form
-            className="flex gap-2"
+            className="flex flex-wrap gap-2"
             onSubmit={(e) => {
               e.preventDefault();
               if (query.trim()) search.mutate(query.trim());
             }}
           >
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Do you have anything warm for winter?"
-              className="flex-1 rounded-md border px-3 py-2 text-[13px] outline-none"
-              style={{ borderColor: 'var(--line)', background: 'var(--bg)', color: 'var(--text)' }}
-            />
+            <div className="relative min-w-0 flex-1">
+              <span
+                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2"
+                style={{ color: 'var(--text-dim)' }}
+              >
+                <Icon name="search" size={15} />
+              </span>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Do you have anything warm for winter?"
+                className="scr-input"
+                style={{ paddingLeft: 36 }}
+              />
+            </div>
             <Button type="submit" variant="primary" disabled={search.isPending}>
               {search.isPending ? 'Looking…' : 'Search'}
             </Button>
@@ -118,8 +126,8 @@ export function Knowledge() {
         {search.isError ? <div className="mt-3"><Problem message={(search.error as Error).message} /></div> : null}
 
         {result ? (
-          <div className="mt-3">
-            <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div className="mt-4">
+            <div className="mb-2.5 flex flex-wrap items-center gap-x-4 gap-y-1">
               <Label>{result.strategy.replace('_', ' ')}</Label>
               <Label>{result.candidates} considered</Label>
               {result.truncated ? <Label>results were cut short</Label> : null}
@@ -130,14 +138,17 @@ export function Knowledge() {
             {result.results.length ? (
               <div className="grid gap-2">
                 {result.results.map((r) => (
-                  <Card key={r.id} className="px-4 py-3">
+                  <Card key={r.id} className="px-4 py-3.5">
                     <div className="flex items-baseline justify-between gap-3">
                       <p className="truncate text-[13px] font-semibold">{r.sourceTitle || 'Untitled'}</p>
-                      <span className="scr-num shrink-0 text-[12px]" style={{ color: 'var(--text-dim)' }}>
+                      <span
+                        className="scr-num shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold"
+                        style={{ background: 'var(--tint-crew)', color: 'var(--fg-crew)' }}
+                      >
                         {r.score.toFixed(3)}
                       </span>
                     </div>
-                    <p className="mt-1.5 line-clamp-3 text-[12px]" style={{ color: 'var(--text-dim)' }}>
+                    <p className="mt-1.5 line-clamp-3 text-[12px] leading-relaxed" style={{ color: 'var(--text-dim)' }}>
                       {r.content}
                     </p>
                   </Card>
@@ -145,6 +156,7 @@ export function Knowledge() {
               </div>
             ) : (
               <Empty
+                icon="search"
                 title="Nothing matched"
                 hint="The crew would have to say it does not know. Either the answer is not published anywhere, or it has not been read yet."
               />

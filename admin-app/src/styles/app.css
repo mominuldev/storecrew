@@ -69,7 +69,9 @@
   --color-paper-200: #f2f2f0;
   --color-paper-300: #e4e4e1;
 
-  /* Signal amber — "on duty". Used sparingly and never as a gradient. */
+  /* Signal amber — "on duty". Used sparingly; the one gradient in the product
+     is the brand mark, so amber stays a status colour everywhere else. */
+  --color-signal-600: #b87317;
   --color-signal-500: #d98a1f;
   --color-signal-400: #e8a33d;
   --color-signal-300: #f6c46a;
@@ -84,7 +86,7 @@
   --color-alert-500: #b4462f;
   --color-alert-400: #cf6a52;
 
-  --radius-card: 10px;
+  --radius-card: 12px;
 }
 
 /*
@@ -100,20 +102,65 @@
   color-scheme: light;
   --bg: var(--color-paper-100);
   --surface: var(--color-paper-50);
+  --surface-2: var(--color-paper-200);
+  --field: var(--color-paper-50);
   --line: var(--color-paper-300);
+  --line-strong: #d3d3ce;
   --text: var(--color-ink-900);
   --text-dim: #5c6672;
   --rail: var(--color-paper-50);
+
+  /* Washes for pills, avatars, and icon chips — status at a whisper. */
+  --tint-signal: rgba(217, 138, 31, 0.13);
+  --tint-crew: rgba(46, 125, 107, 0.12);
+  --tint-alert: rgba(180, 70, 47, 0.1);
+  --tint-neutral: rgba(92, 102, 114, 0.1);
+
+  --fg-signal: var(--color-signal-600);
+  --fg-crew: var(--color-crew-600);
+  --fg-alert: var(--color-alert-600);
+
+  --shadow-card: 0 1px 2px rgba(16, 20, 26, 0.05);
+  --shadow-lift: 0 8px 20px rgba(16, 20, 26, 0.09);
+
+  /* Tracks wp-admin's fixed toolbar so the rail can sit flush under it. */
+  --scr-topbar: 32px;
+
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235c6672' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 :root.dark {
   color-scheme: dark;
   --bg: var(--color-ink-950);
   --surface: var(--color-ink-900);
+  --surface-2: var(--color-ink-800);
+  --field: var(--color-ink-800);
   --line: var(--color-ink-700);
+  --line-strong: #3a4552;
   --text: #e7eaee;
   --text-dim: #8b95a3;
   --rail: var(--color-ink-900);
+
+  --tint-signal: rgba(232, 163, 61, 0.15);
+  --tint-crew: rgba(74, 160, 140, 0.16);
+  --tint-alert: rgba(207, 106, 82, 0.16);
+  --tint-neutral: rgba(139, 149, 163, 0.12);
+
+  --fg-signal: var(--color-signal-300);
+  --fg-crew: var(--color-crew-400);
+  --fg-alert: var(--color-alert-400);
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 10px 24px rgba(0, 0, 0, 0.45);
+
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238b95a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* wp-admin's toolbar grows on small screens; the rail follows it. */
+@media screen and (max-width: 782px) {
+  :root {
+    --scr-topbar: 46px;
+  }
 }
 
 /* The app owns its own background; the surrounding admin keeps WordPress's. */
@@ -177,8 +224,69 @@
   max-width: 100%;
 }
 
-/* Focus must stay obvious — the reset above strips WordPress's own ring. */
-#storecrew-root :focus-visible {
+/*
+ * The designed form controls. These CANNOT live in `@layer components`: the
+ * scoped reset above is unlayered and zeroes border, background, and padding
+ * on every input — and an unlayered declaration beats a layered one at any
+ * specificity. So the field styles are unlayered too, and scoped under the
+ * root ID so they outrank the reset by specificity instead.
+ */
+#storecrew-root .scr-input {
+  width: 100%;
+  background: var(--field);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+#storecrew-root .scr-input::placeholder {
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+
+#storecrew-root .scr-input:focus {
+  border-color: var(--color-signal-400);
+  box-shadow: 0 0 0 3px var(--tint-signal);
+}
+
+#storecrew-root .scr-select {
+  background: var(--field) var(--chevron) no-repeat right 10px center;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  padding: 8px 34px 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+#storecrew-root .scr-select:focus {
+  border-color: var(--color-signal-400);
+  box-shadow: 0 0 0 3px var(--tint-signal);
+}
+
+/* The reset strips native checkbox chrome, which leaves an unchecked box
+   invisible. Restore the native control and tint it with the accent. */
+#storecrew-root :where(input[type='checkbox'], input[type='radio']) {
+  appearance: auto;
+  accent-color: var(--color-signal-500);
+  width: 15px;
+  height: 15px;
+}
+
+/* Focus must stay obvious — the reset above strips WordPress's own ring.
+   Text fields are excluded: they carry their own border-and-glow ring, and
+   browsers apply :focus-visible to them even on mouse focus, which would
+   stack both treatments. */
+#storecrew-root :focus-visible:not(input):not(select):not(textarea) {
   outline: 2px solid var(--color-signal-500);
   outline-offset: 2px;
   border-radius: 4px;
@@ -211,7 +319,75 @@
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
   }
+
+  /* A card that goes somewhere. The lift is small on purpose — the cursor
+     should learn "this row opens", not watch furniture fly. */
+  .scr-card-link {
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease,
+      transform 0.15s ease;
+  }
+
+  .scr-card-link:hover {
+    border-color: var(--line-strong);
+    box-shadow: var(--shadow-lift);
+    transform: translateY(-1px);
+  }
+
+  /* Status pill: dot + micro-label on a wash. Complements the edge-bar — the
+     bar is for scanning a column, the pill for reading a single card. */
+  .scr-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .scr-pill-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+
+  /* Monogram avatar — an agent or provider as a person on the roster. */
+  .scr-avatar {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    flex-shrink: 0;
+    user-select: none;
+  }
+
+  /* The brand mark — the one gradient in the product. */
+  .scr-mark {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, var(--color-signal-300), var(--color-signal-500));
+    color: var(--color-ink-950);
+    flex-shrink: 0;
+  }
+
 
   /* Status lives on a left edge-bar rather than a badge. A shift board reads
      by colour down the left margin; scattering pills through the content makes

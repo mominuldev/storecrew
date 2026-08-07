@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { ChatSettings, Provider, Settings as SettingsData } from '../lib/types';
-import { Button, Card, Label, Problem, Section, Spinner } from '../components/primitives';
+import { Button, Card, IconChip, Label, PageHeader, Pill, Problem, Section, Spinner } from '../components/primitives';
 
 const TASK_COPY: Record<string, { title: string; hint: string }> = {
   chat: { title: 'Talking to customers', hint: 'The model that writes replies. Worth the best you can afford.' },
@@ -58,39 +58,56 @@ export function Settings() {
 
   return (
     <>
+      <PageHeader title="Settings" sub="Providers, the models each job uses, and the storefront widget." />
+
       <Section title="Connections">
-        <div className="grid gap-2">
+        <div className="grid gap-2.5">
           {list.map((p) => (
             <Card
               key={p.id}
               edge={p.configured ? 'var(--color-crew-500)' : undefined}
-              className="px-4 py-4"
+              className="px-5 py-4"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-[13px] font-semibold">{p.label}</p>
-                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-                    {!p.capabilities.embeddings ? <Label>cannot read your store</Label> : <Label>can read your store</Label>}
-                    {!p.capabilities.sampling ? <Label>no temperature control</Label> : null}
+                <div className="flex min-w-0 items-start gap-3">
+                  <span
+                    className="scr-avatar"
+                    style={
+                      p.configured
+                        ? { background: 'var(--tint-crew)', color: 'var(--fg-crew)' }
+                        : { background: 'var(--tint-neutral)', color: 'var(--text-dim)' }
+                    }
+                  >
+                    {p.label.slice(0, 2).toUpperCase()}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-[13px] font-semibold">{p.label}</p>
+                      {p.configured ? <Pill tone="crew">Connected</Pill> : <Pill>Not connected</Pill>}
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+                      {!p.capabilities.embeddings ? <Label>cannot read your store</Label> : <Label>can read your store</Label>}
+                      {!p.capabilities.sampling ? <Label>no temperature control</Label> : null}
+                    </div>
                   </div>
                 </div>
                 {p.configured ? (
                   <div className="flex items-center gap-2">
                     <span className="scr-num text-[12px]" style={{ color: 'var(--text-dim)' }}>{p.keyHint}</span>
-                    <Button onClick={() => verify.mutate(p.id)} disabled={verify.isPending}>Test</Button>
+                    <Button icon="check" onClick={() => verify.mutate(p.id)} disabled={verify.isPending}>Test</Button>
                     <Button variant="danger" onClick={() => removeKey.mutate(p.id)}>Remove</Button>
                   </div>
                 ) : null}
               </div>
 
               {verify.data && verify.variables === p.id ? (
-                <p className="mt-2 text-[12px]" style={{ color: verify.data.ok ? 'var(--color-crew-500)' : 'var(--color-alert-500)' }}>
+                <p className="mt-2 text-[12px]" style={{ color: verify.data.ok ? 'var(--fg-crew)' : 'var(--fg-alert)' }}>
                   {verify.data.ok ? 'Connected.' : verify.data.error}
                 </p>
               ) : null}
 
               <form
-                className="mt-3 flex gap-2"
+                className="mt-3.5 flex gap-2"
                 onSubmit={(e) => {
                   e.preventDefault();
                   const key = (keys[p.id] ?? '').trim();
@@ -102,8 +119,7 @@ export function Settings() {
                   value={keys[p.id] ?? ''}
                   onChange={(e) => setKeys((k) => ({ ...k, [p.id]: e.target.value }))}
                   placeholder={p.configured ? 'Replace the key' : 'Paste the API key'}
-                  className="flex-1 rounded-md border px-3 py-2 text-[13px] outline-none"
-                  style={{ borderColor: 'var(--line)', background: 'var(--bg)', color: 'var(--text)' }}
+                  className="scr-input flex-1"
                 />
                 <Button type="submit" disabled={saveKey.isPending || !(keys[p.id] ?? '').trim()}>Save</Button>
               </form>
@@ -131,7 +147,7 @@ export function Settings() {
             });
 
             return (
-              <Card key={task} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
+              <Card key={task} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold">{TASK_COPY[task]?.title ?? task}</p>
                   <p className="mt-0.5 text-[12px]" style={{ color: 'var(--text-dim)' }}>
@@ -144,8 +160,7 @@ export function Settings() {
                     const [provider, model] = e.target.value.split('|');
                     savePolicy.mutate({ ...s.modelPolicy, [task]: { provider, model } });
                   }}
-                  className="rounded-md border px-2.5 py-1.5 text-[13px]"
-                  style={{ borderColor: 'var(--line)', background: 'var(--bg)', color: 'var(--text)' }}
+                  className="scr-select"
                 >
                   <option value="">Not set</option>
                   {options.map((o) => (
@@ -191,9 +206,6 @@ function Storefront({
 }) {
   const [draft, setDraft] = useState(chat);
 
-  const field = 'w-full rounded-md border px-3 py-2 text-[13px] outline-none';
-  const style = { borderColor: 'var(--line)', background: 'var(--bg)', color: 'var(--text)' };
-
   return (
     <Section title="On the storefront">
       {!canAnswer ? (
@@ -202,17 +214,23 @@ function Storefront({
         </div>
       ) : null}
 
-      <Card edge={chat.enabled ? 'var(--color-crew-500)' : undefined} className="px-4 py-4">
+      <Card edge={chat.enabled ? 'var(--color-crew-500)' : undefined} className="px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-[13px] font-semibold">
-              {chat.enabled ? 'On duty on your storefront' : 'Off the floor'}
-            </p>
-            <p className="mt-0.5 text-[12px]" style={{ color: 'var(--text-dim)' }}>
-              {chat.enabled
-                ? 'Shoppers can start a conversation from any page.'
-                : 'Nothing is loaded on the storefront at all — not even the script.'}
-            </p>
+          <div className="flex min-w-0 items-center gap-3">
+            <IconChip name="message" tone={chat.enabled ? 'crew' : 'neutral'} />
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[13px] font-semibold">
+                  {chat.enabled ? 'On duty on your storefront' : 'Off the floor'}
+                </p>
+                {chat.enabled ? <Pill tone="crew" live>Live</Pill> : null}
+              </div>
+              <p className="mt-0.5 text-[12px]" style={{ color: 'var(--text-dim)' }}>
+                {chat.enabled
+                  ? 'Shoppers can start a conversation from any page.'
+                  : 'Nothing is loaded on the storefront at all — not even the script.'}
+              </p>
+            </div>
           </div>
           <Button
             variant={chat.enabled ? 'danger' : 'primary'}
@@ -224,13 +242,12 @@ function Storefront({
         </div>
       </Card>
 
-      <Card className="mt-2 px-4 py-4">
-        <div className="grid gap-3 sm:grid-cols-2">
+      <Card className="mt-2.5 px-5 py-5">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label>Launcher label</Label>
             <input
-              className={`mt-1.5 ${field}`}
-              style={style}
+              className="scr-input mt-1.5"
               value={draft.launcher}
               onChange={(e) => setDraft({ ...draft, launcher: e.target.value })}
             />
@@ -238,32 +255,30 @@ function Storefront({
           <div>
             <Label>Panel title</Label>
             <input
-              className={`mt-1.5 ${field}`}
-              style={style}
+              className="scr-input mt-1.5"
               value={draft.title}
               onChange={(e) => setDraft({ ...draft, title: e.target.value })}
             />
           </div>
         </div>
 
-        <div className="mt-3">
+        <div className="mt-4">
           <Label>First thing they see</Label>
           <textarea
             rows={2}
-            className={`mt-1.5 ${field}`}
-            style={style}
+            className="scr-input mt-1.5"
             value={draft.greeting}
             onChange={(e) => setDraft({ ...draft, greeting: e.target.value })}
           />
         </div>
 
-        <div className="mt-3 flex flex-wrap items-end gap-4">
+        <div className="mt-4 flex flex-wrap items-end gap-4">
           <div>
             <Label>Accent</Label>
             <input
               type="color"
-              className="mt-1.5 h-9 w-16 rounded-md border"
-              style={{ borderColor: 'var(--line)', background: 'var(--bg)' }}
+              className="mt-1.5 h-9 w-16 cursor-pointer rounded-lg border"
+              style={{ borderColor: 'var(--line)', background: 'var(--field)' }}
               value={draft.accent}
               onChange={(e) => setDraft({ ...draft, accent: e.target.value })}
             />
@@ -271,8 +286,7 @@ function Storefront({
           <div>
             <Label>Corner</Label>
             <select
-              className="mt-1.5 rounded-md border px-2.5 py-2 text-[13px]"
-              style={style}
+              className="scr-select mt-1.5"
               value={draft.position}
               onChange={(e) => setDraft({ ...draft, position: e.target.value as 'left' | 'right' })}
             >
@@ -280,7 +294,7 @@ function Storefront({
               <option value="left">Bottom left</option>
             </select>
           </div>
-          <label className="flex items-center gap-2 text-[13px]">
+          <label className="flex items-center gap-2 pb-2 text-[13px]">
             <input
               type="checkbox"
               checked={draft.autoPlace}
@@ -293,7 +307,7 @@ function Storefront({
           </div>
         </div>
 
-        <p className="mt-3 text-[12px]" style={{ color: 'var(--text-dim)' }}>
+        <p className="mt-4 text-[12px]" style={{ color: 'var(--text-dim)' }}>
           Turn the floating launcher off to place the panel yourself with the{' '}
           <code className="scr-num">[storecrew_chat]</code> shortcode or the StoreCrew chat block.
         </p>
