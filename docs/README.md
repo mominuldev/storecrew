@@ -102,7 +102,15 @@ D1 confirms FR-LIC-02, D7 confirms FR-SUPPORT-08.
 | 5 | [REST API Specification](05-api-specification.md) | ✅ Draft complete |
 | 7 | [Plugin Folder Structure](07-folder-structure.md) | ✅ Draft complete — covers **both** plugin trees |
 
-**Gate 2:** 🟡 **Next up** — all drafts complete, Gate 1 approved.
+**Gate 2:** 🔴 **Review run 2026-08-07 — approval blocked.** Four independent
+verification passes (docs vs code, live DB, live route table) plus a full
+suite run (566/566) found the documents structurally accurate but surfaced
+**four code defects behind documented guarantees** (retrieval provenance
+never recorded; raw customer email persisted in tool arguments; `/chat/boot`
+cache-safety unenforced; routing call bypasses `SpendGuard`), doc sections
+describing unbuilt retention/GDPR features in the present tense, and a
+superseded retrieval design in 04 § 6. Findings and dispositions:
+[reviews/gate-2-review.md](reviews/gate-2-review.md).
 Deliverables 03/05/07 document the **built and verified** system rather than a
 proposal; each records where implementation experience amended the original
 intent (e.g. the measured retrieval findings in 03 § 6, the two spikes A3/A4

@@ -366,3 +366,14 @@ ciphertext, ragged embedding vectors, and the migration lock.
   screens, both themes, mobile, and a settings write round-trip). It has still
   never been seen with a *populated* inbox against live traffic.
 - Model IDs and pricing are point-in-time (verified 2026-06-24) and will drift.
+- **Gate 2 review (2026-08-07) found four code defects behind documented
+  guarantees** — see `docs/reviews/gate-2-review.md` before touching these
+  areas: (1) `SharedContext::set_retrieved()` has no production caller, so
+  every agent run stores `retrieved = []` and the inspector's provenance is
+  empty; (2) `ToolExecutor` persists tool arguments verbatim, so
+  `identity.verify` writes the customer's raw billing email to
+  `wp_scr_tool_calls.arguments` — no redaction exists; (3) `/chat/boot`
+  sends no `Cache-Control: no-store`, and WP core only nocaches logged-in
+  requests, so CDN-cached REST can leak one visitor's nonce/transcript to
+  another; (4) the `Orchestrator::route()` classifier call is not
+  spend-guarded — a capped store still pays for routing every turn.
