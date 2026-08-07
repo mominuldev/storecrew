@@ -22,10 +22,20 @@ questions in a manager's order:
 2. **What needs me?** — approvals and escalations are the only red things.
 3. **How is it going?** — the numbers, secondary by design.
 
-Vocabulary rules (enforced by copy review, visible in every screen):
+Vocabulary rules:
 
-- States are shift language: **on duty · needs you · needs setup · off the
-  floor** — never "enabled/disabled/error".
+- States are shift language, never "enabled/disabled/error". Three describe
+  an agent or a surface — **on duty · needs setup · off the floor** — and one
+  describes the merchant's own queue, **needs you**, which is a section title
+  rather than anything's state. A fourth agent state exists and is not shift
+  language: **"not on your plan"**, rendered by `CrewBar` for an unentitled
+  agent. It is deliberate — a locked agent is not *off shift*, it was never
+  hired — but it is an exception to the rule above, so it is written here
+  rather than left to be discovered.
+- The vocabulary is enforced by copy review only, and copy review has already
+  missed once: `app.css`'s header comment calls the storefront's off state
+  "off shift" while the screen it documents renders "Off the floor". A rule
+  guarded by attention alone drifts inside the file that states it.
 - Numbers carry their meaning next to them (`Stat` = value + unit label);
   a bare number is a defect.
 - Errors say the next action, not the failure class.
@@ -52,8 +62,16 @@ from one token set, toggled by class, defaulting to the OS preference.
 ```
 
 Full-viewport (admin notices removed on this screen only, padding stripped);
-top navigation, not a sidebar — six destinations do not justify one, and the
-board metaphor wants width. The theme toggle shows its state as a label
+top navigation, not a sidebar — five destinations do not justify one, and the
+board metaphor wants width. (Five in the nav; six screens, because the
+inspector is reached from a row, not from the bar.)
+
+**The nav is hardcoded and does not read the route manifest.** `Layout`
+ships a literal five-item array, so the `icon`, `order` and `inMenu` fields a
+contributed route carries reach the browser and are used by nothing — a
+premium screen renders at its hash and has no link pointing at it. Recorded
+as G4-C7; FR-DIST-12 does not hold until the bar is built from
+`bootstrap.routes`. The theme toggle shows its state as a label
 ("Light"/"Dark"), not an icon riddle. Responsive to 768 px (FR-ADMIN-07):
 nav collapses to wrap, stat rows stack.
 
@@ -66,27 +84,46 @@ nav collapses to wrap, stat rows stack.
 ```
 THE CREW
 ┌─ Sales ─────────────┐ ┌─ Support ───────────┐
-│ ● on duty           │ │ ● on duty           │   CrewBar: one card per
-│ handled 12 today    │ │ 2 waiting for you   │   agent, state label,
-└─────────────────────┘ └─────────────────────┘   one live number
+│ Finds products    ● │ │ Handles orders    ● │   CrewBar: one card per
+│ ON DUTY             │ │ ON DUTY             │   agent — role line, state
+└─────────────────────┘ └─────────────────────┘   label, live dot. No number.
 
 [ Before the crew can start ]          ← onboarding card, only while
-  1 ✓ Connect a provider                 incomplete (FR-ADMIN-02);
-  2 ✓ Index your store                    replaces the stats, because
-  3 ○ Put chat on the storefront          nothing below it is real yet
+  No AI provider is connected yet.       incomplete (FR-ADMIN-02).
+  Connect a provider and the crew        One sentence naming the single
+  can start answering.                   thing blocking the crew, and one
+  [ Open settings ]                      button. The stats still render.
 
+NEEDS YOU (2)                [ Open inbox ]   ← the three oldest pending
+┌ order.note   {"note":"…"} ┐                   approvals; the section stands
+└───────────────────────────┘                   down to a teaching sentence
+                                                when nothing is waiting.
 TODAY
 ┌ Knowledge ┐ ┌ Spend this month ┐ ┌ Background work ┐ ┌ Index model ┐
 │ 67 ready  │ │ $0.42 / $5 cap   │ │ ● queue healthy │ │ gemini-…    │
 └───────────┘ └──────────────────┘ └─────────────────┘ └─────────────┘
 
-WORTH FIXING                            ← only renders when non-empty:
-  ▸ 60 passages embedded by an old model  stranded vectors, dead jobs,
+WORTH FIXING                            ← renders only when the encryption
+  ▸ define STORECREW_KEY in wp-config      key is insecure
 ```
 
 Job health and index health live here, on the screen operators open —
 FR-ADMIN-08 exists because burying them in a tools page is how a dead queue
 goes unnoticed for a month.
+
+Three notes where the built screen decided something this wireframe's first
+draft had not:
+
+- **The onboarding card does not replace the stats.** The first draft had it
+  standing in for them "because nothing below it is real yet". A half-set-up
+  store's Today numbers are real and are exactly what tells the merchant
+  whether the step they just finished took, so both render.
+- **The crew cards carry no number.** Status before numbers is the § 1 rule,
+  and an agent's live number ("handled 12 today") turned out to be a Today
+  stat wearing a costume. The cards carry role, state, and a live dot.
+- **Stranded vectors are surfaced on the Index model card**, not in "Worth
+  fixing" — next to the model that stranded them, where the count means
+  something. "Worth fixing" is reserved for the insecure-key advice.
 
 ### 3.2 Crew
 
@@ -117,12 +154,27 @@ caps are forbidden all the way up the stack.
 
 ### 3.4 Inbox — "needs you" (FR-ADMIN-06)
 
-One queue: pending write actions, each card showing the tool, its arguments
-rendered as a definition list (never raw JSON to a merchant), when it was
-asked, and **[Approve] [Deny]**. Deciding an already-decided call returns a
-conflict and the card explains it. Escalated conversations surface here as
-links into the inspector. Empty state says what *would* arrive here — an
-empty queue must teach, not confuse.
+One queue: pending write actions, each card showing the tool, its arguments,
+when it was asked, and **[Approve] [Decline]**. Reads never appear here —
+filling the queue with lookups is how a merchant is trained to approve
+without reading. Deciding an already-decided call returns a **409**,
+deliberately indistinguishable from a call that never existed, and the card
+says so rather than going quiet. Empty state says what *would* arrive here —
+an empty queue must teach, not confuse.
+
+Two intentions in this section are **designed, not built**, and are open
+decisions from the Gate 4 review rather than descriptions of the screen:
+
+- **Arguments as a definition list, never raw JSON to a merchant** (G4-D2).
+  Today both this screen and the Overview print `JSON.stringify`. The values
+  are redacted server-side, so this is legibility rather than exposure — but
+  FR-ADMIN-06 exists for the merchant who reads a write before allowing it,
+  and `{"note":"…"}` is not reading.
+- **Escalated conversations surfacing here as links into the inspector**
+  (G4-D4). Today escalation appears once in the whole console, as a red edge
+  on a Crew row. A screen titled "needs you" that omits the half of "needs
+  you" that is not a write approval is the gap; whether it closes here or on
+  Crew is decided together with the escalation email (14 § M1).
 
 ### 3.5 Conversation detail — the inspector (FR-ADMIN-04)
 
@@ -174,8 +226,20 @@ Premium panels (FR-DIST-12) inherit: the primitives (`Card`, `Section`,
 `Stat`, `Label`, `Empty`, `Problem`), the vocabulary rules (§ 1), the
 "status first, numbers second" order, and the locked-route treatment — a
 route the manifest declares but does not entitle renders the upgrade panel
-(the one place FR-DIST-10 permits an invitation, and it may never replace a
-working free feature). A contributed screen that needs a new primitive
+rather than disappearing, so the merchant can see what the plan would add.
+
+FR-DIST-10 is the governing rule and it is permissive: upgrade prompts are
+allowed, and what is forbidden is **degrading free functionality to
+manufacture one**. Earlier drafts of this section stated the locked route
+was "the one place" an invitation may appear, which invented a stricter rule
+than the requirement it cited — and the built console does not follow the
+stricter version anyway, since `CrewBar` shows two permanent "Not on your
+plan" cards on the Overview. The console's own convention, weaker than a
+rule and worth keeping: an invitation sits where the capability would have
+been, never in the path of something that works.
+
+Neither treatment reaches a merchant today — nothing links to a contributed
+route (§ 2, G4-C7). A contributed screen that needs a new primitive
 contributes the *need* upstream rather than forking the look.
 
 ---

@@ -11,7 +11,7 @@ their constraints are opposite:
 |---|---|---|
 | Audience | Authenticated merchant | Anonymous shopper on a cached page |
 | Stack | React 19 + TanStack Query + Zustand + Tailwind 4 | Framework-free TypeScript, hand-rolled CSS in a shadow root |
-| Budget | ≤ 250 KB gz (at 94 KB) | ≤ 45 KB gz (at 5.3 KB) |
+| Budget | ≤ 250 KB gz (at 98.0 KB: `app.js` 94,380 B + `app.css` 3,657 B) | ≤ 45 KB gz (at 5,361 B — one file, CSS inlined) |
 | Build | `vite.config.ts` → `assets/admin/` | `vite.widget.config.ts` → `assets/widget/` (IIFE, CSS inlined) |
 
 One build producing both would drag the widget toward the SPA's dependency
@@ -80,11 +80,31 @@ session.
 The shell renders add-on screens from two sources that must agree: the
 server's bootstrap manifest declares a route (and whether it is entitled),
 and the premium bundle registers the component (`registerScreen()`). A route
-declared but not entitled renders the upgrade panel; declared and entitled
-but not registered renders a "plugin not loaded" state. The free plugin never
-knows what premium screens *are* — it renders from the manifest
-(15 § 5). Entitlement remains server-authoritative; the manifest is a
-rendering hint and every controller re-checks (FR-DIST-09).
+declared but not entitled renders the upgrade panel ("This is part of a paid
+plan."); declared and entitled but not registered renders "This screen has
+not finished loading. Try refreshing." Entitlement remains
+server-authoritative; the manifest is a rendering hint and every controller
+re-checks (FR-DIST-09).
+
+**Two qualifications, both open findings from the Gate 4 review.** The free
+plugin does not yet render purely from the manifest, and in one place it
+does the opposite:
+
+- **The navigation ignores the manifest entirely** (G4-C7). `Layout` holds a
+  hardcoded five-item array, so a contributed route's `label`, `icon`,
+  `order` and `inMenu` are serialised, typed, delivered — and read by
+  nothing. The route resolves at its hash and no link points to it, which
+  makes both treatments above unreachable in practice.
+- **`CrewBar` hardcodes premium's agents and their copy** (G4-C2), including
+  `agent.marketing` and `agent.analytics` with labels and role lines that
+  already disagree with Pro's own `Feature` definitions. The manifest's
+  `catalog` — slug, label, tier and description for every registered feature
+  — is computed on every bootstrap and consumed by no component (G4-C1),
+  which is exactly the payload that would fix it.
+
+So 15 § 5's intent holds in the server's design and not yet in the client.
+Until G4-D1 is decided, "the free plugin never knows what premium screens
+are" describes where this is going, not where it is.
 
 ### 2.4 Surviving wp-admin (the hard-won part)
 
@@ -170,10 +190,19 @@ conversation but not a transcript.
 
 ## 4. Verification
 
-Both apps are verified in real browsers, not only by unit logic: the SPA via
-Playwright across all six screens, both themes, mobile, and a settings write
-round-trip; the widget via Playwright (23 assertions: keyboard path, focus,
-a11y semantics, Markdown, reload persistence, dark/mobile) and live against
-a real provider (five-turn conversation, 2026-08-07). The browser is the
-only harness that catches cascade fights and cache/cookie behaviour — the
-two bug classes this document exists to warn about.
+Both apps were verified in real browsers on **2026-08-07**, not only by unit
+logic: the SPA via Playwright across all six screens, both themes, mobile,
+and a settings write round-trip; the widget via Playwright (23 assertions:
+keyboard path, focus, a11y semantics, Markdown, reload persistence,
+dark/mobile) and live against a real provider (five-turn conversation). The
+browser is the only harness that catches cascade fights and cache/cookie
+behaviour — the two bug classes this document exists to warn about.
+
+**None of it is checked in** (G4-C6). The repository holds no Playwright
+config, spec, or runner; `tests/` contains `schema/` and `integration/` and
+nothing else. Those runs happened and cannot be repeated, so by this
+project's own standard — a rule that has never been observed to fire is not
+a rule — the two bug classes named above are guarded today by care alone,
+and 14 § M1's "both browser verifications pass" names an artifact that does
+not exist. G4-D3 decides whether the suite is checked in or the claim is
+downgraded to a dated manual verification.

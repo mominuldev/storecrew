@@ -147,18 +147,26 @@ exit criteria. Findings and outcomes:
 | 11 | [UI/UX Wireframes](11-wireframes.md) | ✅ Draft complete — as-built |
 | 10 | [SaaS Subscription Architecture](10-saas-subscription.md) | ✅ Draft complete — **design ahead of code**; consumes strategy D1–D5 |
 
-**Gate 4:** 🔴 **Review run 2026-08-07 — not approvable as written.** Three
-verification passes found no security defect (the widget's no-`innerHTML`
-rule, link hardening, the admin nonce, and server-side entitlement re-checks
-all hold), but six code findings and three specification defects. The
-recurring shape is here a fourth time: the feature `catalog` is computed on
-every `/bootstrap` and read by no component — and `CrewBar` hardcodes
-premium agents and their copy in its place. 11 § 3's Inbox and Overview
-wireframes describe screens that were then built differently. 10's
-entitlement keys match **no** registered slug, which would silently degrade
-a paying customer, since an unknown slug evaluates as not-entitled. Four
-decisions await the product owner. Findings:
-[reviews/gate-4-review.md](reviews/gate-4-review.md).
+**Gate 4:** 🔴 **Review run 2026-08-07 — not approvable as written; partly
+remediated the same day.** Three verification passes found no security
+defect (the widget's no-`innerHTML` rule, link hardening, the admin nonce,
+and server-side entitlement re-checks all hold), but seven code findings and
+three specification defects. The recurring shape is here a fourth time, and
+this time it is the whole capability manifest: the feature `catalog` is
+computed on every `/bootstrap` and read by no component while `CrewBar`
+hardcodes premium's agents and copy in its place, and the route payload's
+`icon`/`order`/`inMenu` are read by no navigation — so every screen premium
+registers is unreachable except by typing its hash. 11 § 3's Inbox and
+Overview wireframes describe screens that were then built differently. 10's
+entitlement keys matched **no** registered slug, which would have silently
+degraded a paying customer, since an unknown slug evaluates as not-entitled.
+
+**Remediated:** all three specification defects in 10, the unexplained
+approval conflict (G4-C4, fixed in `Inbox.tsx`), and every doc-stale claim
+in 06 and 11. **Still blocking:** G4-C1, C2, C3, C5, C6 and C7, all of which
+wait on the four decisions G4-D1–D4 — the manifest-driven shell, the
+argument renderer, the browser suite, and where an escalation surfaces.
+Findings and remediation: [reviews/gate-4-review.md](reviews/gate-4-review.md).
 
 ### Gate 5 — Engineering Readiness
 | # | Document | Status |

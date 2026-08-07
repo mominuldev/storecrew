@@ -31,18 +31,53 @@ that separation is the design's main claim.
 
 ---
 
-## 2. Tiers (per D1–D4, pending Gate 1)
+## 2. Tiers (per D1–D4, ratified at Gate 1)
 
-| Entitlement key | Free | Pro | Agency |
+Two different mechanisms live below, and mixing them in one grid is how the
+first draft of this section went wrong. **Feature entitlements are booleans
+`FeatureGate` already resolves. Quotas are numbers nothing reads yet.**
+
+### 2.1 Feature entitlements
+
+The keys are the slugs registered through `storecrew_register_features` —
+literally the strings `FeatureGate::enabled()` is called with. Copy them from
+the registry; never paraphrase or pluralise. **An unknown slug evaluates as
+not-entitled**, so a snapshot that spells one differently is not an error the
+merchant sees: it is a correctly-signed payload that grants a paying customer
+nothing, silently, in their disfavour. (`FeatureGate::enabled()` does warn on
+an unregistered slug — but only under `WP_DEBUG`, and a *registered* slug that
+the snapshot spells differently never reaches that path at all: the gate is
+never asked the wrong name, it is simply never told the right one is granted.)
+
+| Entitlement key (registered slug) | Free | Pro | Agency |
 |---|---|---|---|
-| `agents.marketing`, `agents.analytics`, `agents.custom` | – | ✓ | ✓ |
-| `workflows`, `integrations.esp` | – | ✓ | ✓ |
+| `agent.sales`, `agent.support`, `knowledge.base`, `chat.widget` | ✓ | ✓ | ✓ |
+| `agent.marketing`, `agent.analytics` | – | ✓ | ✓ |
+| `workflow.builder` | – | ✓ | ✓ |
+| `integrations.email` | – | ✓ | ✓ |
+| `agency.multisite` | – | – | ✓ (25 sites) |
+| `agency.whitelabel` | – | – | ✓ (reskin) |
+
+The free rows are registered by the free plugin and are ✓ at every tier by
+construction: a lapsed licence degrades **to** free, never below it (§ 1.3).
+The custom agent builder (02 § 5.1, Phase 3) has **no registered slug** — it
+is unbuilt, and inventing one here would be the same defect as misspelling a
+real one. It joins this table when Pro registers it.
+
+### 2.2 Quotas
+
+A quota is a number, and `FeatureGate` reads no numbers anywhere — it maps
+slugs to booleans by tier and that is all it does. These keys travel in the
+snapshot, but the reader that enforces them is unbuilt (§ 5, § 8, 14 § M4):
+
+| Quota key | Free | Pro | Agency |
+|---|---|---|---|
 | `conversations.monthly` | 100 | `null` (fair-use) | `null` |
 | `sites` | 1 | 1 | 25 |
-| `whitelabel` | – | – | reskin |
 
-`FeatureGate` already maps feature slugs → tiers; the entitlement payload
-(§ 4) simply toggles which tier the gate evaluates as.
+`FeatureGate` maps feature slugs → tiers today; the entitlement payload (§ 4)
+toggles which tier the gate evaluates as. That is the whole of what exists —
+the quota half needs both a reader and a metric to read (§ 5).
 
 ---
 
@@ -74,7 +109,7 @@ The unit of trust. Returned by activation and each revalidation:
 {
   "licence": "sc_pro_…",  "tier": "pro",  "status": "active",
   "site": "https://shop.example",  "seats": {"used": 1, "max": 1},
-  "entitlements": { "agents.marketing": true, "conversations.monthly": null, … },
+  "entitlements": { "agent.marketing": true, "conversations.monthly": null, … },
   "issued_at": "…", "valid_until": "…+14d",
   "signature": "ed25519:…"
 }
@@ -93,13 +128,27 @@ The unit of trust. Returned by activation and each revalidation:
 - Premium hands the snapshot to free through an extension-API filter;
   free's `FeatureGate` stays the single evaluation point, and the SPA's
   manifest remains a rendering hint re-checked per request (FR-DIST-09).
+- **The filter is grant-only, and stays that way.** The built stub already
+  answers `storecrew_feature_enabled` per feature and only ever returns true,
+  because an expired Pro licence must never switch off a free-tier agent —
+  the same one-direction reasoning as `storecrew_tool_authorized`, which may
+  only deny. The snapshot changes *what premium grants*, not the shape of the
+  filter: `LicenceClient` replaces the stub's local option with a
+  signature-verified answer to the same question, and a feature free owns is
+  never one of premium's to withdraw.
 
 ---
 
 ## 5. Metering the Free Tier (FR-LIC-02, D1)
 
-Counting already exists: `UsageRepository` records every agent run per
-conversation. The meter adds:
+**What exists is per-run counting, which is not this.** `UsageRepository`
+records every agent run against its conversation, and a single conversation
+produces many runs — routing, the answer, each retry. The quota unit here is
+the *conversation*, and `UsageRepository::METRIC_CONVERSATION` is declared
+and recorded by nothing (Gate 3; 14 § M4.1). A cap enforced today would be
+enforced against a counter that is permanently zero, which is the pricing
+rule's failure mode inverted: the merchant believes a limit protects the
+plan, and it never trips. The meter adds:
 
 - **A conversation consumes quota when it first receives an agent answer**
   — not on open (widget boots must stay free of side effects), not per
@@ -158,7 +207,8 @@ could take a paying store down on a network failure — R-COST-01's lesson
 | Piece | Status | Phase |
 |---|---|---|
 | `FeatureGate`, tier mapping, manifest, server-side re-checks | ✅ Built, probe-tested | — |
-| Conversation counting substrate | ✅ Built (`UsageRepository`) | — |
+| Conversation counting substrate | ⬜ **Not built.** `UsageRepository` meters per *run*; `METRIC_CONVERSATION` is declared and written nowhere (Gate 3), so the § 5 meter would count zero forever | 2 — 14 § M4.1, before any tier depends on it |
+| Quota reader (`conversations.monthly`, `sites`) | ⬜ `FeatureGate` resolves booleans only; nothing reads a number | 2 — with the meter above |
 | Cap enforcement at the widget | ⬜ | 2 — with Pro launch (free is uncapped until premium exists to sell) |
 | Licence server + store webhook | ⬜ | 2 |
 | `LicenceClient` (replace the stub), snapshot verification | ⬜ | 2 — **ship-blocking for Pro**; the stub is not a security boundary |

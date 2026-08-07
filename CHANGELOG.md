@@ -41,6 +41,31 @@ designed — a sentence to the customer, an escalation with the reason recorded:
   created after the 3.x line shipped** ("no longer available to new users").
   Only a live call finds this class of failure.
 
+### Fixed
+
+**Gate 4 remediation, first pass** — 2026-08-07. One code change; the rest of
+the gate's findings wait on decisions and are recorded, unfixed, in
+`docs/reviews/gate-4-review.md`.
+
+- **The Inbox now answers a click it cannot honour.** Deciding an approval that
+  had already been decided returned a 409 the client never rendered, so the
+  merchant pressed Approve on a stale card and *nothing visibly happened* — no
+  message, no removal, no refetch. The card now carries the server's own
+  sentence with an alert edge and offers a refresh, rather than vanishing on
+  its own: a row that silently disappears answers the click with as little as
+  saying nothing did. Also scoped the busy state to the card being decided —
+  one pending mutation was greying out every card's buttons.
+- Documented, not fixed: the capability manifest is computed on every bootstrap
+  and consumed by nothing — no component reads `catalog`, no navigation reads
+  the routes' `icon`/`order`/`inMenu` — so `CrewBar` hardcodes premium's agents
+  and their copy, and every screen premium registers is reachable only by
+  typing its hash. Fourth instance of the shape Gates 2 and 3 each found once.
+- 10 § 2's entitlement keys matched no registered slug (`agents.marketing` for
+  `agent.marketing`, and five more). Corrected in the document before anything
+  was built from it: an unknown slug evaluates as not-entitled, so a licence
+  server written to the old spec would have issued a valid signed snapshot
+  granting a paying customer nothing, silently.
+
 ### Added
 
 **Gate 3 remediation** — 2026-08-07. The review found no security defect, but
