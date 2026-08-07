@@ -108,6 +108,9 @@ function current_user_can( $cap ) {
 	return in_array( $cap, (array) $caps, true );
 }
 function get_bloginfo( $what ) { return '7.0.2'; }
+// The harness models a front-end request: nothing admin-only should be needed
+// to boot. AgentRunner reads this to decide whether a turn is merchant-driven.
+function is_admin() { return false; }
 function plugin_dir_path( $f ) { return rtrim( dirname( $f ), '/' ) . '/'; }
 function plugin_dir_url( $f ) { return 'http://example.test/wp-content/plugins/' . basename( dirname( $f ) ) . '/'; }
 function plugin_basename( $f ) { return basename( dirname( $f ) ) . '/' . basename( $f ); }

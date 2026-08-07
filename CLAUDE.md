@@ -116,7 +116,27 @@ Three further invariants live in the agent layer, each probe-tested:
 - Identity verification proves *one* identity. `order.lookup` refuses any order
   other than the one confirmed.
 
-### 8. Never bundle an HTTP client
+### 8. Inside wp-admin, layered CSS always loses
+
+Cascade layers are consulted **before** specificity: an unlayered declaration
+beats a layered one at any specificity. WordPress admin CSS is unlayered, so a
+plain `@import 'tailwindcss'` — which puts every utility in `@layer utilities` —
+loses to `body { color }`, `a { color }`, and all of `forms.css`.
+
+`admin-app/src/styles/app.css` therefore imports utilities **unlayered and
+important**, and does *not* import preflight (it would reset the admin menu and
+toolbar too). The app's own reset is scoped to `#storecrew-root` at ID
+specificity, which is what it takes to outrank `input[type='text']:focus`.
+
+This failure is invisible in light mode — WordPress's dark-grey-on-white looks
+like what you intended. **Verify theme changes in dark mode**, where the
+surfaces flip and unstyled text does not follow.
+
+The admin app uses **no `@wordpress/*` packages** and bundles its own React.
+Core ships whichever version its release pins; depending on it means inheriting
+every future core upgrade as an untested breaking change.
+
+### 9. Never bundle an HTTP client
 
 Use the WordPress HTTP API. Shipping Guzzle in a `.org` plugin collides with
 every other plugin shipping a different Guzzle, and `wp_remote_post` honours the
@@ -194,7 +214,7 @@ because it runs with no database at all.
 
 ## Testing
 
-Seven suites, 447 assertions, green in any run order.
+Eight suites, 483 assertions, green in any run order.
 
 `verify-rest.php` needs `--user=1`: it dispatches through the real REST
 server, and its permission probes deliberately start unauthenticated.
@@ -208,6 +228,7 @@ wp eval-file wp-content/plugins/storecrew/tests/schema/verify-repositories.php
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-providers.php
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-knowledge.php
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-jobs.php
+wp eval-file wp-content/plugins/storecrew/tests/schema/verify-admin.php --user=1
 
 # No database, no WordPress — boots both plugins against a hook shim
 ./tests/integration/run.sh
@@ -235,6 +256,10 @@ ciphertext, ragged embedding vectors, and the migration lock.
 | Eager job-handler resolution | Built every repository on every request; broke the DB-free harness. |
 | Eager REST controller construction | Same root cause, found the same way. Controllers are factories now. |
 | Eager tool construction | Third time. Tools are factories now. Anything depending on repositories must be lazy. |
+| Tailwind utilities beaten by wp-admin | Layer order outranks specificity, and WordPress is unlayered. Light mode looked fine because WP's grey-on-white resembled the intent; only dark mode exposed it. |
+| Tailwind preflight shipped globally | Reset `*` and `button` across the whole admin page, not just the app root. |
+| `health()` reported a ready index with no model | `count_embedded('')` means "don't filter by model" — right for counting rows, wrong for "is this searchable". Showed *62 of 62 ready* on an install that could answer nothing. |
+| `AdminPage` behind `is_admin()` | Gated a gate — `admin_menu` is admin-only anyway — and hid the menu from WP-CLI, the only harness that could test it. |
 | `index_object()` never marked sources indexed | Sources sat at `pending` forever; the dashboard would show an index that never finishes. |
 | Gemini `thoughtSignature` not replayed | Tool calls executed, then the continuation turn 400'd. Only a live call finds this. |
 | Providers depending on concrete `HttpClient` | Request shaping was untestable without network. |
@@ -271,8 +296,11 @@ ciphertext, ragged embedding vectors, and the migration lock.
   calls it yet.
 - `Pro\Licence` is a **stub** — local option, no remote validation, no grace
   period. Not a security boundary; must not ship as-is.
-- No admin SPA, and no chat surface. The REST API (18 routes) and the agent
-  framework both exist, but nothing has run an agent against a real model — the
+- No chat surface. The admin app, the REST API (18 routes), and the agent
+  framework all exist, but nothing has run an agent against a real model — the
   suite drives a scripted provider.
-- No streaming, so a turn returns all at once.
+- The admin app has been verified in a real browser (Playwright: all six
+  screens, both themes, mobile, and a settings write round-trip). It has never
+  been seen with a *populated* inbox or a live conversation, because no agent
+  has run for real.
 - Model IDs and pricing are point-in-time (verified 2026-06-24) and will drift.

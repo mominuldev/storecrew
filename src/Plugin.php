@@ -50,6 +50,7 @@ use StoreCrew\Knowledge\Jobs\IndexJob;
 use StoreCrew\Knowledge\Jobs\ReindexJob;
 use StoreCrew\Knowledge\Retriever;
 use StoreCrew\Security\SecretStore;
+use StoreCrew\Core\Admin\AdminPage;
 use StoreCrew\Core\Container\Container;
 use StoreCrew\Core\Queue\MaintenanceJob;
 use StoreCrew\Core\Queue\Scheduler;
@@ -144,6 +145,13 @@ final class Plugin {
 
 		$this->register_reindex_hooks();
 		$this->register_jobs();
+
+		// Registered unconditionally. Both hooks it attaches (admin_menu,
+		// admin_enqueue_scripts) are admin-only already, so an is_admin()
+		// guard here would gate a gate — and would make the page unreachable
+		// under WP-CLI, where is_admin() is false, hiding menu bugs from the
+		// only harness that could catch them.
+		( new AdminPage() )->register();
 
 		// Routes register on rest_api_init, which fires long after the
 		// registries freeze, so the contributed set is always final by then.

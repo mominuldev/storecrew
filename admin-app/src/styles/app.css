@@ -1,0 +1,253 @@
+/*
+ * Cascade strategy — read this before changing any import below.
+ *
+ * We render inside wp-admin, whose stylesheets are **unlayered**. In the CSS
+ * cascade, layer order is consulted *before* specificity, and unlayered normal
+ * declarations beat layered ones at any specificity. So a plain
+ * `@import 'tailwindcss'` — which puts every utility in `@layer utilities` —
+ * loses to WordPress on every element it also styles. `text-*` on an `<a>`
+ * loses to `a { color: #2271b1 }`; a `<p>` loses to `body { color: #3c434a }`.
+ *
+ * That failure is invisible in light mode, because WordPress's dark-grey-on-
+ * white happens to look like what we intended. It only surfaces in dark mode,
+ * where the surfaces flip and the text does not.
+ *
+ * So: utilities are emitted unlayered *and* important, which is Tailwind's
+ * documented answer for embedding in a host with hostile CSS. Nothing here
+ * sets inline styles (no animation library), so `!important` has nothing
+ * legitimate to override.
+ *
+ * Preflight is deliberately NOT imported. It resets `*`, `button`, `ul`, and
+ * friends globally, and this stylesheet loads on a page that also contains the
+ * admin menu and toolbar — a global reset there is both fragile and rude. The
+ * scoped reset further down does the same job inside `#storecrew-root` only.
+ */
+
+@layer theme, components;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' important;
+
+@source '../';
+
+/*
+ * StoreCrew admin — design tokens.
+ *
+ * The product is a crew of AI employees, so the console is built as a shift
+ * board rather than an analytics dashboard: status is the primary information,
+ * numbers are secondary, and the vocabulary throughout is on duty / off shift /
+ * needs you.
+ *
+ * Signal amber is the primary accent because it is the colour of workwear and
+ * signage — the visual language of "someone is on shift". It is also a
+ * deliberate move away from the blue-violet every other admin dashboard reaches
+ * for, which would have made this look like the plugin it is rather than the
+ * product it is trying to be.
+ *
+ * No webfonts. A plugin that pulls fonts from a CDN leaks every admin page view
+ * to a third party and breaks on an offline install, so personality comes from
+ * treatment instead: monospace for every number, status, and micro-label, with
+ * wide tracking; system sans for prose. An operations console should read like
+ * it is reporting instruments.
+ */
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, 'Cascadia Mono',
+    'Roboto Mono', Menlo, Consolas, monospace;
+
+  /* Graphite, blue-shifted so it reads as cool metal rather than warm brown. */
+  --color-ink-950: #0b0e13;
+  --color-ink-900: #10141a;
+  --color-ink-800: #171d26;
+  --color-ink-700: #212932;
+  --color-ink-600: #2d3743;
+
+  --color-paper-50: #ffffff;
+  --color-paper-100: #fafaf9;
+  --color-paper-200: #f2f2f0;
+  --color-paper-300: #e4e4e1;
+
+  /* Signal amber — "on duty". Used sparingly and never as a gradient. */
+  --color-signal-500: #d98a1f;
+  --color-signal-400: #e8a33d;
+  --color-signal-300: #f6c46a;
+
+  /* Sea green — healthy, working, resolved. */
+  --color-crew-600: #256b5b;
+  --color-crew-500: #2e7d6b;
+  --color-crew-400: #4aa08c;
+
+  /* Brick — needs a human. Distinct from a browser-error red. */
+  --color-alert-600: #9c3a26;
+  --color-alert-500: #b4462f;
+  --color-alert-400: #cf6a52;
+
+  --radius-card: 10px;
+}
+
+/*
+ * Everything below is unlayered on purpose — see the note at the top.
+ *
+ * The reset is scoped to `#storecrew-root`, which gives it ID specificity
+ * (1-0-0). That is what it takes to outrank WordPress's form styling, which
+ * reaches 0-1-1 on selectors like `input[type='text']:focus`. Utilities still
+ * win over all of it because they are important.
+ */
+
+:root {
+  color-scheme: light;
+  --bg: var(--color-paper-100);
+  --surface: var(--color-paper-50);
+  --line: var(--color-paper-300);
+  --text: var(--color-ink-900);
+  --text-dim: #5c6672;
+  --rail: var(--color-paper-50);
+}
+
+:root.dark {
+  color-scheme: dark;
+  --bg: var(--color-ink-950);
+  --surface: var(--color-ink-900);
+  --line: var(--color-ink-700);
+  --text: #e7eaee;
+  --text-dim: #8b95a3;
+  --rail: var(--color-ink-900);
+}
+
+/* The app owns its own background; the surrounding admin keeps WordPress's. */
+#storecrew-root {
+  box-sizing: border-box;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+#storecrew-root *,
+#storecrew-root *::before,
+#storecrew-root *::after {
+  box-sizing: border-box;
+}
+
+#storecrew-root :where(h1, h2, h3, h4, h5, h6, p, ul, ol, li, dl, dd, figure) {
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+
+#storecrew-root :where(ul, ol) {
+  list-style: none;
+}
+
+/* WordPress sets `a { color: #2271b1 }`, which would otherwise repaint every
+   link in the app its admin blue. */
+#storecrew-root :where(a) {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* forms.css is the most aggressive part of wp-admin: borders, shadows, min
+   heights, and a blue focus ring, all of which fight a designed control. */
+#storecrew-root :where(button, input, select, textarea) {
+  font: inherit;
+  color: inherit;
+  line-height: inherit;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#storecrew-root :where(button) {
+  cursor: pointer;
+}
+
+#storecrew-root :where(select) {
+  appearance: none;
+}
+
+#storecrew-root :where(img, svg, video) {
+  max-width: 100%;
+}
+
+/* Focus must stay obvious — the reset above strips WordPress's own ring. */
+#storecrew-root :focus-visible {
+  outline: 2px solid var(--color-signal-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #storecrew-root *,
+  #storecrew-root *::before,
+  #storecrew-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@layer components {
+  /* The micro-label. Mono, uppercase, wide — the console's connective tissue.
+     Used for every section heading and field label so the eye learns that
+     small-caps-mono means "this is instrumentation, not prose". */
+  .scr-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .scr-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+  }
+
+  /* Status lives on a left edge-bar rather than a badge. A shift board reads
+     by colour down the left margin; scattering pills through the content makes
+     the same information take longer to scan. */
+  .scr-edge {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .scr-edge::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--edge, transparent);
+  }
+
+  .scr-num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* A slow pulse for "currently working". One animation in the whole product,
+   reserved for the single thing that is genuinely live. */
+@keyframes scr-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.scr-live {
+  animation: scr-pulse 2s ease-in-out infinite;
+}

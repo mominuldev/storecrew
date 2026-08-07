@@ -375,10 +375,49 @@ $health = $indexer->health();
 $t( 'health reports chunk counts', $health['chunks'] > 0 );
 $t( 'health reports the configured model and width', '' !== $health['model'] && $health['dimensions'] > 0 );
 $t( 'pending is never negative', $health['pending'] >= 0 );
-$t(
-	'PROBE: health counts vectors from a different model as mismatched, not healthy',
-	array_key_exists( 'mismatched', $health )
+// Fire the guard rather than assert the key exists. A vector embedded by some
+// other model scores against nothing, so counting it as ready reports a
+// working knowledge base on an install that cannot answer a single question.
+$policy->save(
+	array( ModelPolicy::TASK_EMBEDDING => array( 'provider' => 'fake', 'model' => 'fake-embed-OTHER' ) )
 );
+$switched = $indexer->health();
+
+$t(
+	'PROBE: switching the embedding model strands the existing vectors',
+	0 === $switched['embedded'] && $switched['mismatched'] > 0,
+	sprintf( 'embedded=%d mismatched=%d', $switched['embedded'], $switched['mismatched'] )
+);
+$t( 'stranded vectors are reported as pending re-embedding', $switched['pending'] === $switched['chunks'] );
+
+// The same must hold when nothing that can embed is connected at all — the
+// state a fresh install is in. The repository reads '' as "do not filter by
+// model", which is right for counting rows and wrong for answering "is this
+// ready": taking the raw count reported a full, healthy index on an install
+// that had never embedded anything with a real model.
+//
+// `$lonely` has no embedding provider, so its policy resolves no model. Note
+// that deleting the option is *not* enough to reach this state — a configured
+// provider still supplies a default model, which is the intended behaviour.
+$unset = $lonely->health();
+
+$t(
+	'PROBE: with no embedding model configured, nothing counts as ready',
+	0 === $unset['embedded'] && '' === $unset['model'],
+	sprintf( 'embedded=%d model=%s', $unset['embedded'], $unset['model'] )
+);
+$t(
+	'the stranded vectors are still reported, not silently dropped',
+	$unset['mismatched'] > 0,
+	sprintf( 'mismatched=%d', $unset['mismatched'] )
+);
+
+// Restore the model the rest of the suite expects.
+$policy->save(
+	array( ModelPolicy::TASK_EMBEDDING => array( 'provider' => 'fake', 'model' => 'fake-embed-1' ) )
+);
+$health = $indexer->health();
+$t( 'restoring the model makes the vectors usable again', $health['embedded'] > 0 );
 
 $estimate = $indexer->estimate();
 $t( 'estimate counts objects per source', isset( $estimate['objects']['post'] ) );

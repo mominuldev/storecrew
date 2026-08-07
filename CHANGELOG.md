@@ -14,6 +14,67 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**The admin application** — 2026-08-07
+
+- `src/Core/Admin/AdminPage.php` — the host page. Registers a top-level menu
+  under `storecrew_manage` (not `manage_options`, so a shop manager is not
+  locked out), renders a single mount point, and enqueues the bundle on its own
+  screen only. Admin notices are removed on this page: the app owns the whole
+  viewport, and other plugins inject notices freely.
+- `admin-app/` — React 19 + TypeScript + Vite + Tailwind 4, with **no
+  `@wordpress/*` packages of any kind**. React is bundled rather than borrowed
+  from core, whose version moves with each WordPress release.
+- Six screens: Overview, Crew, Knowledge, Inbox, Settings, and a conversation
+  detail view. Routing is `HashRouter` — `admin.php?page=storecrew` is the only
+  URL WordPress knows about.
+- Premium routes render from the bootstrap manifest, so the free plugin
+  displays an upgrade panel for screens it cannot load without ever knowing
+  what they are.
+- Built bundle: 301 KB raw / 93.5 KB gzipped, inside the PRD's 250 KB budget.
+- `tests/schema/verify-admin.php` — 32 assertions covering menu registration,
+  capability, asset scoping, the bootstrap payload, and every endpoint the app
+  calls on first paint.
+
+The console is built as a shift board rather than an analytics dashboard:
+status is the primary information, numbers are secondary, and the vocabulary is
+on duty / needs you / needs setup. No webfonts — a plugin that pulls fonts from
+a CDN leaks every admin page view to a third party and breaks offline.
+
+### Fixed
+
+**Three bugs the admin work surfaced** — 2026-08-07
+
+- **Tailwind lost every cascade fight with wp-admin.** Layer order is consulted
+  *before* specificity, and unlayered declarations beat layered ones at any
+  specificity. WordPress admin CSS is unlayered; `@import 'tailwindcss'` puts
+  every utility in `@layer utilities`. So `body { color: #3c434a }` beat the
+  app's own text colour, and `a { color: #2271b1 }` repainted every link admin
+  blue. Invisible in light mode, because WordPress's dark-grey-on-white looks
+  like what was intended — it only surfaced in dark mode, where surfaces
+  flipped and text did not. Utilities are now emitted unlayered and important,
+  and the reset is scoped to `#storecrew-root` at ID specificity, which is what
+  it takes to outrank `input[type='text']:focus`.
+- **Tailwind preflight was being shipped into wp-admin globally.** It resets
+  `*`, `button`, `ul`, and friends on a page that also contains the admin menu
+  and toolbar. Replaced with a reset scoped to `#storecrew-root`. The
+  stylesheet got smaller as a result.
+- **A knowledge base with no embedding model reported itself fully ready.**
+  `Indexer::health()` passed the resolved model straight through to
+  `count_embedded()`, whose `''` means "do not filter by model" — correct for
+  counting rows, wrong for answering "is this searchable". A fresh install
+  showed *62 of 62 ready* while nothing could answer a question, because with
+  no model configured the *query* cannot be embedded either. Health now reports
+  those vectors as stranded rather than ready.
+
+### Changed
+
+- `AdminPage` is registered unconditionally rather than behind `is_admin()`.
+  Both hooks it attaches are admin-only already, so the guard gated a gate —
+  and it made the menu unreachable under WP-CLI, where `is_admin()` is false,
+  hiding menu bugs from the only harness that could catch them.
+- The integration shim gained `is_admin()`. The harness caught the kernel
+  calling an unshimmed function, which is exactly its job.
+
 **First live run, and the FR-KB-09 measurement** — 2026-08-07
 
 - `tools/seed-demo-catalogue.php` — 30 products with descriptions written so a

@@ -1,0 +1,149 @@
+<?php
+/**
+ * Admin application host verification.
+ *
+ * Run with: wp eval-file wp-content/plugins/storecrew/tests/schema/verify-admin.php --user=1
+ *
+ * Covers the PHP that mounts the SPA and the contract the SPA depends on. The
+ * React app itself is type-checked at build time; what is worth asserting here
+ * is the seam — that the menu exists, that assets only load on our screen, that
+ * the bootstrap payload carries a nonce, and that every endpoint the app calls
+ * on first paint actually answers.
+ *
+ * No declare(strict_types=1): wp eval-file runs this through eval().
+ *
+ * @package StoreCrew
+ */
+
+use StoreCrew\Core\Admin\AdminPage;
+use StoreCrew\Core\Capabilities\Capabilities;
+
+$pass = 0;
+$fail = 0;
+
+$t = static function ( string $label, bool $ok, string $detail = '' ) use ( &$pass, &$fail ): void {
+	if ( $ok ) {
+		++$pass;
+		echo "  PASS  {$label}\n";
+	} else {
+		++$fail;
+		echo "  FAIL  {$label}" . ( '' !== $detail ? " — {$detail}" : '' ) . "\n";
+	}
+};
+
+echo "\n== Built assets ==\n";
+$js  = STORECREW_DIR . 'assets/admin/app.js';
+$css = STORECREW_DIR . 'assets/admin/app.css';
+
+$t( 'the application bundle is built', file_exists( $js ) );
+$t( 'the stylesheet is built', file_exists( $css ) );
+
+if ( file_exists( $js ) ) {
+	$bytes = filesize( $js );
+	// The PRD budgets 250 KB gzipped for the initial bundle. Raw size is the
+	// cheap proxy; roughly a third survives gzip.
+	$t( 'bundle is within a sane size', $bytes < 900 * 1024, round( $bytes / 1024 ) . ' KB raw' );
+
+	$source = file_get_contents( $js );
+	$t(
+		'PROBE: no @wordpress package leaked into the bundle',
+		! str_contains( $source, '@wordpress/' ),
+		'a Gutenberg package was bundled'
+	);
+	$t(
+		'PROBE: React is bundled, not borrowed from core',
+		! str_contains( $source, 'window.wp.element' )
+	);
+}
+
+echo "\n== Menu registration ==\n";
+$page = new AdminPage();
+$page->register();
+
+global $menu;
+$menu                          = array();
+$GLOBALS['_registered_pages']  = array();
+do_action( 'admin_menu' );
+
+$entry = null;
+
+foreach ( (array) $menu as $item ) {
+	if ( 'storecrew' === ( $item[2] ?? '' ) ) {
+		$entry = $item;
+	}
+}
+
+$t( 'a top-level menu is registered', null !== $entry );
+$t( 'it requires our own capability', Capabilities::MANAGE === ( $entry[1] ?? '' ), (string) ( $entry[1] ?? '' ) );
+$t(
+	'PROBE: it does not use manage_options',
+	'manage_options' !== ( $entry[1] ?? '' ),
+	'a shop manager would be locked out'
+);
+
+echo "\n== The page is a mount point, nothing more ==\n";
+ob_start();
+$page->render();
+$html = trim( (string) ob_get_clean() );
+
+$t( 'renders exactly one mount point', '<div id="storecrew-root"></div>' === $html, $html );
+
+echo "\n== Asset loading is scoped ==\n";
+wp_scripts()->queue = array();
+$page->enqueue( 'edit.php' );
+$t( 'PROBE: nothing loads on an unrelated screen', ! in_array( 'storecrew-admin', wp_scripts()->queue, true ) );
+
+$page->enqueue( 'plugins.php' );
+$t( 'PROBE: nothing loads on the plugins screen either', ! in_array( 'storecrew-admin', wp_scripts()->queue, true ) );
+
+$page->enqueue( 'toplevel_page_storecrew' );
+$t( 'the app loads on our own screen', in_array( 'storecrew-admin', wp_scripts()->queue, true ) );
+
+$data = (string) wp_scripts()->get_data( 'storecrew-admin', 'data' );
+$t( 'a bootstrap payload is attached', str_contains( $data, 'storecrewBoot' ) );
+$t( 'it carries the REST root', str_contains( $data, 'wp-json' ) || str_contains( $data, 'rest_route' ) );
+$t(
+	'PROBE: it carries a nonce — cookie auth alone will not authorise a write',
+	(bool) preg_match( '/"nonce":"[a-zA-Z0-9]+"/', $data ),
+	$data
+);
+$t(
+	'PROBE: no secret is exposed to the browser',
+	! str_contains( $data, 'sk-' ) && ! str_contains( strtolower( $data ), 'api_key' )
+);
+
+echo "\n== Every screen the app opens with answers ==\n";
+do_action( 'rest_api_init' );
+$server = rest_get_server();
+
+$endpoints = array(
+	'/storecrew/v1/bootstrap'     => 'Overview',
+	'/storecrew/v1/health'        => 'Overview',
+	'/storecrew/v1/approvals'     => 'Inbox badge',
+	'/storecrew/v1/providers'     => 'Settings',
+	'/storecrew/v1/settings'      => 'Settings',
+	'/storecrew/v1/index'         => 'Knowledge',
+	'/storecrew/v1/conversations' => 'Crew',
+);
+
+foreach ( $endpoints as $route => $screen ) {
+	$response = $server->dispatch( new WP_REST_Request( 'GET', $route ) );
+	$t( sprintf( '%s (%s)', $route, $screen ), 200 === $response->get_status(), (string) $response->get_status() );
+}
+
+echo "\n== The bootstrap contract the app is typed against ==\n";
+$boot = $server->dispatch( new WP_REST_Request( 'GET', '/storecrew/v1/bootstrap' ) )->get_data()['data'];
+
+foreach ( array( 'version', 'apiVersion', 'features', 'catalog', 'routes', 'onboarding', 'user' ) as $key ) {
+	$t( "bootstrap carries {$key}", array_key_exists( $key, $boot ) );
+}
+
+$t( 'onboarding reports whether anything can be indexed', array_key_exists( 'canEmbed', $boot['onboarding'] ) );
+$t( 'routes carry a locked flag for gating', ! $boot['routes'] || array_key_exists( 'locked', $boot['routes'][0] ) );
+
+echo "\n" . str_repeat( '-', 60 ) . "\n";
+printf( "%d passed, %d failed\n", $pass, $fail );
+
+if ( $fail > 0 ) {
+	exit( 1 );
+}

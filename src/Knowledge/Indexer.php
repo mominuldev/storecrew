@@ -311,7 +311,29 @@ final class Indexer {
 		$model = $resolved['model'] ?? '';
 		$dims  = self::dimensions();
 
-		$chunks   = $this->chunks->count();
+		$chunks = $this->chunks->count();
+
+		// With no embedding model configured, nothing is searchable — not
+		// because the vectors are missing, but because the *query* cannot be
+		// embedded either, and vectors from some earlier model are not
+		// comparable to whatever gets configured next.
+		//
+		// The repository's `''` means "do not filter by model", which is right
+		// for counting raw rows but wrong for answering "is the index ready".
+		// Taking the raw count here is what reported a full, healthy index on
+		// an install that could not answer a single question.
+		if ( '' === $model ) {
+			return array(
+				'sources'    => $this->sources->status_counts(),
+				'chunks'     => $chunks,
+				'embedded'   => 0,
+				'pending'    => $chunks,
+				'model'      => '',
+				'dimensions' => $dims,
+				'mismatched' => $this->chunks->count_embedded(),
+			);
+		}
+
 		$embedded = $this->chunks->count_embedded( $model, $dims );
 
 		return array(
