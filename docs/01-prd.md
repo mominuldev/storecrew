@@ -163,7 +163,7 @@ IDs are stable and permanent. `MUST` = Phase 1 launch blocker. `SHOULD` = Phase 
 | FR-AGENT-06 | A hard turn budget (tool calls, tokens, wall-clock) terminates runaway loops and returns a graceful message | MUST |
 | FR-AGENT-07 | Every agent run is persisted: agent, model, prompt hash, tool calls, arguments, results, tokens, latency, outcome | MUST |
 | FR-AGENT-08 | Consultation — an agent invokes another agent's tools without conversation transfer | SHOULD |
-| FR-AGENT-09 | Merchant may edit an agent's persona, tone, and guardrails without code | SHOULD — **rescoped 2026-08-07 (Gate 3): persona and tone ship; guardrail editing deferred.** Shipped guardrails are appended *after* the persona so an edited persona cannot strip them (R-SEC-01); where a merchant's own rule sits in that order, and how it is prevented from loosening one, needs a design pass rather than a column read. The storage exists (`agent_configs.guardrails`); nothing consumes it. See 08 § 8 |
+| FR-AGENT-09 | Merchant may edit an agent's persona, tone, and guardrails without code | SHOULD — **fully met 2026-08-07** (the Gate 3 rescope is retired). Persona, tone, and house rules all ship. House rules are additive-only: composed after every shipped guardrail behind a frame stating additions never replace, so an edited rule can tighten but cannot loosen one (R-SEC-01, probe-tested against a hostile rule). See 08 § 1 |
 | FR-AGENT-10 | Custom agents definable via the admin UI | MAY |
 
 ### 7.3 Sales Agent — `FR-SALES`
