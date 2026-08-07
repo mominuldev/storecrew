@@ -110,10 +110,12 @@ partially resolved by measurement).
 ### Gate 3 — AI & Agent Core
 | # | Document | Status |
 |---|---|---|
-| 8 | [Agent Framework Architecture](08-agent-framework.md) | ⬜ Not started |
-| 9 | [AI Provider Architecture](09-ai-provider-architecture.md) | ⬜ Not started |
+| 8 | [Agent Framework Architecture](08-agent-framework.md) | ✅ Draft complete |
+| 9 | [AI Provider Architecture](09-ai-provider-architecture.md) | ✅ Draft complete |
 
-**Gate 3:** ⬜ Blocked by Gate 2
+**Gate 3:** 🟡 All drafts complete — awaiting review (after Gate 2). Both
+documents describe built, probe-tested subsystems; each closes with its known
+gaps (streaming, failover execution) rather than leaving them implicit.
 
 ### Gate 4 — Application, UX & Commercial
 | # | Document | Status |
