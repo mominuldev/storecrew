@@ -1,8 +1,8 @@
 # 05 — REST API Specification
 
 **Product:** StoreCrew AI
-**Status:** Draft complete — documents the live API as of 2026-08-07
-**Version:** 0.1 · Namespace `storecrew/v1` · 21 routes, 8 controllers
+**Status:** Gate 2 approved — verified route-for-route against the live API
+**Version:** 1.0 · Namespace `storecrew/v1` · 21 routes, 8 controllers
 
 Every route below is registered through the controller registry
 (15 § 4.1) and dispatched through the real `WP_REST_Server` by

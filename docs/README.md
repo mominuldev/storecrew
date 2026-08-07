@@ -97,21 +97,21 @@ D1 confirms FR-LIC-02, D7 confirms FR-SUPPORT-08.
 ### Gate 2 — Technical Architecture
 | # | Document | Status |
 |---|---|---|
-| 3 | [Technical Architecture](03-technical-architecture.md) | ✅ Draft complete |
-| 4 | [Database Schema](04-database-schema.md) | ✅ Draft complete |
-| 5 | [REST API Specification](05-api-specification.md) | ✅ Draft complete |
-| 7 | [Plugin Folder Structure](07-folder-structure.md) | ✅ Draft complete — covers **both** plugin trees |
+| 3 | [Technical Architecture](03-technical-architecture.md) | ✅ Approved (v1.0) |
+| 4 | [Database Schema](04-database-schema.md) | ✅ Approved (v1.0) |
+| 5 | [REST API Specification](05-api-specification.md) | ✅ Approved (v1.0) |
+| 7 | [Plugin Folder Structure](07-folder-structure.md) | ✅ Approved (v1.0) — covers **both** plugin trees |
 
-**Gate 2:** 🟡 **Review run 2026-08-07 — remediated, awaiting approval.**
-Four independent verification passes (docs vs code, live DB, live route
-table) found the documents structurally accurate but surfaced **four code
-defects behind documented guarantees**. All four are fixed and probe-tested
-(suites grew 566 → 583 assertions, all green): retrieval provenance now
-reaches the run record, tool arguments are redacted before storage, every
-`/chat/*` response is marked `no-store`, and the routing classifier is
-spend-guarded. The doc-stale findings are absorbed into 03/04/05/07, and
-04 § 11 now marks retention/GDPR as planned rather than present-tense.
-Findings and outcomes: [reviews/gate-2-review.md](reviews/gate-2-review.md).
+**Gate 2:** ✅ **Approved 2026-08-07** (reviewed, remediated, and approved the
+same day). Four independent verification passes (docs vs code, live DB, live
+route table) found the documents structurally accurate but surfaced four code
+defects behind documented guarantees — all fixed and probe-tested the same
+day (suites grew 566 → 583 assertions, all green), with the doc-stale
+findings absorbed into 03/04/05/07. The approval accepted the review's
+doc-side dispositions and moved its four open tickets (retention pruning,
+GDPR exporter/eraser, static-analysis configs, Pro `uninstall.php`) into
+14 § M1 as pre-launch exit criteria. Findings and outcomes:
+[reviews/gate-2-review.md](reviews/gate-2-review.md).
 Deliverables 03/05/07 document the **built and verified** system rather than a
 proposal; each records where implementation experience amended the original
 intent (e.g. the measured retrieval findings in 03 § 6, the two spikes A3/A4
@@ -123,7 +123,7 @@ partially resolved by measurement).
 | 8 | [Agent Framework Architecture](08-agent-framework.md) | ✅ Draft complete |
 | 9 | [AI Provider Architecture](09-ai-provider-architecture.md) | ✅ Draft complete |
 
-**Gate 3:** 🟡 All drafts complete — awaiting review (after Gate 2). Both
+**Gate 3:** 🟡 **Next up** — all drafts complete, Gates 1–2 approved. Both
 documents describe built, probe-tested subsystems; each closes with its known
 gaps (streaming, failover execution) rather than leaving them implicit.
 

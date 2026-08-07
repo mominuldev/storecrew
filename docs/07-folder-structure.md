@@ -1,8 +1,8 @@
 # 07 — Plugin Folder Structure
 
 **Product:** StoreCrew AI (both plugin trees)
-**Status:** Draft complete — documents the trees as they exist, 2026-08-07
-**Version:** 0.1
+**Status:** Gate 2 approved — documents the trees as they exist, verified
+**Version:** 1.0
 
 Two principles decide where a file lives:
 

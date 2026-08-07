@@ -1,5 +1,10 @@
 # Gate 2 Review — Findings
 
+> **Gate 2 approved 2026-08-07** by the product owner, as remediated,
+> accepting the doc-side dispositions of G2-D1–D3. The four open tickets
+> (retention pruning, GDPR exporter/eraser, static-analysis configs, Pro
+> `uninstall.php`) moved into 14 § M1 as pre-launch exit criteria.
+
 **Date:** 2026-08-07
 **Scope:** 03 Technical Architecture, 04 Database Schema, 05 REST API
 Specification, 07 Folder Structure.

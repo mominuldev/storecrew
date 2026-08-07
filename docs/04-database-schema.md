@@ -1,8 +1,8 @@
 # 04 — Database Schema
 
-**Status:** Draft complete — awaiting Gate 2 review
-**Version:** 0.1
-**Date:** 2026-08-07
+**Status:** Gate 2 approved — verified column-for-column against the live schema
+**Version:** 1.0
+**Date:** 2026-08-07 (reviewed, remediated, and approved 2026-08-07)
 **Implements:** FR-CORE-04, FR-AGENT-07, FR-KB-01…10, FR-SUPPORT-01/02, FR-AI-04, FR-LIC-02, FR-ADMIN-04/06/08
 **Addresses:** R-TECH-01, R-TECH-03, assumption A3
 
@@ -456,6 +456,13 @@ Only the audit-log window is enforced today: `MaintenanceJob` prunes it on the h
 ---
 
 ## 12. Open Questions for Gate 2 Review
+
+**Standing recorded at the Gate 2 approval, 2026-08-07:** Q5 was resolved by
+Gate 1 (D1 — conversations, 100/month; the schema already meters them). Q2 is
+partially answered by the FR-KB-09 measurement and reads accordingly below.
+Q1 and Q4 are carried forward as open design questions — neither blocks a
+schema that stores width-agnostic vectors and unencrypted text today. Q3 is
+settled alongside the retention pruning work now scheduled in 14 § M1.
 
 1. **Embedding precision** — float32, float16, or a 768-dimension model? At 50k products this is the difference between 880 MB and 220 MB, and it changes which hosting tier the product is viable on. Needs a recall measurement to decide honestly.
 2. **Is the two-stage retrieval acceptable?** Partially answered by the FR-KB-09 measurement (§ 6): on the small corpus, full-dense wins outright — 0.96–1.00 recall@3 against 0.80 for the prefilter path — so below 2,000 chunks the prefilter is not used at all, and it survives only where a full scan is too slow. What still wants an answer is the large-corpus case the prefilter exists for: recall above 2,000 chunks is unmeasured, and a poor figure there forces the external vector store (R-TECH-01).

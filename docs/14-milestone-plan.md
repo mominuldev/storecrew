@@ -32,10 +32,15 @@ DB-free harness · docs 01–15 drafted.
 
 ## M1 — Phase 1 complete ("nothing left that embarrasses a merchant")
 
-The gap list, from CLAUDE.md and 03 § 13, each with its exit criterion:
+The gap list, from CLAUDE.md, 03 § 13, and the Gate 2 review
+(docs/reviews/gate-2-review.md), each with its exit criterion:
 
 | Item | Exit criterion |
 |---|---|
+| **Retention pruning (04 § 11)** — conversations/messages, agent runs/tool calls, usage events | Each window enforced from the hourly maintenance sweep, batched on the pattern the audit pruner set; a probe proves each fires; 04 § 11's Status column flips to Implemented |
+| **GDPR exporter/eraser (04 § 11)** | Registered with the WordPress personal-data hooks; erasing a customer anonymises `customer_id`, `verified_order_id`, and attributable message content while counters survive; probe-tested |
+| **Static-analysis configs (03 § 4)** | `composer lint` / `analyse` / `test` run green from the configs they reference; the repositories-only `$wpdb` rule is automated with its three documented carve-outs |
+| **Pro `uninstall.php` (FR-DIST-06)** | Pro removes its own options on uninstall, making free's `uninstall.php` comment true; covered by the integration harness |
 | **Streaming (FR-CHAT-02)** — raw-cURL SSE transport, `stream()` on the chat interface, widget token rendering, buffered fallback per host detection (R-TECH-02) | A streamed turn on a real host *and* the documented fallback exercised on a buffering host; 12 § 10's constraint holds (transport changed, authority untouched) |
 | **SKU / exact-identifier tool** | "SKU-1042" answers from the identifier tool; the semantic path never sees it; fixture added to the recall harness |
 | **Failover execution (FR-AI: `ModelPolicy::fallback()`)** | A provider 5xx mid-conversation completes the turn on the fallback; run record shows both attempts |

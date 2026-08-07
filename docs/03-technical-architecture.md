@@ -1,9 +1,9 @@
 # 03 — Technical Architecture
 
 **Product:** StoreCrew AI
-**Status:** Draft complete — documents the built system as of 2026-08-07
-**Version:** 0.1
-**Date:** 2026-08-07
+**Status:** Gate 2 approved — documents the built system, verified against code
+**Version:** 1.0
+**Date:** 2026-08-07 (reviewed, remediated, and approved 2026-08-07)
 
 Unusually for a Gate 2 document, this describes an architecture that already
 exists and has been verified — 583 assertions across nine suites, a DB-free
