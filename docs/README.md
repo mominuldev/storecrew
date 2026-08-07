@@ -123,7 +123,8 @@ partially resolved by measurement).
 | 8 | [Agent Framework Architecture](08-agent-framework.md) | ✅ Draft complete |
 | 9 | [AI Provider Architecture](09-ai-provider-architecture.md) | ✅ Draft complete |
 
-**Gate 3:** 🟡 **Review run 2026-08-07 — remediated, awaiting approval.** Two
+**Gate 3:** ✅ **Approved 2026-08-07** (reviewed, remediated, and approved the
+same day). Two
 verification passes found no security defects but surfaced a cluster of
 capabilities documented as working that no production path exercised. All
 nine code findings are fixed per the ratified decisions — handoff wired as
@@ -132,7 +133,11 @@ machinery's first real firing), refusals metered, FR-AGENT-09 rescoped — and
 the missing regression guards now exist. The remediation also caught the
 test suites deleting the merchant's real provider keys and, once restored,
 making a live billable call from a probe; both fixed. Suites: 583 → 615
-assertions, green in shuffled order. Findings and outcomes:
+assertions, green in shuffled order. The approval re-verified each fix
+against `src/` and re-ran the suites in two orders, and moved the three
+deliberately-dormant surfaces (`agent_configs.guardrails`,
+`agent_configs.model_policy`, `METRIC_CONVERSATION`) into 14 § M1 and § M4 as
+exit criteria. Findings and outcomes:
 [reviews/gate-3-review.md](reviews/gate-3-review.md).
 
 ### Gate 4 — Application, UX & Commercial
@@ -142,7 +147,7 @@ assertions, green in shuffled order. Findings and outcomes:
 | 11 | [UI/UX Wireframes](11-wireframes.md) | ✅ Draft complete — as-built |
 | 10 | [SaaS Subscription Architecture](10-saas-subscription.md) | ✅ Draft complete — **design ahead of code**; consumes strategy D1–D5 |
 
-**Gate 4:** 🟡 All drafts complete — awaiting review (after Gate 3). 06 and 11
+**Gate 4:** 🟡 All drafts complete — **next to review** (Gate 3 approved). 06 and 11
 document built, browser-verified surfaces; 10 is the one forward-looking
 design in the set and says so, with its build order and the ship-blocking
 licence-stub replacement called out.

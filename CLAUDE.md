@@ -38,14 +38,17 @@ and commits reference them, so never renumber.
 
 **All fifteen deliverables are drafted** (2026-08-07). Most document the
 built system and record where implementation amended intent; 10 (SaaS
-Subscription) is the one design ahead of code. **Gates 1 and 2 are approved**
-(both 2026-08-07): Gate 1 ratified all ten decisions (D1–D10) as recommended
-(02 § 9, resolutions inline in 01 § 13 and 15 § 9); Gate 2 was reviewed
-against code, live DB, and live routes, remediated (four code defects fixed,
-probe-tested — see `docs/reviews/gate-2-review.md`), and approved with its
-open tickets moved to 14 § M1. Gates 3–5 reviews are pending in order. A code
-change that alters documented behaviour edits the document in the same
-change-set.
+Subscription) is the one design ahead of code. **Gates 1, 2 and 3 are
+approved** (all 2026-08-07): Gate 1 ratified all ten decisions (D1–D10) as
+recommended (02 § 9, resolutions inline in 01 § 13 and 15 § 9); Gate 2 was
+reviewed against code, live DB, and live routes, remediated (four code
+defects fixed, probe-tested — see `docs/reviews/gate-2-review.md`), and
+approved with its open tickets moved to 14 § M1; Gate 3 was reviewed against
+`src/`, remediated (nine code findings plus four missing regression guards —
+`docs/reviews/gate-3-review.md`), re-verified fix by fix at approval, and
+approved with its three dormant surfaces moved to 14 § M1 and § M4. **Gate 4
+is next** (06, 11, 10), then Gate 5. A code change that alters documented
+behaviour edits the document in the same change-set.
 
 Deliverable 15 is numbered out of sequence deliberately — it was added after
 the original 14 and appending beat renumbering every cross-reference.
@@ -394,4 +397,9 @@ ciphertext, ragged embedding vectors, and the migration lock.
   retries like POST; and regression probes exist for `thoughtSignature`
   replay and mid-turn identity. FR-AGENT-09 is rescoped: persona now,
   merchant guardrail overrides deferred (`agent_configs.guardrails` is
-  stored but consumed by nothing — deliberate).
+  stored but consumed by nothing — deliberate). **Gate 3 was approved
+  2026-08-07** after re-verifying every fix against `src/` and re-running the
+  suites in two orders (615 assertions each). Three surfaces stay stored and
+  inert on purpose, now with owners: `agent_configs.guardrails` and
+  `agent_configs.model_policy` in 14 § M1, `METRIC_CONVERSATION` in § M4 —
+  a conversation cap counts nothing until that metric is written.

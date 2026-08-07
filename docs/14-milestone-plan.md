@@ -6,9 +6,10 @@
 
 This plan starts from where the code actually is, which is far past where a
 Gate 5 plan usually starts: the platform, agents, knowledge base, REST API,
-admin console, and storefront chat all exist, are suite-verified (566
-assertions), and have carried a live five-turn conversation against a real
-model. The plan is therefore mostly a **completion and hardening ledger for
+admin console, and storefront chat all exist, are suite-verified (615
+assertions after the Gate 2 and Gate 3 remediations), and have carried a live
+five-turn conversation against a real model. The plan is therefore mostly a
+**completion and hardening ledger for
 Phase 1**, then the Phase 2 build that Pro launches on.
 
 Sequencing rule inherited from strategy D9: *beta → .org free launch → Pro
@@ -32,8 +33,8 @@ DB-free harness · docs 01–15 drafted.
 
 ## M1 — Phase 1 complete ("nothing left that embarrasses a merchant")
 
-The gap list, from CLAUDE.md, 03 § 13, and the Gate 2 review
-(docs/reviews/gate-2-review.md), each with its exit criterion:
+The gap list, from CLAUDE.md, 03 § 13, and the Gate 2 and Gate 3 reviews
+(`docs/reviews/`), each with its exit criterion:
 
 | Item | Exit criterion |
 |---|---|
@@ -44,6 +45,8 @@ The gap list, from CLAUDE.md, 03 § 13, and the Gate 2 review
 | **Streaming (FR-CHAT-02)** — raw-cURL SSE transport, `stream()` on the chat interface, widget token rendering, buffered fallback per host detection (R-TECH-02) | A streamed turn on a real host *and* the documented fallback exercised on a buffering host; 12 § 10's constraint holds (transport changed, authority untouched) |
 | **SKU / exact-identifier tool** | "SKU-1042" answers from the identifier tool; the semantic path never sees it; fixture added to the recall harness |
 | **Failover execution (FR-AI: `ModelPolicy::fallback()`)** | A provider 5xx mid-conversation completes the turn on the fallback; run record shows both attempts |
+| **Merchant guardrail overrides (FR-AGENT-09, deferred half)** — `agent_configs.guardrails` is written and decoded by the repository and consumed by nothing; the storage shipped without the design | A merchant rule is composed into the prompt at a decided position relative to the shipped guardrails, and a probe proves an override cannot *loosen* one (R-SEC-01 holds against a hostile override, as it already does against a hostile persona); 01's FR-AGENT-09 rescope note and 08 § 8 both retire |
+| **Per-agent model policy** — `agent_configs.model_policy` is stored and decoded the same way, read by nothing; `ModelPolicy` resolves globally | Either a per-agent override resolves ahead of the global policy with a probe covering both paths, or the column is documented as reserved in 04 and 08 § 1 — a stored-but-inert config surface is the shape both Gate 2 and Gate 3 caught, and it does not survive a third gate unlabelled |
 | **Onboarding flow (FR-ADMIN-02)** | The five-step path (key → sources → index → agents → widget) completes on a fresh install in ≤ 15 min (the PRD's time-to-value target), measured on someone who is not us |
 | **Escalation notification** | An escalated conversation reaches the merchant by email within a minute — an inbox nobody is told to check is not an inbox |
 | **Adversarial suite v2 (12 § 10)** | Injection corpus (hostile reviews/pages/notes) runs against a live model in CI-able form; every attempt dies at a boundary probe, not at model discretion |
@@ -79,6 +82,11 @@ tools' approval defaults:
 1. **Licence infrastructure** (10 § 8): server + webhook + `LicenceClient`
    replacing the stub (**ship-blocking**), snapshot verification in
    `FeatureGate`, update server, free-tier cap enforcement at the widget.
+   Includes the metering substrate FR-LIC-02 rests on:
+   `UsageRepository::METRIC_CONVERSATION` is declared and recorded nowhere
+   (Gate 3), so a conversation cap today counts nothing — a cap must be
+   enforced against a metric that is actually written, and probe-tested at
+   the boundary before any tier depends on it.
 2. **Marketing agent** (FR-MKT): segments from Woo data, coupon tool
    (approval-gated — FR-SALES-06/FR-MKT-03), abandoned-cart sequence with
    consent discipline (FR-MKT-06 is a MUST before any send).

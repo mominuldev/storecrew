@@ -1,5 +1,23 @@
 # Gate 3 Review — Findings
 
+> **Gate 3 approved 2026-08-07** by the product owner, as remediated,
+> accepting the ratified G3-D1–D3 decisions (handoff wired, `cost_known` as a
+> column, FR-AGENT-09 rescoped). Re-verified at approval rather than taken on
+> the remediation's word: all nine code findings confirmed fixed in `src/`,
+> the four missing regression guards present, and the nine suites re-run in
+> **two different orders** — including the `verify-chat` → `verify-jobs`
+> pairing that was order-dependent — at **615 assertions, 0 failures**, plus
+> the DB-free harness.
+>
+> Three surfaces the remediation deliberately left dormant are now tickets
+> rather than sentences in a review document: `agent_configs.guardrails` and
+> `agent_configs.model_policy` (stored, decoded by the repository, consumed
+> by nothing) moved into 14 § M1; `UsageRepository::METRIC_CONVERSATION`
+> (declared, recorded nowhere — the FR-LIC-02 substrate) into 14 § M4 with
+> the licence spine that needs it. The 08 § 8 gaps that already had M1 owners
+> — no streaming (`ChatRequest::$stream` read by nobody) and
+> `ModelPolicy::fallback()`'s zero callers — stay where they are.
+
 **Date:** 2026-08-07
 **Scope:** 08 Agent Framework Architecture, 09 AI Provider Architecture.
 **Method:** two independent verification passes, one per document, checking
