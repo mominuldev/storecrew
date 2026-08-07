@@ -123,9 +123,16 @@ partially resolved by measurement).
 | 8 | [Agent Framework Architecture](08-agent-framework.md) | ✅ Draft complete |
 | 9 | [AI Provider Architecture](09-ai-provider-architecture.md) | ✅ Draft complete |
 
-**Gate 3:** 🟡 **Next up** — all drafts complete, Gates 1–2 approved. Both
-documents describe built, probe-tested subsystems; each closes with its known
-gaps (streaming, failover execution) rather than leaving them implicit.
+**Gate 3:** 🔴 **Review run 2026-08-07 — approval blocked.** Two verification
+passes found no security defects — the boundary holds everywhere, and 09's
+structural claims verify end to end — but surfaced a cluster of
+**capabilities documented as working that no production path exercises**
+(handoff is dormant while Sales promises transfers; product tracking and
+`cost_known` are unwired; refused turns are never metered), plus 08 having
+missed the Gate 2 remediation pass entirely, a stale extension-point list in
+the approved 15 § 4, and two missing regression guards (`thoughtSignature`
+replay, mid-turn identity). Findings, dispositions, and the three decisions
+awaiting the product owner: [reviews/gate-3-review.md](reviews/gate-3-review.md).
 
 ### Gate 4 — Application, UX & Commercial
 | # | Document | Status |

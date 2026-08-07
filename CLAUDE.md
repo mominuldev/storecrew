@@ -381,3 +381,12 @@ ciphertext, ragged embedding vectors, and the migration lock.
   now says so); no phpcs/phpstan config exists despite `composer.json`
   scripts; Pro has no `uninstall.php` though free's uninstall says it does;
   `storecrew_needs_upgrade` is written but never read.
+- **Gate 3 review (2026-08-07) — see `docs/reviews/gate-3-review.md`.** No
+  security defects, but: `Orchestrator::handoff()` has zero callers while
+  Sales' guardrail promises handovers; `SharedContext::saw_product()` is
+  unwired; `cost_known` never persists to run records (unknown cost displays
+  as free — violates the pricing-honesty rule); refused/failed turns are
+  never metered; invented-tool rows stick at `pending`; Gemini
+  `thoughtSignature` replay and mid-turn identity have no regression probes;
+  `verify-chat` → `verify-jobs` is order-dependent; 15 § 4 lists extension
+  hooks that do not exist (08's names are the real ones).
