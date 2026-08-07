@@ -184,27 +184,43 @@ final class KnowledgeChunkRepository extends Repository {
 	 *
 	 * @return list<object>
 	 */
-	public function needing_embedding( int $limit = 100, string $model = '', int $dimensions = 0 ): array {
+	public function needing_embedding( int $limit = 100, string $model = '', int $dimensions = 0, array $source_ids = array() ): array {
 		$table = $this->table_name();
 
-		$where  = array( 'embedding IS NULL' );
+		$stale  = array( 'embedding IS NULL' );
 		$params = array();
 
 		if ( '' !== $model ) {
-			$where[]  = 'embedding_model <> %s';
+			$stale[]  = 'embedding_model <> %s';
 			$params[] = $model;
 		}
 
 		if ( $dimensions > 0 ) {
-			$where[]  = 'embedding_dims <> %d';
+			$stale[]  = 'embedding_dims <> %d';
 			$params[] = $dimensions;
+		}
+
+		$where = '(' . implode( ' OR ', $stale ) . ')';
+
+		// An explicit scope confines the drain to the named sources. The case
+		// that demanded it: a consumer running under a different model policy —
+		// a test suite's fake provider — sees every real chunk as mismatched
+		// and re-embeds a merchant's whole corpus with vectors that score 0.0.
+		$source_ids = array_values( array_filter( array_map( 'intval', $source_ids ) ) );
+
+		if ( array() !== $source_ids ) {
+			$where .= ' AND source_id IN (' . implode( ', ', array_fill( 0, count( $source_ids ), '%d' ) ) . ')';
+			$params = array_merge( $params, $source_ids );
 		}
 
 		$params[] = $limit;
 
-		$sql = "SELECT id, source_id, content FROM {$table} WHERE "
-			. implode( ' OR ', $where )
-			. ' ORDER BY id ASC LIMIT %d';
+		// Never-embedded chunks drain before mismatched ones. Both are equally
+		// unsearchable, so production loses nothing — and a consumer that
+		// forgot its scope at least exhausts fresh fixtures before touching a
+		// corpus's stale-but-real vectors.
+		$sql = "SELECT id, source_id, content FROM {$table} WHERE {$where}"
+			. ' ORDER BY (embedding IS NULL) DESC, id ASC LIMIT %d';
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
 		return $this->db->get_results( $this->db->prepare( $sql, ...$params ) );

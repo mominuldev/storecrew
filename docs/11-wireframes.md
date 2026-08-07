@@ -66,12 +66,11 @@ top navigation, not a sidebar — five destinations do not justify one, and the
 board metaphor wants width. (Five in the nav; six screens, because the
 inspector is reached from a row, not from the bar.)
 
-**The nav is hardcoded and does not read the route manifest.** `Layout`
-ships a literal five-item array, so the `icon`, `order` and `inMenu` fields a
-contributed route carries reach the browser and are used by nothing — a
-premium screen renders at its hash and has no link pointing at it. Recorded
-as G4-C7; FR-DIST-12 does not hold until the bar is built from
-`bootstrap.routes`. The theme toggle shows its state as a label
+**Contributed routes join the bar from the manifest** (G4-D1, built
+2026-08-07): every route with `inMenu`, in declared `order`, after the
+shell's own five — locked ones marked "pro" and leading to the upgrade
+panel. `icon` is deliberately unread; the bar is text-only by this
+document's own vocabulary rule. The theme toggle shows its state as a label
 ("Light"/"Dark"), not an icon riddle. Responsive to 768 px (FR-ADMIN-07):
 nav collapses to wrap, stat rows stack.
 
@@ -162,19 +161,17 @@ deliberately indistinguishable from a call that never existed, and the card
 says so rather than going quiet. Empty state says what *would* arrive here —
 an empty queue must teach, not confuse.
 
-Two intentions in this section are **designed, not built**, and are open
-decisions from the Gate 4 review rather than descriptions of the screen:
+Both of this section's remaining intentions were ratified and built
+(2026-08-07):
 
-- **Arguments as a definition list, never raw JSON to a merchant** (G4-D2).
-  Today both this screen and the Overview print `JSON.stringify`. The values
-  are redacted server-side, so this is legibility rather than exposure — but
-  FR-ADMIN-06 exists for the merchant who reads a write before allowing it,
-  and `{"note":"…"}` is not reading.
-- **Escalated conversations surfacing here as links into the inspector**
-  (G4-D4). Today escalation appears once in the whole console, as a red edge
-  on a Crew row. A screen titled "needs you" that omits the half of "needs
-  you" that is not a write approval is the gap; whether it closes here or on
-  Crew is decided together with the escalation email (14 § M1).
+- **Arguments render as a definition list** (G4-D2) — shipped tools' keys
+  carry proper labels ("Order", "Note"), unknown keys are humanised, and the
+  Overview's teaser row summarises in words. The browser suite asserts no
+  raw JSON braces reach this screen.
+- **"Waiting for a human"** (G4-D4) — escalated conversations list below the
+  approval queue, newest first, each linking into the inspector. This is the
+  *pull* surface; the escalation email (the push) remains exactly one
+  ticket, 14 § M1.
 
 ### 3.5 Conversation detail — the inspector (FR-ADMIN-04)
 
@@ -238,9 +235,9 @@ plan" cards on the Overview. The console's own convention, weaker than a
 rule and worth keeping: an invitation sits where the capability would have
 been, never in the path of something that works.
 
-Neither treatment reaches a merchant today — nothing links to a contributed
-route (§ 2, G4-C7). A contributed screen that needs a new primitive
-contributes the *need* upstream rather than forking the look.
+Both treatments are reachable from the bar as of G4-D1. A contributed screen
+that needs a new primitive contributes the *need* upstream rather than
+forking the look.
 
 ---
 

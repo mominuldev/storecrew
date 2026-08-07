@@ -143,30 +143,29 @@ exit criteria. Findings and outcomes:
 ### Gate 4 — Application, UX & Commercial
 | # | Document | Status |
 |---|---|---|
-| 6 | [React Application Structure](06-react-app-structure.md) | ✅ Draft complete |
-| 11 | [UI/UX Wireframes](11-wireframes.md) | ✅ Draft complete — as-built |
-| 10 | [SaaS Subscription Architecture](10-saas-subscription.md) | ✅ Draft complete — **design ahead of code**; consumes strategy D1–D5 |
+| 6 | [React Application Structure](06-react-app-structure.md) | ✅ Approved (v1.0) |
+| 11 | [UI/UX Wireframes](11-wireframes.md) | ✅ Approved (v1.0) — as-built |
+| 10 | [SaaS Subscription Architecture](10-saas-subscription.md) | ✅ Approved (v1.0) — **design ahead of code**; consumes strategy D1–D5 |
 
-**Gate 4:** 🔴 **Review run 2026-08-07 — not approvable as written; partly
-remediated the same day.** Three verification passes found no security
-defect (the widget's no-`innerHTML` rule, link hardening, the admin nonce,
-and server-side entitlement re-checks all hold), but seven code findings and
-three specification defects. The recurring shape is here a fourth time, and
-this time it is the whole capability manifest: the feature `catalog` is
-computed on every `/bootstrap` and read by no component while `CrewBar`
-hardcodes premium's agents and copy in its place, and the route payload's
-`icon`/`order`/`inMenu` are read by no navigation — so every screen premium
-registers is unreachable except by typing its hash. 11 § 3's Inbox and
-Overview wireframes describe screens that were then built differently. 10's
-entitlement keys matched **no** registered slug, which would have silently
-degraded a paying customer, since an unknown slug evaluates as not-entitled.
-
-**Remediated:** all three specification defects in 10, the unexplained
-approval conflict (G4-C4, fixed in `Inbox.tsx`), and every doc-stale claim
-in 06 and 11. **Still blocking:** G4-C1, C2, C3, C5, C6 and C7, all of which
-wait on the four decisions G4-D1–D4 — the manifest-driven shell, the
-argument renderer, the browser suite, and where an escalation surfaces.
-Findings and remediation: [reviews/gate-4-review.md](reviews/gate-4-review.md).
+**Gate 4:** ✅ **Approved 2026-08-07** (reviewed, decisions ratified, and
+remediated the same day). The review found no security defect but seven code
+findings and three specification defects — the recurring built-but-unconsumed
+shape arriving as the whole capability manifest, plus 10's entitlement keys
+matching no registered slug. First-pass remediation fixed the specification
+defects, the unexplained approval conflict, and every doc-stale claim; the
+four decisions G4-D1–D4 were then ratified as the findings argue and built:
+the shell renders from the manifest (nav from routes, crew board from the
+catalog — premium's screens reachable, premium's copy its own), arguments
+render as a definition list, the browser suite is checked in
+(`npm run test:browser`, 33 assertions), and the Inbox gained "Waiting for a
+human" while the escalation email stays an M1 ticket. Verifying G4-D1 in a
+live browser surfaced one further defect the suites were green over —
+`verify-knowledge`'s fake provider had re-embedded the real corpus with
+worthless vectors — fixed at three layers (scoped embedding, NULL-first
+drain order, cleanup revert probe), and the fix exposed a probe that had
+been vacuous since it was written. 616 suite + 33 browser assertions green;
+corpus integrity verified across two consecutive runs. Findings and
+outcomes: [reviews/gate-4-review.md](reviews/gate-4-review.md).
 
 ### Gate 5 — Engineering Readiness
 | # | Document | Status |

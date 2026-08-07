@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build && vite build --config vite.widget.config.ts",
     "build:admin": "vite build",
     "build:widget": "vite build --config vite.widget.config.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:browser": "bash tests/browser/run.sh"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
+    "playwright": "^1.62.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",

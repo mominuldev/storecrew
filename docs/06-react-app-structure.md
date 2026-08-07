@@ -86,25 +86,18 @@ not finished loading. Try refreshing." Entitlement remains
 server-authoritative; the manifest is a rendering hint and every controller
 re-checks (FR-DIST-09).
 
-**Two qualifications, both open findings from the Gate 4 review.** The free
-plugin does not yet render purely from the manifest, and in one place it
-does the opposite:
-
-- **The navigation ignores the manifest entirely** (G4-C7). `Layout` holds a
-  hardcoded five-item array, so a contributed route's `label`, `icon`,
-  `order` and `inMenu` are serialised, typed, delivered — and read by
-  nothing. The route resolves at its hash and no link points to it, which
-  makes both treatments above unreachable in practice.
-- **`CrewBar` hardcodes premium's agents and their copy** (G4-C2), including
-  `agent.marketing` and `agent.analytics` with labels and role lines that
-  already disagree with Pro's own `Feature` definitions. The manifest's
-  `catalog` — slug, label, tier and description for every registered feature
-  — is computed on every bootstrap and consumed by no component (G4-C1),
-  which is exactly the payload that would fix it.
-
-So 15 § 5's intent holds in the server's design and not yet in the client.
-Until G4-D1 is decided, "the free plugin never knows what premium screens
-are" describes where this is going, not where it is.
+**The shell renders from the manifest** (G4-D1, ratified and built
+2026-08-07). `Layout` appends every contributed route with `inMenu`, in
+declared `order`, after its own five screens — locked entries carry a "pro"
+mark and lead to the upgrade panel, which is what makes a locked route an
+invitation rather than a dead link (FR-DIST-10, FR-DIST-12). `CrewBar`
+renders every `agent.*` feature from the manifest's `catalog` in registry
+order, with the registering plugin's own label and description — the free
+plugin owns none of premium's copy. Two deliberate limits, so the next
+reviewer does not re-find them: `AdminRoute.icon` is unconsumed because the
+nav is text-only by the design language's own rule, and the catalog gained
+no new fields — `description` is the role line and registry order the
+ordering, until a contributed agent actually needs placement control.
 
 ### 2.4 Surviving wp-admin (the hard-won part)
 
@@ -198,11 +191,14 @@ dark/mobile) and live against a real provider (five-turn conversation). The
 browser is the only harness that catches cascade fights and cache/cookie
 behaviour — the two bug classes this document exists to warn about.
 
-**None of it is checked in** (G4-C6). The repository holds no Playwright
-config, spec, or runner; `tests/` contains `schema/` and `integration/` and
-nothing else. Those runs happened and cannot be repeated, so by this
-project's own standard — a rule that has never been observed to fire is not
-a rule — the two bug classes named above are guarded today by care alone,
-and 14 § M1's "both browser verifications pass" names an artifact that does
-not exist. G4-D3 decides whether the suite is checked in or the claim is
-downgraded to a dated manual verification.
+**The suite is checked in** (G4-D3, ratified 2026-08-07): `tests/browser/`
+holds widget and admin specs as plain-node Playwright scripts under the same
+PASS/FAIL discipline as `tests/schema/`, run by `npm run test:browser`. The
+admin spec walks every screen in **dark mode**, sampling computed text
+colour against wp-admin's default — the cascade-defeat signature — and fails
+on any console error; the widget spec covers the keyboard path, dialog
+semantics, mobile, and the cache-safety rules, with the one token-spending
+section opt-in (`STORECREW_TEST_LIVE=1`) and admin credentials via
+environment so an unconfigured run skips loudly instead of failing
+mysteriously. The two bug classes named above now have a harness that can
+observe them fire.

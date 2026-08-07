@@ -282,7 +282,14 @@ $t( 'PROBE: re-indexing unchanged content is skipped', 'unchanged' === $second['
 $t( 'skipped re-index writes no chunks', 0 === $second['chunks'] );
 
 $before_calls = $fake->calls;
-$embed        = $indexer->embed_pending( 10 );
+
+// Every embed in this suite is scoped to its own source. Unscoped, the fake
+// provider drains globally — and under the fake policy a real corpus's chunks
+// all read as mismatched, so the suite would re-embed a merchant's index with
+// vectors that score 0.0. Found on a configured store, not in review.
+$own_sources = array( (int) $first['source_id'] );
+
+$embed = $indexer->embed_pending( 10, $own_sources );
 $t( 'embeds pending chunks', $embed['embedded'] > 0, wp_json_encode( $embed ) );
 $t( 'called the provider', $fake->calls > $before_calls );
 $t(
@@ -298,7 +305,7 @@ $own = $GLOBALS['wpdb']->get_var(
 	$GLOBALS['wpdb']->prepare(
 		'SELECT COUNT(*) FROM ' . StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::KNOWLEDGE_CHUNKS )
 		. ' WHERE source_id = %d AND embedding IS NULL',
-		$first['id']
+		$first['source_id']
 	)
 );
 $t( 'PROBE: this source has no unembedded chunks left', 0 === (int) $own, (string) $own );
@@ -324,7 +331,7 @@ wp_update_post(
 $reindexed = $indexer->index_object( PostExtractor::SOURCE_TYPE, (int) $page_id );
 $t( 'edited page re-chunks into several pieces', $reindexed['chunks'] > 1, wp_json_encode( $reindexed ) );
 
-$ragged = $indexer->embed_pending( 10 );
+$ragged = $indexer->embed_pending( 10, $own_sources );
 $t(
 	'PROBE: ragged vectors are rejected, not stored',
 	0 === $ragged['embedded'] && $ragged['blocked'],
@@ -335,7 +342,7 @@ $t(
 	count( $chunks->needing_embedding( 10 ) ) > 0
 );
 $fake->ragged = false;
-$indexer->embed_pending( 10 );
+$indexer->embed_pending( 10, $own_sources );
 
 echo "\n== Indexer without an embedding provider ==\n";
 $empty_providers = new ProviderRegistry();
@@ -344,7 +351,7 @@ $lonely          = new Indexer(
 	$extractors, $empty_providers, $empty_policy, new Chunker(),
 	$sources, $chunks, $usage, $container->get( SpendGuard::class )
 );
-$blocked = $lonely->embed_pending( 5 );
+$blocked = $lonely->embed_pending( 5, $own_sources );
 $t(
 	'PROBE: no embedding provider blocks with a reason, not a crash',
 	$blocked['blocked'] && str_contains( $blocked['reason'], 'embeddings' ),
@@ -458,6 +465,33 @@ if ( $product_id > 0 ) {
 	wp_delete_post( $product_id, true );
 }
 wp_delete_post( (int) $page_id, true );
+
+// embed_pending() drains globally, and while the fake policy is saved, a real
+// corpus's chunks read as *mismatched* — so this suite can re-embed the
+// merchant's entire index with fake vectors and leave a board that says
+// "0 of 67 ready". Found exactly that way. Snapshot/restore protects the
+// options; this protects the data: anything the fake provider touched goes
+// back to pending, which is the honest state — the merchant's next embed run
+// restores it with the real model. Re-embedding here is not an option; a
+// suite must never make a live billable call.
+$chunks_table = StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::KNOWLEDGE_CHUNKS );
+
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+$reverted = (int) $GLOBALS['wpdb']->query(
+	"UPDATE {$chunks_table} SET embedding = NULL, embedding_model = '', embedding_dims = 0, embedded_at = NULL
+	 WHERE embedding_model LIKE 'fake-embed%'"
+);
+
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+$fake_left = (int) $GLOBALS['wpdb']->get_var(
+	"SELECT COUNT(*) FROM {$chunks_table} WHERE embedding_model LIKE 'fake-embed%'"
+);
+
+$t( 'PROBE: no fake vector survives the suite', 0 === $fake_left, (string) $fake_left );
+
+if ( $reverted > 0 ) {
+	printf( "  NOTE  %d real chunks had been fake-embedded and are back to pending — run Embed pending to restore them.\n", $reverted );
+}
 
 if ( false === $saved_policy ) {
 	delete_option( ModelPolicy::OPTION );

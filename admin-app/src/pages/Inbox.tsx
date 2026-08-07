@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import type { Approval } from '../lib/types';
+import type { Approval, ConversationSummary } from '../lib/types';
+import { ArgumentList } from '../components/ArgumentList';
 import { Button, Card, Empty, Label, Section, Spinner } from '../components/primitives';
 
 /**
@@ -14,6 +16,13 @@ import { Button, Card, Empty, Label, Section, Spinner } from '../components/prim
 export function Inbox() {
   const qc = useQueryClient();
   const list = useQuery({ queryKey: ['approvals'], queryFn: () => api.get<Approval[]>('/approvals') });
+
+  // The other half of "needs you" (G4-D4): conversations an agent has handed
+  // to a human. The console is the pull surface; the M1 email is the push.
+  const escalated = useQuery({
+    queryKey: ['conversations', 'escalated'],
+    queryFn: () => api.get<ConversationSummary[]>('/conversations?status=escalated&limit=25'),
+  });
 
   // Which card failed, and what the server said about it. Per card rather than
   // per screen: the merchant decided *this* action and needs the answer where
@@ -43,6 +52,7 @@ export function Inbox() {
   const items = list.data ?? [];
 
   return (
+    <>
     <Section title={`Needs you${items.length ? ` (${items.length})` : ''}`}>
       {items.length ? (
         <div className="grid gap-2">
@@ -61,12 +71,9 @@ export function Inbox() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="scr-num text-[13px] font-semibold">{item.toolId}</p>
-                    <pre
-                      className="mt-1.5 overflow-x-auto rounded p-2 text-[12px]"
-                      style={{ background: 'var(--bg)', color: 'var(--text-dim)' }}
-                    >
-                      {JSON.stringify(item.arguments, null, 2)}
-                    </pre>
+                    <div className="mt-2">
+                      <ArgumentList args={item.arguments} />
+                    </div>
                     <Label className="mt-2">Asked {item.createdAt}</Label>
                   </div>
                   <div className="flex shrink-0 gap-2">
@@ -101,5 +108,32 @@ export function Inbox() {
         />
       )}
     </Section>
+
+    <Section title={`Waiting for a human${(escalated.data?.length ?? 0) > 0 ? ` (${escalated.data!.length})` : ''}`}>
+      {escalated.data?.length ? (
+        <div className="grid gap-2">
+          {escalated.data.map((c) => (
+            <Link key={c.uuid} to={`/conversation/${c.uuid}`}>
+              <Card edge="var(--color-alert-500)" className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium">
+                    {c.identityVerified ? 'Identified customer' : 'Visitor'} · {c.messageCount} messages
+                  </p>
+                  <Label className="mt-1">{c.lastActivityAt} · {c.channel}</Label>
+                </div>
+                <Label>Open the conversation</Label>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <Card className="px-4 py-3.5">
+          <p className="text-[13px]" style={{ color: 'var(--text-dim)' }}>
+            No conversation is waiting for a person. When an agent hands one over, it appears here with the reason.
+          </p>
+        </Card>
+      )}
+    </Section>
+  </>
   );
 }

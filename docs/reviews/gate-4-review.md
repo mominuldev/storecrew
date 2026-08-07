@@ -164,6 +164,52 @@ there is still no browser suite.
 
 ---
 
+## 6. Decisions ratified and remediation — second pass, 2026-08-07
+
+All four decisions ratified in the direction the findings argue; every
+blocking finding closed the same day.
+
+| Decision | Ratified as | Outcome |
+|---|---|---|
+| **G4-D1** | **Drive the shell from the manifest.** | `CrewBar` renders every `agent.*` feature from `boot.catalog` — registry order, premium's own labels and descriptions; the free plugin no longer owns a word of premium's copy (closes G4-C1, C2). `Layout` appends contributed routes (`inMenu`, sorted by `order`) after the shell's own five, marked "pro" when locked — the upgrade panel is now one click from the nav, and Pro's three registered screens are reachable (closes G4-C7). Verified in a real browser with Pro active. Two amendments to the review's assumptions, recorded rather than silently applied: no fields were added to `Feature` — `description` serves as the role line and registry order as the ordering, so the frozen API is untouched until a contributed agent actually needs placement control; and `AdminRoute.icon` remains deliberately unconsumed — the nav is text-only by the design language's own rule (labels, not icon riddles), noted in 06. |
+| **G4-D2** | **Build the renderer.** | `ArgumentList` renders arguments as a definition list — shipped tools' keys get proper labels, unknown keys are humanised, structured values fall back to compact JSON rather than dominating the card. Used on the Inbox; the Overview teaser row gets a words-not-JSON summary line. The browser suite asserts the Inbox contains no raw JSON braces (closes G4-C3). |
+| **G4-D3** | **Check the suite in.** | `tests/browser/` — widget and admin specs as plain-node Playwright scripts with the schema suites' PASS/FAIL discipline, `npm run test:browser`, playwright as a devDependency. The admin spec walks every screen **in dark mode** sampling computed text colour against wp-admin's default — the cascade-defeat signature — and fails on any console error; the widget spec covers the keyboard path, a11y semantics, mobile, and cache-safety, with the one token-spending section opt-in via `STORECREW_TEST_LIVE=1` and credentials via env so the suite skips loudly rather than failing mysteriously (closes G4-C6). First run: 33 passed, 0 failed. |
+| **G4-D4** | **Both, one owner each.** | The Inbox gains "Waiting for a human" — escalated conversations, newest first, linking into the inspector — so the screen named "needs you" now covers both halves of it (closes G4-C5). The *push* half (email notification) stays exactly one ticket, 14 § M1, deliberately not half-built here. |
+
+### Found during verification, fixed the same day
+
+Taking the G4-D1 screenshot surfaced a live regression the suites had been
+green over: the board read **"0 of 67 ready — 67 chunks were built by a
+different model and will not match."** `verify-knowledge` saves its fake
+embedding policy into the live option, which makes a real corpus's vectors
+read as *mismatched* → pending → the suite's fake provider had re-embedded
+the merchant's entire index with vectors that score 0.0. The Gate 2/3
+snapshot-restore discipline protected the options; nothing protected the
+data. Three fixes, layered:
+
+1. `Indexer::embed_pending()` / `needing_embedding()` accept an explicit
+   source scope; every embed in the suite passes its own source id. In
+   wiring the scope, the suite's own probe at § "this source has no
+   unembedded chunks left" turned out to have been **vacuous since it was
+   written** — it read `$first['id']` where `index_object()` returns
+   `source_id`, so it asserted COUNT(*) over `source_id = 0`. Both fixed.
+2. Pending-selection drains never-embedded chunks before mismatched ones —
+   free in production, and a consumer that forgets its scope exhausts its
+   own fixtures first.
+3. Suite cleanup reverts anything still carrying a fake model to pending
+   (a suite must never repair by making a live billable call), with a probe
+   asserting no fake vector survives.
+
+Corpus re-embedded with the real model; two consecutive suite runs now leave
+it untouched at 67/67.
+
+**Gate 4: ✅ approved 2026-08-07**, on the strength of: all seven code
+findings and three specification defects closed; 616 assertions across nine
+suites plus 33 browser assertions, green; the DB-free harness green; and the
+corpus-integrity check above run twice.
+
+---
+
 ## What verified cleanly (the short list)
 
 **06** — FR-ADMIN-01 holds absolutely: zero `@wordpress/*` references in

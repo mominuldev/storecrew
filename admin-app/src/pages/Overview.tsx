@@ -7,6 +7,16 @@ import { Card, Label, Section, Stat, Spinner, Empty, Button } from '../component
 
 const money = (micros: number) => `$${(micros / 1_000_000).toFixed(2)}`;
 
+/**
+ * One readable line for a pending action's arguments (G4-D2). The full
+ * definition list lives on the Inbox; this row is a teaser, so it reads as
+ * words ("Order 421 · Note …"), never as JSON.
+ */
+const summarise = (args: Record<string, unknown> | null): string =>
+  Object.entries(args ?? {})
+    .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${typeof v === 'object' && v !== null ? '…' : String(v)}`)
+    .join(' · ') || 'No details attached.';
+
 export function Overview() {
   const boot = useOutletContext<Bootstrap>();
 
@@ -57,7 +67,7 @@ export function Overview() {
               <Card key={item.id} edge="var(--color-signal-500)" className="flex items-center gap-3 px-4 py-3">
                 <span className="scr-num text-[13px] font-semibold">{item.toolId}</span>
                 <span className="truncate text-[12px]" style={{ color: 'var(--text-dim)' }}>
-                  {JSON.stringify(item.arguments)}
+                  {summarise(item.arguments)}
                 </span>
               </Card>
             ))}

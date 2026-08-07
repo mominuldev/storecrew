@@ -120,7 +120,13 @@ final class Indexer {
 	 *
 	 * @return array{embedded: int, failed: int, blocked: bool, reason: string}
 	 */
-	public function embed_pending( int $batch = 50 ): array {
+	/**
+	 * @param list<int> $source_ids Confine the drain to these sources; empty
+	 *                              means everything pending. Callers running
+	 *                              under anything but the live model policy
+	 *                              (test harnesses) must pass their own.
+	 */
+	public function embed_pending( int $batch = 50, array $source_ids = array() ): array {
 		if ( ! $this->spend->allows_call() ) {
 			return array(
 				'embedded' => 0,
@@ -152,7 +158,7 @@ final class Indexer {
 			);
 		}
 
-		$pending = $this->chunks->needing_embedding( $batch, $resolved['model'], self::dimensions() );
+		$pending = $this->chunks->needing_embedding( $batch, $resolved['model'], self::dimensions(), $source_ids );
 
 		if ( array() === $pending ) {
 			return array( 'embedded' => 0, 'failed' => 0, 'blocked' => false, 'reason' => '' );

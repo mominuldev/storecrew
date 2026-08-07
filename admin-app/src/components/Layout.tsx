@@ -3,6 +3,14 @@ import { useTheme } from '../lib/store';
 import type { Bootstrap } from '../lib/types';
 import { Label } from './primitives';
 
+/**
+ * The shell's own five screens. Hardcoded deliberately — the shell owns them
+ * the way it owns its header. Everything *else* in the nav comes from the
+ * capability manifest (G4-D1): contributed routes with `inMenu`, in their
+ * declared order, locked ones included — a locked entry leads to the upgrade
+ * panel, which is what makes it an invitation rather than a dead link
+ * (FR-DIST-10, FR-DIST-12).
+ */
 const NAV = [
   { to: '/', label: 'Overview', end: true },
   { to: '/crew', label: 'Crew' },
@@ -13,6 +21,13 @@ const NAV = [
 
 export function Layout({ boot, pending }: { boot: Bootstrap; pending: number }) {
   const { theme, toggle } = useTheme();
+
+  const contributed = boot.routes
+    .filter((route) => route.inMenu)
+    .sort((a, b) => a.order - b.order)
+    .map((route) => ({ to: route.path, label: route.label, end: false, locked: route.locked }));
+
+  const nav = [...NAV.map((item) => ({ ...item, locked: false })), ...contributed];
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -31,7 +46,7 @@ export function Layout({ boot, pending }: { boot: Bootstrap; pending: number }) 
           </div>
 
           <nav className="ml-4 flex flex-wrap items-center gap-1">
-            {NAV.map((item) => (
+            {nav.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -47,6 +62,14 @@ export function Layout({ boot, pending }: { boot: Bootstrap; pending: number }) 
                 })}
               >
                 {item.label}
+                {item.locked ? (
+                  // The tier mark, not a padlock: the destination works — it
+                  // shows what the plan adds — so the mark says "paid", not
+                  // "forbidden".
+                  <span className="scr-label ml-1.5" aria-label="On a paid plan" style={{ color: 'var(--text-dim)' }}>
+                    pro
+                  </span>
+                ) : null}
                 {'/inbox' === item.to && pending > 0 ? (
                   <span
                     className="scr-num ml-1.5 rounded px-1.5 py-0.5 text-[11px] font-semibold"

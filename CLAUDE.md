@@ -257,7 +257,23 @@ because it runs with no database at all.
 
 ## Testing
 
-Nine suites, 615 assertions, green in any run order.
+Nine PHP suites (616 assertions) plus two browser suites (33 assertions),
+green in any run order.
+
+```bash
+# Browser: cascade fights and cookie/cache behaviour — invisible to PHP.
+# Admin spec needs STORECREW_TEST_USER / STORECREW_TEST_PASS (skips loudly
+# without); STORECREW_TEST_LIVE=1 opts into the one token-spending section.
+npm run test:browser
+```
+
+**Suites must not touch what they cannot restore.** Options are
+snapshot-and-restored — and that is not enough on its own: while a suite's
+fake model policy is live, a real corpus's vectors read as *mismatched*, and
+an unscoped `embed_pending()` re-embeds the merchant's index with fake
+vectors (found via a "0 of 67 ready" board on a configured store). Embedding
+calls in suites pass their own source ids; `verify-knowledge`'s cleanup
+probes that no fake vector survives.
 
 `verify-rest.php` needs `--user=1`: it dispatches through the real REST
 server, and its permission probes deliberately start unauthenticated.
