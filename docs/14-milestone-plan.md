@@ -43,7 +43,7 @@ The gap list, from CLAUDE.md, 03 § 13, and the Gate 2–5 reviews
 | ~~**GDPR exporter/eraser (04 § 11)**~~ | ✅ **Done 2026-08-07.** Registered with the personal-data hooks, lazily resolved; erasure severs customer/order/session links and blanks content while counters survive; export excludes operator notes; 21 probes in `verify-repositories` |
 | ~~**Static-analysis configs**~~ | ✅ **Done 2026-08-07.** `composer check` = phpcs (WPCS tuned to the documented conventions) + phpstan (level 5, WP+Woo stubs, clean) + `check-invariants.php` (noGlobalWpdb with its carve-outs, noProReferenceInFree, parse-safety — each self-testing) + the DB-free harness. phpunit was declared and used by nothing — removed rather than configured |
 | ~~**Pro `uninstall.php`**~~ | ✅ **Done 2026-08-07.** Removes exactly Pro's licence options and nothing the free plugin owns; harness scenario probes both directions (options gone, decoys survive) |
-| **Streaming (FR-CHAT-02)** — built 2026-08-07: additive `StreamingChatProviderInterface` (Gemini), `CurlSseClient` with proxy constants, Accept-negotiated SSE after every guard, widget token rendering + one whole-message announcement; 22 probes; the SSE-transport failure path exercised live. **Timed incremental delivery verified live 2026-08-08**: `tools/probe-streaming-delivery.php` (the standing measurement — real HTTP, per-chunk timestamps, self-judging verdict) observed 9 deltas at 9 distinct network arrivals over 609 ms, reassembling exactly to the `done` payload, through the full stack. Getting there took eight 429'd attempts across two keys — the free tier's per-model request bucket (limit 20) is far tighter than its retry hint claims (09 § 3), and every refusal re-exercised the failure path: a sentence in `done`, run `failed` with the provider's code | **Open half of the criterion:** only the buffering-host exercise, which rides the budget-host validation row (R-TECH-02). 12 § 10 holds and is probed: guards run before the transport is chosen |
+| **Streaming (FR-CHAT-02)** — built 2026-08-07: additive `StreamingChatProviderInterface` (Gemini), `CurlSseClient` with proxy constants, Accept-negotiated SSE after every guard, widget token rendering + one whole-message announcement; 22 probes; the SSE-transport failure path exercised live. **Timed incremental delivery verified live 2026-08-08**: `tools/probe-streaming-delivery.php` (the standing measurement — real HTTP, per-chunk timestamps, self-judging verdict) observed 9 deltas at 9 distinct network arrivals over 609 ms, reassembling exactly to the `done` payload, through the full stack. Getting there took eight 429'd attempts across two keys — the free tier's per-model request bucket (limit 20) is far tighter than its retry hint claims (09 § 3), and every refusal re-exercised the failure path: a sentence in `done`, run `failed` with the provider's code | **Open half, narrowed 2026-08-08:** the buffered==streamed *equivalence* is now probed — `tests/browser/sse.spec.mjs` drives the extracted, shipping SSE assembler (`widget-app/src/sse.ts`, transpiled by the project's own TypeScript so the test runs the real code) under buffered / streamed / one-byte-at-a-time / every-split-offset / CRLF delivery, and every pattern reaches the same events and the same `done` payload. What remains is observing it on an *actual* buffering host, which rides the budget-host real-host run (R-TECH-02). 12 § 10 holds and is probed: guards run before the transport is chosen |
 | ~~**SKU / exact-identifier tool**~~ | ✅ **Done 2026-08-07.** `product.lookup` resolves exact SKUs (variations included) with live price/stock; unknown, draft, and private SKUs share one indistinguishable miss (no unpublished-catalogue oracle — probed); out-of-stock is named, not hidden; identifier fixtures in the recall harness score 3/3 via the exact path |
 | ~~**Failover execution**~~ | ✅ **Done 2026-08-07.** One switch to the configured fallback, continuing from the request state at failure — executed tools never re-run (probed); both attempts on the run record; both-dead fails after one switch; the settings API validates and stores the fallback key it previously stripped |
 | ~~**Merchant guardrail overrides**~~ | ✅ **Done 2026-08-07.** Additive-only, composed after every shipped rule behind a subordinating frame; probed against a hostile "ignore the price rule" override; 01's rescope note and 08 § 8 retired |
@@ -51,7 +51,7 @@ The gap list, from CLAUDE.md, 03 § 13, and the Gate 2–5 reviews
 | **Onboarding flow (FR-ADMIN-02)** — built 2026-08-08: one `/setup` screen carrying all five steps' real controls inline (11 § 3.7); first activation redirects into it, once; step state derived, never stored (`Core\Onboarding`, 05 § `/bootstrap`); source selection is new capability, not new copy — `POST /index/sources`, honoured by the walker *and* the live save hook, purging what falls out of scope; `GET/POST /agents` finally writes the `enabled` column the orchestrator has always read | **Open half of the criterion:** the ≤ 15 min timing itself, measured on a fresh install by **someone who is not us**. Built and probe-tested is not measured — the target is how long a stranger takes to find the next control, and nothing in this repo can observe that. Protocol below; it has not been run |
 | ~~**Escalation notification**~~ | ✅ **Done 2026-08-07.** One email per escalation (the transition, not each failed turn — probed), linking into the inspector; the customer's words are never forwarded by mail; recipient filterable, empty disables |
 | ~~**Adversarial suite v2 (12 § 10)**~~ | ✅ **Done 2026-08-08.** `tests/schema/verify-adversarial.php`: a named injection corpus (hostile reviews, policy pages, order notes, product descriptions) delivered through the real tool-result channel, run through one set of boundary assertions by two drivers — a compliant scripted model (always CI, proves every attack of all six boundaries dies at a boundary) and the live configured model (`STORECREW_ADVERSARIAL_LIVE=1`, asserts no breach and reports attacks that reached the boundary; a 429 is a safe non-exercise). Live-observed: `gemini-3.6-flash` called `order.lookup` on an unverified conversation as the injection demanded and the identity gate denied it before execution — a boundary firing, not model discretion |
-| **Budget-host validation (R-TECH-03)** | Full index + a day's simulated chat on a $5/mo shared host; capability report matches reality |
+| **Budget-host validation (R-TECH-03)** — instrument built 2026-08-08: `tools/probe-budget-host.php` prints the host capability report (the kill window the host imposes, cron configuration, CLI-vs-web PHP, memory, Woo/HPOS) and then runs a *full index under a forced-tight kill window* against a synthetic catalogue — driving the real `IndexJob` the way Action Scheduler would and killing it after ~one object per batch — asserting the index still completes across ~150 kills with exact accounting (every object indexed once, monotonic cursor, a heartbeat per batch, stalls reaped), and reporting throughput plus a real-catalogue cost estimate. Self-judging, snapshot-restoring, keyless (nothing embeds); it detaches the job handlers and cancels each reschedule so a stray cron tick cannot race it. Two R-TECH-03 robustness fixes it forced are shipped and probed in `verify-jobs`: a `storecrew_index_batch_seconds` filter to clamp the batch budget under a kill window *tighter* than `max_execution_time` reports (php-fpm `request_terminate_timeout`), and a guarantee that the first object of every batch runs so a slow object on a tight host cannot spin a zero-progress reschedule loop. | **Open half — real host only:** a full index of the merchant's real catalogue on a $5/mo host, timed and costed against the estimate; a day's simulated chat sustained there; and the capability report eyeballed against the host's reality. The instrument is what you run there; protocol below. Not yet run |
 | **i18n pass** | All strings translatable; `languages/` builds; RTL smoke test on the widget |
 | **.org compliance pass** | Plugin-check clean; readme.txt; assets; GPL headers; the no-egress audit (12 § 9) documented for review |
 
@@ -99,6 +99,57 @@ signup dominates the total and is outside our control; a store with no
 published policy pages gives step 3 little to read and makes the first answers
 disappointing; and the widget step is invisible until the subject opens the
 storefront, which they will not do unless told.
+
+### The budget-host validation, as a protocol
+
+Written down for the same reason as the fifteen-minute one: it is a
+*measurement*, and the part no local suite can close needs a repeatable
+procedure or it is not a measurement. The instrument
+(`tools/probe-budget-host.php`) already exists and is self-judging; the protocol
+is what makes its output mean something.
+
+**Host.** A genuine entry-tier shared plan — the $5/mo tier a first-time
+merchant actually buys, not a VPS. What is being measured is the interaction
+between our resumable-job design and a host that kills PHP without warning,
+runs cron unreliably, and may serve a different PHP in web and CLI (R-TECH-03).
+Record the plan, the PHP versions (web *and* CLI), and `max_execution_time` /
+`memory_limit` / whether WP-Cron is disabled in favour of real cron.
+
+**Fixture.** A realistic catalogue — the larger the better, because the whole
+point is behaviour at a size that cannot finish in one request. Record the
+object count and the configured embedding model (its rate is what turns the
+index into a bill).
+
+**Step 1 — capability report.** Run `wp eval-file .../probe-budget-host.php`
+and, separately, `wp cron test`. The pass condition is not a number: it is that
+**every line of the report matches what the host actually does.** The CLI PHP it
+prints must match the admin Health screen's web PHP or the mismatch is named;
+the derived batch budget must be sane for the host's real kill window; a blocked
+loopback must show up here rather than as a mysteriously stalled index later.
+
+**Step 2 — the full index, for real.** Trigger a real index of the whole
+catalogue (not the probe's synthetic one — the merchant's actual products) and
+let Action Scheduler drive it to completion on the host's own cron. **Record
+wall-clock to a drained embed queue, the number of resumes (`index_runs`
+heartbeat history), the peak memory, and the final embedding spend against the
+pre-run estimate.** The pass condition: it **finishes** — no run left `running`
+but heartbeat-dead, no object embedded twice, spend within a small margin of the
+estimate. A kill mid-run is expected and is the thing being tested; a kill that
+*loses* work or *re-bills* is the failure.
+
+**Step 3 — a day's chat.** Sustain a day's worth of simulated conversations
+(the strategy's expected volume for a small store) against the live model.
+Record p95 turn latency, any 500s, and any turn that exceeded the 45 s
+synchronous ceiling (13 § 2). The pass condition: no storefront fatals, and the
+buffered-vs-streamed delivery observed to behave as the equivalence probe
+predicts — deltas paint on a pass-through host, the same reply arrives whole on
+a buffering one, and the widget is none the wiser (R-TECH-02).
+
+**What the run produces** is the row in 13 § 6's Standing Measurements table:
+index runtime and cost on a budget host, measured rather than assumed. Until it
+is run, that row stays open and this criterion is half-green — the machinery is
+proven locally to survive kills, but the *economics and endurance on real budget
+hardware* are not yet observed.
 
 ## M2 — Private beta
 

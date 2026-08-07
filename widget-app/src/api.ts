@@ -6,6 +6,7 @@
  * third of it.
  */
 
+import { SseAssembler } from './sse';
 import type { ApiError, BootPayload, ReplyPayload, SessionPayload } from './types';
 
 const SESSION_STORAGE_KEY = 'storecrew.chat.token';
@@ -134,57 +135,27 @@ export class ChatApi {
       return ((parsed as { data?: ReplyPayload })?.data ?? ({} as ReplyPayload)) as ReplyPayload;
     }
 
-    // Incremental SSE parse. Events end at a blank line; anything after the
-    // last separator is a partial event held for the next chunk.
+    // Incremental SSE parse, delegated to the transport-agnostic assembler so a
+    // buffered host (one giant read) and a streaming host (many small reads)
+    // walk exactly the same code and reach the same events (R-TECH-02).
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = '';
+    const assembler = new SseAssembler();
     let done: ReplyPayload | null = null;
     let failure: ApiFailure | null = null;
-
-    const handle = (raw: string): void => {
-      let event = 'message';
-      let data = '';
-
-      for (const line of raw.split('\n')) {
-        const clean = line.replace(/\r$/, '');
-
-        if (clean.startsWith('event:')) event = clean.slice(6).trim();
-        if (clean.startsWith('data:')) data += clean.slice(5).trim();
-      }
-
-      if (!data) return;
-
-      let payload: unknown;
-
-      try {
-        payload = JSON.parse(data);
-      } catch {
-        return;
-      }
-
-      if (event === 'delta') {
-        const text = (payload as { text?: string }).text ?? '';
-        if (text) onDelta(text);
-      } else if (event === 'done') {
-        done = payload as ReplyPayload;
-      } else if (event === 'error') {
-        const error = payload as { code?: string; message?: string };
-        failure = new ApiFailure({ code: error.code ?? 'stream_error', message: error.message ?? 'Something went wrong.' }, 200);
-      }
-    };
 
     for (;;) {
       const { value, done: eof } = await reader.read();
 
       if (value) {
-        buffer += decoder.decode(value, { stream: true });
-
-        let cut: number;
-
-        while ((cut = buffer.indexOf('\n\n')) !== -1) {
-          handle(buffer.slice(0, cut));
-          buffer = buffer.slice(cut + 2);
+        for (const event of assembler.push(decoder.decode(value, { stream: true }))) {
+          if (event.kind === 'delta') {
+            onDelta(event.text);
+          } else if (event.kind === 'done') {
+            done = event.payload;
+          } else {
+            failure = new ApiFailure({ code: event.code, message: event.message }, 200);
+          }
         }
       }
 

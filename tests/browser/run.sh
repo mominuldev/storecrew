@@ -19,6 +19,10 @@ fi
 
 status=0
 
+# Pure-logic probe (no browser): the SSE assembler's buffered==streamed
+# equivalence (R-TECH-02). Runs first because it needs neither a site nor a key.
+node tests/browser/sse.spec.mjs || status=1
+echo
 node tests/browser/widget.spec.mjs || status=1
 echo
 node tests/browser/admin.spec.mjs || status=1

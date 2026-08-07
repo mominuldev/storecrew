@@ -14,6 +14,46 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**Budget-host validation instrument + R-TECH-02 buffered-parse probe (R-TECH-03)** — 2026-08-08
+
+- `tools/probe-budget-host.php`: a self-judging instrument for the one M1 row a
+  local suite cannot close. It prints a **host capability report** — the kill
+  window the host imposes, cron configuration, CLI-vs-web PHP, memory, Woo/HPOS
+  — to be checked line-by-line against a real $5/mo host, and then runs a **full
+  index under a forced-tight kill window** against a synthetic catalogue,
+  driving the real `IndexJob` the way Action Scheduler would and killing it
+  after ~one object per batch. It asserts the index still **completes** across
+  ~150 kills with exact accounting (every object indexed once, monotonic cursor,
+  a heartbeat per batch, stalls reaped) and reports throughput plus a
+  real-catalogue cost estimate. Keyless (nothing embeds), snapshot-restoring,
+  and deterministic — it detaches the job handlers and cancels each reschedule
+  so a cron-triggered Action Scheduler runner cannot race it (a bug found while
+  building it: the probe's own capability-report loopback was spawning the very
+  runner that corrupted its accounting).
+- Two **R-TECH-03 robustness fixes** the probe forced, shipped and probed in
+  `verify-jobs`: a `storecrew_index_batch_seconds` filter to clamp the batch
+  budget under a kill window tighter than `max_execution_time` reports (php-fpm
+  `request_terminate_timeout`), and a guarantee that the **first object of every
+  batch runs** so a slow object on a tight host cannot spin a zero-progress
+  reschedule loop.
+- **R-TECH-02 buffered==streamed, now probed.** The widget's SSE parse was
+  extracted to `widget-app/src/sse.ts` (a transport-agnostic assembler the real
+  `sendStream` consumes), and `tests/browser/sse.spec.mjs` transpiles that exact
+  code and drives it under buffered / streamed / one-byte-at-a-time / every-
+  split-offset / CRLF delivery — all reaching the same events and the same
+  `done` payload. The assembler now also normalises CRLF/CR separators, so a
+  proxy that buffers *and* rewrites line endings degrades to the buffered
+  experience rather than a broken one. Closes the streaming criterion's
+  buffering half at the parse layer; observing it on a real buffering host rides
+  the budget-host run.
+
+### Changed
+
+- The widget SSE handling moved from an inline loop in `sendStream` to the
+  shared `SseAssembler`; behaviour is identical for the `\n\n`-separated stream
+  our server emits, with added CRLF/CR robustness. Widget bundle 6.18 KB gzip
+  (well under the 45 KB budget).
+
 **Adversarial suite v2 — the injection corpus (R-SEC-02, 12 § 10)** — 2026-08-08
 
 - `tests/schema/verify-adversarial.php`: a **named** corpus of hostile content

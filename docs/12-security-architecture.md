@@ -211,6 +211,11 @@ costKnown false with no rates.)*
   from the JSON branch only *after* every guard has run, which is probed
   directly (a rate-limited streaming request is refused as JSON before any
   event starts; the merchant veto and a capability-less provider both fall
-  back to buffered). Transport changed; this chapter did not.
+  back to buffered). Transport changed; this chapter did not. The buffering-host
+  fallback (R-TECH-02) is now probed at the parse layer too: the widget's SSE
+  assembler is transport-agnostic by construction, and `tests/browser/sse.spec.mjs`
+  drives the shipping code under buffered / streamed / byte-split / CRLF delivery
+  to assert all four reach the same events — so a proxy that holds or re-line-ends
+  the stream produces the buffered experience, not a broken one.
 - **`Pro\Licence` replacement** before any Pro ship (10 § 8).
 - Third-party review of `SecretStore`'s cryptography before 1.0.

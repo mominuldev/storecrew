@@ -85,7 +85,7 @@ final class IndexJob {
 			return;
 		}
 
-		$deadline = new Deadline();
+		$deadline = new Deadline( $this->batch_budget() );
 		$cursor   = $this->parse_cursor( (string) $run->cursor_position );
 		// Re-read every batch rather than storing the list on the run: a
 		// merchant who deselects a source mid-walk expects the walk to stop
@@ -136,8 +136,12 @@ final class IndexJob {
 			}
 
 			foreach ( $ids as $object_id ) {
-				// Stop before starting work we cannot finish, not after.
-				if ( ! $deadline->has_room_for( 1.5 ) ) {
+				// Stop before starting work we cannot finish, not after — but
+				// only once this batch has actually done something. A single
+				// object slower than the whole budget (a large product on a
+				// tight host) must still advance the cursor by one rather than
+				// stop at zero and reschedule the same position forever.
+				if ( ( $processed + $failed ) > 0 && ! $deadline->has_room_for( 1.5 ) ) {
 					break 2;
 				}
 
@@ -212,5 +216,29 @@ final class IndexJob {
 	 */
 	private function format_cursor( array $cursor ): string {
 		return $cursor['type'] . ':' . $cursor['after'];
+	}
+
+	/**
+	 * Seconds this batch may run for.
+	 *
+	 * `Deadline` derives its budget from `max_execution_time`, but that limit
+	 * does not account for php-fpm's `request_terminate_timeout`, which on a
+	 * budget host can kill the request *sooner* than PHP's own limit reports.
+	 * A host or plugin that knows its real kill window can clamp the budget
+	 * down through this filter, trading a few more resumes for never being
+	 * killed mid-batch (R-TECH-03). Floored at one second so a hostile or
+	 * fat-fingered value cannot stall the walk — combined with the
+	 * "first object of a batch always runs" rule above, any positive budget
+	 * still finishes the index, just in smaller steps.
+	 */
+	private function batch_budget(): int {
+		/**
+		 * Filters the per-batch time budget for the full-index walk.
+		 *
+		 * @param int $seconds Auto-detected budget from the host's limits.
+		 */
+		$seconds = (int) apply_filters( 'storecrew_index_batch_seconds', Deadline::detect_budget() );
+
+		return max( 1, $seconds );
 	}
 }

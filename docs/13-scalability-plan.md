@@ -106,9 +106,11 @@ Shared hosting kills long processes; the design assumes it:
   R-COST-01), and incremental thereafter (FR-KB-07: an edit re-indexes one
   object; a model/width change self-heals gradually).
 - **Capability detection** (FR-CORE-07) reports what the host can actually
-  do — CLI vs web PHP mismatch, cron reliability — instead of failing
-  mysteriously. Validation against a real budget host is a pre-launch task
-  (14), not an assumption.
+  do — CLI vs web PHP mismatch, cron reliability, the kill window it imposes —
+  instead of failing mysteriously. `tools/probe-budget-host.php` prints that
+  report (and forces a full index under a tight kill window to prove the resume
+  path survives it); checking each line against the host's reality is the
+  pre-launch task (14 § M1 protocol), not an assumption.
 
 ---
 
@@ -146,6 +148,6 @@ What must be re-measured, and when:
 |---|---|---|
 | recall@3/@5 on fixtures | `measure-recall.php` | Any retrieval change; any embedding model change; first 10k-chunk real corpus (the unmeasured case) |
 | Scan latency vs corpus size | same | Before raising the 2,000-chunk threshold |
-| Index runtime + cost on a budget host | manual, real host | Before .org launch (R-TECH-03) |
+| Index runtime + cost on a budget host | `tools/probe-budget-host.php` + real host | Before .org launch (R-TECH-03). The probe proves resume-to-completion under a forced kill window and estimates cost locally; the runtime and *actual* spend on $5/mo hardware are the real-host half (14 § M1 protocol) |
 | Storefront added queries / widget budget | suite + build output | Every release (45 KB gz budget; at 5.3) |
 | p95 turn latency by model tier | run records (built-in) | Continuously; drives model-policy defaults |

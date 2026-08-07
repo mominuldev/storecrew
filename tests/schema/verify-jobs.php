@@ -329,6 +329,46 @@ $t(
 	(string) $scheduler->health()['pending']
 );
 
+echo "\n== A tight host kill-window still finishes the index (R-TECH-03) ==\n";
+// `Deadline` derives its budget from max_execution_time, but php-fpm's
+// request_terminate_timeout can kill sooner; the storecrew_index_batch_seconds
+// filter clamps the budget down for exactly that host. Forced to one second it
+// gets roughly one object per batch — and the walk must still *complete*, which
+// it can only do if every batch makes at least one object of forward progress.
+// A regression that let a batch stop at zero would loop here until the cap and
+// never complete. (See tools/probe-budget-host.php for the full instrument.)
+$scheduler->cancel();
+
+$tight_budget = static function () {
+	return 1;
+};
+add_filter( 'storecrew_index_batch_seconds', $tight_budget );
+
+// Earlier sections leave a run marked active; close it so start() does not
+// refuse a second concurrent walk.
+$leftover = $runs->active();
+if ( null !== $leftover ) {
+	$runs->finish( (int) $leftover->id, IndexRunRepository::STATUS_COMPLETE );
+}
+
+$tight_run = $index_job->start();
+$tight_iters = 0;
+
+do {
+	$index_job->run( $tight_run );
+	// The suite drives batches directly; pull the reschedule back out so a
+	// stray cron tick cannot run this same id in parallel and skew the count.
+	$scheduler->cancel( IndexJob::HOOK, array( $tight_run ) );
+	$tight = $runs->find( $tight_run );
+	++$tight_iters;
+} while ( IndexRunRepository::STATUS_RUNNING === (string) $tight->status && $tight_iters < 500 );
+
+$t( 'the walk completes under a 1s kill window', IndexRunRepository::STATUS_COMPLETE === (string) $tight->status, (string) $tight->status );
+$t( 'it did so in many small batches, not one', $tight_iters >= 3, "iterations={$tight_iters}" );
+$t( 'every selected object was still processed', (int) $tight->processed >= count( $page_ids ), (string) $tight->processed );
+
+remove_filter( 'storecrew_index_batch_seconds', $tight_budget );
+
 echo "\n== Cleanup ==\n";
 $scheduler->cancel();
 

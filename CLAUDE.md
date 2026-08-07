@@ -259,13 +259,15 @@ because it runs with no database at all.
 
 ## Testing
 
-Ten PHP suites (757 assertions) plus two browser suites (40 assertions),
-green in any run order.
+Ten PHP suites (760 assertions) plus three suites under `tests/browser`
+(53 assertions), green in any run order.
 
 ```bash
 # Browser: cascade fights and cookie/cache behaviour — invisible to PHP.
 # Admin spec needs STORECREW_TEST_USER / STORECREW_TEST_PASS (skips loudly
 # without); STORECREW_TEST_LIVE=1 opts into the one token-spending section.
+# sse.spec.mjs needs neither a browser nor a site: it transpiles the shipping
+# SSE assembler and proves buffered==streamed delivery (R-TECH-02).
 npm run test:browser
 
 # Static analysis: phpcs (WPCS, tuned) + phpstan (level 5) + the invariant
@@ -311,6 +313,12 @@ wp eval-file wp-content/plugins/storecrew/tests/schema/verify-adversarial.php --
 
 # No database, no WordPress — boots both plugins against a hook shim
 ./tests/integration/run.sh
+
+# Budget-host validation (R-TECH-03). Prints the host capability report and runs
+# a full index under a forced-tight kill window, proving resume-to-completion
+# across ~150 kills with exact accounting. Self-judging, keyless, snapshot-
+# restoring; run it on a real $5/mo host and check the report against reality.
+wp eval-file wp-content/plugins/storecrew/tools/probe-budget-host.php
 ```
 
 Suites clean up after themselves and are safe to re-run.
@@ -351,6 +359,8 @@ ciphertext, ragged embedding vectors, and the migration lock.
 | A test probe deselected a source type against the merchant's live index | `POST /index/sources` purges what falls out of scope — correct behaviour, catastrophic as a probe. Selecting `['post']` inside `verify-rest` deleted 47 real product chunks on a configured store; the suite restored the *option* and never noticed the rows were gone. The purge is now probed in `verify-knowledge` against a **synthetic source type**, where the only rows at risk are the ones the probe created. Any probe of a destructive endpoint needs its own fixture, not the merchant's data. |
 | A fatal mid-suite left the merchant carrying the suite's fake model policy | `verify-knowledge` writes the live policy at the top and restores it at the bottom; a fatal in between (a constructor signature change) skipped the restore, and the *next* run snapshotted the poison and put it back. Snapshot-and-restore is not enough on its own — the restore is registered with `register_shutdown_function` now, so it survives the fatal that makes it necessary. |
 | Boot minted its nonce as user 0, killing the widget for every signed-in visitor | The boot request carries the login cookie but no nonce, so core demotes it to anonymous *before* the handler runs; the user-0 nonce is then refused (`403 rest_cookie_invalid_nonce`, before any callback) on every POST, which arrives with the same cookie and verifies as the signed-in user. Absent nonce degrades to guest; **wrong** nonce refuses. Invisible to curl, the PHP suites, and a fresh browser — all anonymous. boot now mints the nonce for the user `wp_validate_auth_cookie` proves. |
+| The index walk could make zero forward progress on a tight host | `Deadline::has_room_for(1.5)` stopped a batch *before* its first object. Fine at the ≥5s auto-detected budget, but a host whose real kill window is tighter (php-fpm `request_terminate_timeout`, now clampable via `storecrew_index_batch_seconds`) could stop at zero objects, write the same cursor, reschedule, and loop forever indexing nothing. Latent because local objects are fast and the budget floor is 5s; surfaced by `tools/probe-budget-host.php` forcing a 1s window. The first object of every batch now always runs. |
+| A budget-host probe raced a cron-triggered Action Scheduler runner | Driving `IndexJob::run` in a loop enqueues each successor on the shared scheduler; a WP-Cron tick (which the probe's own loopback was spawning) fired the AS runner in another process, which ran the probe's run id through the *container's* real IndexJob — real catalogue, real selection — corrupting the accounting ~1 run in 6. The self-inflicted trigger (an active loopback in the capability report) was removed, and any probe driving jobs directly must detach the handlers and cancel each reschedule so a stray tick cannot claim its run. |
 
 ---
 
@@ -397,8 +407,13 @@ ciphertext, ragged embedding vectors, and the migration lock.
   tier's `generate_content_free_tier_requests` bucket (limit 20) is per-model
   and behaves far tighter than its "retry in Ns" hint — routing on 3.5-flash
   kept answering while 3.6-flash chat refused, and each refusal re-exercised
-  the failure path end-to-end. **Remaining:** only the buffering-host half of
-  R-TECH-02, which belongs to the budget-host validation row.
+  the failure path end-to-end. **Remaining (narrowed 2026-08-08):** the
+  buffered==streamed *equivalence* is now probed — the SSE parse was extracted
+  to `widget-app/src/sse.ts` and `tests/browser/sse.spec.mjs` drives the real
+  code under buffered / streamed / byte-split / CRLF delivery, all reaching the
+  same events (the assembler now also normalises CRLF/CR so a line-ending-
+  rewriting proxy degrades to buffered, not broken). Only observing it on an
+  actual buffering host is left, and that rides the budget-host real-host run.
 - ~~No failover execution~~ — done (2026-08-07): one switch to the configured
   fallback mid-turn, continuing from the request state so executed tools never
   re-run; both attempts on the run record.
