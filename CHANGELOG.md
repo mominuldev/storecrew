@@ -14,6 +14,34 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**Timed incremental delivery, verified live (FR-CHAT-02)** — 2026-08-08
+
+- `tools/probe-streaming-delivery.php` — the standing measurement for the
+  half of the streaming criterion no scripted probe can reach. Plain-PHP CLI
+  against the public chat surface over real HTTP: opens a session, streams
+  one turn, timestamps every network chunk as cURL delivers it, judges its
+  own verdict from the raw timeline, and closes the conversation it opened.
+  A buffered response is indistinguishable from streaming in every test that
+  ignores time; this one measures nothing else.
+- Observed on the wire: 9 deltas at 9 distinct network arrivals over 609 ms,
+  reassembling byte-for-byte to the `done` payload, through nginx, php-fpm,
+  and every guard. Re-run the next attempt cold: passed first try. The
+  remaining half of the criterion is the buffering-host exercise, which
+  rides the budget-host validation row (R-TECH-03).
+- Getting the pass took eight 429'd attempts across two keys, each an
+  unplanned live rehearsal of the failure path (a sentence in `done`, run
+  `failed` carrying the provider's code). Finding on record in 09 § 3: the
+  free tier's `generate_content_free_tier_requests` bucket (limit 20) is
+  per-model and opaque — `gemini-3.5-flash` routing kept answering while
+  `gemini-3.6-flash` chat refused, a brand-new key's first-ever request
+  429'd, and the "retry in Ns" hint was wrong in both directions. Support
+  should read the model in the quota message and treat intermittent 429s as
+  bucket contention, not a broken key.
+
+---
+
+### Added
+
 **Streaming (FR-CHAT-02)** — 2026-08-07
 
 - `StreamingChatProviderInterface` — an *addition* to the provider contract,

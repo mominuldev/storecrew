@@ -378,9 +378,17 @@ ciphertext, ragged embedding vectors, and the migration lock.
   a sentence in `done`, conversation escalated). Two live findings on record:
   Gemini separates SSE events with `\r\n\r\n` (parser normalises), and the
   free tier meters `streamGenerateContent` separately from `generateContent` —
-  a key can chat but not stream. **Remaining:** timed incremental delivery
-  re-verified when quota allows, and the buffering-host half of R-TECH-02,
-  which belongs to the budget-host validation row.
+  a key can chat but not stream. **Timed incremental delivery is verified
+  live** (2026-08-08): `php tools/probe-streaming-delivery.php` — real HTTP,
+  per-chunk timestamps, self-judging verdict, cleans up its own conversation —
+  observed 9 deltas at 9 distinct network arrivals over 609 ms, reassembling
+  exactly to the `done` payload, through nginx + php-fpm and every guard. It
+  took eight 429'd attempts across two keys to catch a quota window: the free
+  tier's `generate_content_free_tier_requests` bucket (limit 20) is per-model
+  and behaves far tighter than its "retry in Ns" hint — routing on 3.5-flash
+  kept answering while 3.6-flash chat refused, and each refusal re-exercised
+  the failure path end-to-end. **Remaining:** only the buffering-host half of
+  R-TECH-02, which belongs to the budget-host validation row.
 - ~~No failover execution~~ — done (2026-08-07): one switch to the configured
   fallback mid-turn, continuing from the request state so executed tools never
   re-run; both attempts on the run record.
