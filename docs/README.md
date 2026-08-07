@@ -96,12 +96,16 @@ questions from 01 § 13 and 15 § 9 with recommendations.
 ### Gate 2 — Technical Architecture
 | # | Document | Status |
 |---|---|---|
-| 3 | [Technical Architecture](03-technical-architecture.md) | ⬜ Not started |
+| 3 | [Technical Architecture](03-technical-architecture.md) | ✅ Draft complete |
 | 4 | [Database Schema](04-database-schema.md) | ✅ Draft complete |
-| 5 | [REST API Specification](05-api-specification.md) | ⬜ Not started |
-| 7 | [Plugin Folder Structure](07-folder-structure.md) | ⬜ Not started — covers **both** plugin trees |
+| 5 | [REST API Specification](05-api-specification.md) | ✅ Draft complete |
+| 7 | [Plugin Folder Structure](07-folder-structure.md) | ✅ Draft complete — covers **both** plugin trees |
 
-**Gate 2:** ⬜ Blocked by Gate 1
+**Gate 2:** 🟡 All drafts complete — awaiting review (after Gate 1).
+Deliverables 03/05/07 document the **built and verified** system rather than a
+proposal; each records where implementation experience amended the original
+intent (e.g. the measured retrieval findings in 03 § 6, the two spikes A3/A4
+partially resolved by measurement).
 
 ### Gate 3 — AI & Agent Core
 | # | Document | Status |
