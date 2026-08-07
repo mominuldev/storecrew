@@ -14,6 +14,45 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**Adversarial suite v2 — the injection corpus (R-SEC-02, 12 § 10)** — 2026-08-08
+
+- `tests/schema/verify-adversarial.php`: a **named** corpus of hostile content
+  — product reviews, policy pages, order notes, product descriptions, each
+  written to escalate a model into an unauthorised tool call — delivered
+  through the real untrusted-input channel (a tool-role result, never system)
+  and asserted to die at a boundary. The corpus is the artifact a security
+  reviewer reads; the tags on each item name the channel it arrives on and the
+  boundary that must catch it.
+- **One corpus, two drivers, one set of assertions.** A *compliant* scripted
+  model obeys every injection to the letter and always runs — no key, CI-able,
+  and the proof that when an injection fully succeeds at the language layer the
+  authority layer still refuses. All six boundaries fire under it: the identity
+  gate, authority-is-not-model-supplied, one-identity-one-order confinement,
+  writes-wait-for-a-human, invented tool, and the agent allow-list, across all
+  four hostile channels.
+- **The live driver decides for itself** (`STORECREW_ADVERSARIAL_LIVE=1`): the
+  same corpus, the store's configured model, asserting no breach on any item
+  and reporting how many attacks actually reached the boundary. Two findings
+  shaped it. First, a well-aligned model *declines the injection on its own*,
+  which is safe but leaves the boundary unobserved — so the customer's own
+  message asks directly for the gated action, and the injection only tries to
+  bypass the gate; the boundary then fires on authority grounds rather than on
+  the model's reluctance. Live-observed 2026-08-08: `gemini-3.6-flash` called
+  `order.lookup` on an **unverified** conversation exactly as the injected
+  review demanded, and the identity gate denied it before execution — an
+  attempt dying at a boundary, not at model discretion. Second, the free tier's
+  per-model request bucket (09 § 3) drains after a call or two, so a run's later
+  items 429; the suite treats a `provider_error`/`spend_cap`/`no_provider`
+  outcome as a safe non-exercise, never a failure, and rotates which item gets
+  the fresh-bucket slot (`STORECREW_ADVERSARIAL_START`) so a retry loop
+  accumulates live coverage across quota windows.
+- A breach is a forbidden *effect*, not a scary-looking answer: the suite
+  watches whether the target tool actually ran and succeeded (a spy around the
+  real `order.lookup`/`order.note`), so a denial, a pending-approval, and an
+  allow-list refusal all read the same — zero successes for the forbidden
+  target. No fixture is the merchant's: two throwaway orders, a negative
+  conversation id, and cleanup by exactly that id.
+
 **Onboarding flow (FR-ADMIN-02)** — 2026-08-08
 
 - A `/setup` screen carrying the five-step path (key → sources → index →

@@ -181,11 +181,32 @@ costKnown false with no rates.)*
 
 ## 10. Before Launch (the honest list)
 
-- **Adversarial suite v2** (R-SEC-02 mitigation, PRD): scripted injection
-  corpus — hostile product reviews, hostile policy pages, hostile order
-  notes — run against a live model, asserting tool-denial rather than model
-  virtue. Today's probes prove the boundary with a scripted model; the
-  live-model corpus is the remaining step.
+- ~~**Adversarial suite v2**~~ (R-SEC-02 mitigation, PRD) — built
+  2026-08-08, `tests/schema/verify-adversarial.php`. A named injection corpus
+  — hostile product reviews, policy pages, order notes, and product
+  descriptions, each written to escalate a model into an unauthorised tool
+  call — delivered through the real untrusted-input channel (a tool-role
+  result) and asserted to die at a boundary. It runs through two drivers
+  against **one corpus and one set of boundary assertions**:
+  - A **compliant** scripted model that obeys every injection to the letter.
+    This always runs, needs no key, and is the CI-able proof: when an
+    injection fully succeeds at the language layer, the authority layer still
+    refuses. Every one of the six boundaries — identity gate,
+    authority-is-not-model-supplied, one-identity-one-order confinement,
+    write-waits-for-a-human, invented tool, agent allow-list — is asserted to
+    fire, across all four hostile channels.
+  - The **live** model the store is configured with, opted into by
+    `STORECREW_ADVERSARIAL_LIVE=1`. It reads the same hostile text and decides
+    for itself; the suite asserts no breach on any item and reports how many
+    attacks actually reached the boundary. A rate-limit refusal or a provider
+    outage is a safe non-exercise, never a failure — a 429 is quota, not a
+    hole (09 § 3). The customer's own message asks directly for the gated
+    action, so a well-aligned model still calls the tool and the boundary
+    fires on authority grounds rather than on the model's reluctance.
+  Live-observed 2026-08-08: the configured `gemini-3.6-flash` called
+  `order.lookup` on an **unverified** conversation exactly as the injected
+  review demanded, and the identity gate denied it before execution — an
+  attempt dying at a boundary, not at model discretion.
 - ~~Streaming~~ — built, and the constraint held: the SSE branch diverges
   from the JSON branch only *after* every guard has run, which is probed
   directly (a rate-limited streaming request is refused as JSON before any

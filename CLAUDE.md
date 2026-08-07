@@ -259,7 +259,7 @@ because it runs with no database at all.
 
 ## Testing
 
-Nine PHP suites (736 assertions) plus two browser suites (40 assertions),
+Ten PHP suites (757 assertions) plus two browser suites (40 assertions),
 green in any run order.
 
 ```bash
@@ -301,6 +301,13 @@ wp eval-file wp-content/plugins/storecrew/tests/schema/verify-knowledge.php
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-jobs.php
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-admin.php --user=1
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-chat.php --user=1
+
+# The injection corpus (12 § 10, R-SEC-02). The compliant-scripted driver runs
+# here with no key and proves every attack dies at a boundary. Add
+# STORECREW_ADVERSARIAL_LIVE=1 to also run the corpus against the store's live
+# model — it asserts no breach and reports which attacks reached the boundary;
+# a free-tier 429 is a safe non-exercise, not a failure.
+wp eval-file wp-content/plugins/storecrew/tests/schema/verify-adversarial.php --user=1
 
 # No database, no WordPress — boots both plugins against a hook shim
 ./tests/integration/run.sh
