@@ -19,7 +19,15 @@ use StoreCrew\Ai\Providers\OpenRouterProvider;
 use StoreCrew\Ai\SpendGuard;
 use StoreCrew\Api\ExtensionApi;
 use StoreCrew\Api\Feature;
+use StoreCrew\Api\Rest\Controllers\BootstrapController;
+use StoreCrew\Api\Rest\Controllers\ConversationController;
+use StoreCrew\Api\Rest\Controllers\HealthController;
+use StoreCrew\Api\Rest\Controllers\IndexController;
+use StoreCrew\Api\Rest\Controllers\KnowledgeController;
+use StoreCrew\Api\Rest\Controllers\ProviderController;
+use StoreCrew\Api\Rest\Controllers\SettingsController;
 use StoreCrew\Api\Registry\AdminRouteRegistry;
+use StoreCrew\Api\Registry\ControllerRegistry;
 use StoreCrew\Api\Registry\ExtractorRegistry;
 use StoreCrew\Api\Registry\FeatureRegistry;
 use StoreCrew\Api\Registry\ProviderRegistry;
@@ -110,6 +118,7 @@ final class Plugin {
 		$this->register_core_features();
 		$this->register_core_providers();
 		$this->register_core_extractors();
+		$this->register_core_controllers();
 
 		$this->api = $this->container->get( ExtensionApi::class );
 
@@ -123,6 +132,15 @@ final class Plugin {
 
 		$this->register_reindex_hooks();
 		$this->register_jobs();
+
+		// Routes register on rest_api_init, which fires long after the
+		// registries freeze, so the contributed set is always final by then.
+		add_action(
+			'rest_api_init',
+			function (): void {
+				$this->container->get( ControllerRegistry::class )->register_routes();
+			}
+		);
 
 		// Schema reconciliation runs here rather than on activation: a fatal
 		// mid-migration during activation leaves a site with no way to retry,
@@ -194,6 +212,11 @@ final class Plugin {
 		$this->container->set(
 			ProviderRegistry::class,
 			static fn (): ProviderRegistry => new ProviderRegistry()
+		);
+
+		$this->container->set(
+			ControllerRegistry::class,
+			static fn (): ControllerRegistry => new ControllerRegistry()
 		);
 
 		$this->container->set(
@@ -365,7 +388,8 @@ final class Plugin {
 				$c->get( FeatureRegistry::class ),
 				$c->get( AdminRouteRegistry::class ),
 				$c->get( ProviderRegistry::class ),
-				$c->get( ExtractorRegistry::class )
+				$c->get( ExtractorRegistry::class ),
+				$c->get( ControllerRegistry::class )
 			)
 		);
 	}
@@ -440,6 +464,92 @@ final class Plugin {
 		$registry->register( new GeminiProvider( $secrets, $http ) );
 		$registry->register( new OpenRouterProvider( $secrets, $http ) );
 		$registry->register( new DeepSeekProvider( $secrets, $http ) );
+	}
+
+	/**
+	 * Register the REST controllers this plugin ships.
+	 */
+	private function register_core_controllers(): void {
+		$c        = $this->container;
+		$registry = $c->get( ControllerRegistry::class );
+
+		// Factories, not instances — see ControllerRegistry. Nothing here is
+		// constructed until rest_api_init.
+		$gate = static fn () => $c->get( FeatureGate::class );
+
+		$registry->register(
+			'bootstrap',
+			static fn (): BootstrapController => new BootstrapController(
+				$gate(),
+				$c->get( ProviderRegistry::class )
+			)
+		);
+
+		$registry->register(
+			'health',
+			static fn (): HealthController => new HealthController(
+				$gate(),
+				$c->get( Scheduler::class ),
+				$c->get( Indexer::class ),
+				$c->get( IndexRunRepository::class ),
+				$c->get( SpendGuard::class ),
+				$c->get( SecretStore::class )
+			)
+		);
+
+		$registry->register(
+			'providers',
+			static fn (): ProviderController => new ProviderController(
+				$gate(),
+				$c->get( ProviderRegistry::class ),
+				$c->get( SecretStore::class ),
+				$c->get( AuditLogRepository::class )
+			)
+		);
+
+		$registry->register(
+			'settings',
+			static fn (): SettingsController => new SettingsController(
+				$gate(),
+				$c->get( ModelPolicy::class ),
+				$c->get( SpendGuard::class ),
+				$c->get( ProviderRegistry::class ),
+				$c->get( AuditLogRepository::class )
+			)
+		);
+
+		$registry->register(
+			'index',
+			static fn (): IndexController => new IndexController(
+				$gate(),
+				$c->get( Indexer::class ),
+				$c->get( IndexJob::class ),
+				$c->get( EmbedJob::class ),
+				$c->get( IndexRunRepository::class ),
+				$c->get( ExtractorRegistry::class ),
+				$c->get( Scheduler::class )
+			)
+		);
+
+		$registry->register(
+			'knowledge',
+			static fn (): KnowledgeController => new KnowledgeController(
+				$gate(),
+				$c->get( Retriever::class ),
+				$c->get( KnowledgeSourceRepository::class )
+			)
+		);
+
+		$registry->register(
+			'conversations',
+			static fn (): ConversationController => new ConversationController(
+				$gate(),
+				$c->get( ConversationRepository::class ),
+				$c->get( MessageRepository::class ),
+				$c->get( AgentRunRepository::class ),
+				$c->get( ToolCallRepository::class )
+			)
+		);
 	}
 
 	/**

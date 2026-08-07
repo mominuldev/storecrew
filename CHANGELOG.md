@@ -14,6 +14,57 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**REST API** — 2026-08-07
+
+- `storecrew/v1` namespace, 18 routes across 7 controllers, contributed through
+  a `ControllerRegistry` (`storecrew_register_rest_controllers`). Premium
+  registers into the *same* namespace rather than claiming its own, so the admin
+  SPA has one API surface and never has to know which plugin owns a route.
+- `RestController` base — **every route must declare a capability**. There is no
+  default-allow path, so forgetting to think about permissions produces a locked
+  route rather than an open one. Feature gating is re-checked server-side; the
+  SPA's capability manifest is a rendering hint, and editing it in the browser
+  yields a 403 (FR-DIST-09).
+- `GET /bootstrap` — everything the SPA needs on first paint in one request,
+  including onboarding state. The `canEmbed` flag exists because an
+  Anthropic-only install has working chat and cannot index anything, and
+  discovering that when indexing silently produces nothing is a bad first hour.
+- `GET /health` — environment, queue, index, spend, and encryption key source.
+  Every "running" state is judged by **heartbeat rather than stored status**,
+  because the failure mode merchants hit is a job that died hours ago while the
+  dashboard still reports it as live (FR-ADMIN-08).
+- `GET/POST/DELETE /providers/*` — key management. **A stored key is never
+  readable through the API again**; responses carry a masked hint only. The
+  audit log records that a key was saved, never the key.
+- `GET/POST /settings` — model policy and spend cap. Rejects a provider assigned
+  to a task it cannot perform, so a bad policy fails at the screen where it was
+  set rather than hours later in a background job.
+- `GET/POST /index/*` — status, pre-flight cost estimate, start, cancel, and a
+  manual embedding drain for after a key is fixed or a cap raised.
+- `POST /knowledge/search` — runs retrieval exactly as the agent would and
+  reports the strategy, so "the agent gave a bad answer" becomes falsifiable
+  (FR-KB-10). POST rather than GET because it embeds the query and therefore
+  costs money.
+- `GET /conversations/*` — the conversation inspector: turns, runs, retrieval
+  traces, and every tool call (FR-ADMIN-04). Addressed by **uuid**, never by
+  auto-increment id, so conversation history cannot be enumerated by counting.
+- `GET/POST /approvals/*` — the pending-write queue (FR-ADMIN-06).
+- 89 assertions dispatched through the real `WP_REST_Server`, so permission
+  callbacks and argument validation are exercised rather than bypassed.
+
+### Changed
+
+- REST controllers are registered as **factories, not instances**. The
+  registration window still closes at `plugins_loaded` 20 so the contributed set
+  is final, but construction defers to `rest_api_init` — building seven
+  controllers and the ten repositories behind them on every storefront page load
+  is pure waste, and it broke the deliberately database-free integration
+  harness. Same root cause as the eager job-handler resolution fixed earlier.
+
+---
+
+### Added
+
 **Background job runner** — `9e09b07`, 2026-08-07
 
 - `Scheduler` wrapping Action Scheduler, scoped to the `storecrew` group so a

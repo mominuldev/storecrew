@@ -132,6 +132,7 @@ src/
     Feature.php            Gateable feature + tier
     AdminRoute.php         SPA route declaration
     Registry/              Freezable registries
+    Rest/                  RestController base + 7 controllers, storecrew/v1
   Database/
     Tables.php             The only place table names are built
     Migrator.php           Forward-only, locked, admin_init
@@ -165,21 +166,28 @@ Deterministic, and everything downstream depends on it:
 Writing to a frozen registry throws under `WP_DEBUG` and is logged in
 production. Add-ons must register on `storecrew_api_ready`.
 
-Registries: features, admin routes, providers, extractors. Still to come:
-agents, tools (Gate 3).
+Registries: features, admin routes, providers, extractors, REST controllers.
+Still to come: agents, tools (Gate 3).
 
-**Job handlers resolve lazily.** Registering them eagerly builds every job and
-therefore every repository on each request — a storefront page load must not pay
-to construct jobs it will never run.
+**Controllers and job handlers are lazy.** Controllers are stored as factories
+resolved at `rest_api_init`; job handlers resolve from the container when the
+job runs. Registering either eagerly builds every repository on every request —
+a storefront page load must not pay to construct an API it will never serve.
+This has been reintroduced twice; the integration harness catches it because it
+runs with no database at all.
 
 ---
 
 ## Testing
 
-Five suites, 320 assertions, green in any run order.
+Six suites, 409 assertions, green in any run order.
+
+`verify-rest.php` needs `--user=1`: it dispatches through the real REST
+server, and its permission probes deliberately start unauthenticated.
 
 ```bash
-# Real MySQL / real WooCommerce / real Action Scheduler
+# Real MySQL / real WooCommerce / real Action Scheduler / real WP_REST_Server
+wp eval-file wp-content/plugins/storecrew/tests/schema/verify-rest.php --user=1
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-schema.php
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-repositories.php
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-providers.php
@@ -210,6 +218,7 @@ ciphertext, ragged embedding vectors, and the migration lock.
 | `Scheduler::cancel()` with a group | Action Scheduler only takes its cancel-by-hook fast path with **no** group; passing one matches args exactly, missing every job carrying an id. |
 | `LEXICAL_FLOOR = 3` | A query matching 1–2 chunks is *precise*, not failed. Treating it as failure triggered the full dense scan the two-stage design exists to avoid. |
 | Eager job-handler resolution | Built every repository on every request; broke the DB-free harness. |
+| Eager REST controller construction | Same root cause, found the same way. Controllers are factories now. |
 | Providers depending on concrete `HttpClient` | Request shaping was untestable without network. |
 
 ---
@@ -240,5 +249,6 @@ ciphertext, ragged embedding vectors, and the migration lock.
   calls it yet.
 - `Pro\Licence` is a **stub** — local option, no remote validation, no grace
   period. Not a security boundary; must not ship as-is.
-- No agent framework, no REST controllers, no admin SPA.
+- No agent framework and no admin SPA. The REST API exists (18 routes,
+  `storecrew/v1`) but nothing consumes it yet.
 - Model IDs and pricing are point-in-time (verified 2026-06-24) and will drift.
