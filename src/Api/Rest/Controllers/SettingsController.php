@@ -195,6 +195,44 @@ final class SettingsController extends RestController {
 				'provider' => $provider_id,
 				'model'    => $model,
 			);
+
+			// The failover target, validated by the same rules as the primary.
+			// Without this branch the API silently strips a submitted fallback
+			// and the merchant's failover never exists — a policy the runner
+			// executes must be a policy the settings screen can store.
+			if ( isset( $entry['fallback'] ) && is_array( $entry['fallback'] ) ) {
+				$fb_provider = sanitize_key( (string) ( $entry['fallback']['provider'] ?? '' ) );
+				$fb_model    = sanitize_text_field( (string) ( $entry['fallback']['model'] ?? '' ) );
+
+				if ( '' !== $fb_provider && '' !== $fb_model ) {
+					$fb = $this->providers->get( $fb_provider );
+
+					if ( null === $fb ) {
+						return $this->error(
+							'unknown_provider',
+							sprintf( /* translators: %s: provider id */ __( 'Unknown provider "%s".', 'storecrew' ), $fb_provider )
+						);
+					}
+
+					$needs_chat = ModelPolicy::TASK_EMBEDDING !== $task;
+
+					if ( ( $needs_chat && ! $fb->capabilities()->chat ) || ( ! $needs_chat && ! $fb->capabilities()->embeddings ) ) {
+						return $this->error(
+							'fallback_incapable',
+							sprintf(
+								/* translators: %s: provider label */
+								__( '%s cannot serve as the fallback for this task.', 'storecrew' ),
+								$fb->label()
+							)
+						);
+					}
+
+					$clean[ $task ]['fallback'] = array(
+						'provider' => $fb_provider,
+						'model'    => $fb_model,
+					);
+				}
+			}
 		}
 
 		return $clean;

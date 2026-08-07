@@ -138,9 +138,60 @@ final class AgentRunner {
 		add_action( 'storecrew_retrieval_performed', $provenance );
 		add_action( 'storecrew_products_surfaced', $surfaced );
 
+		$failed_over = false;
+
 		try {
 			while ( true ) {
-				$response = $provider->chat( $request );
+				try {
+					$response = $provider->chat( $request );
+				} catch ( ProviderException $e ) {
+					// Failover (FR-AI, 14 § M1): one switch to the merchant's
+					// configured fallback, continuing from the request state
+					// as it stands — tools already executed this turn are not
+					// re-run, so a write cannot happen twice because the
+					// provider fell over after it.
+					$fallback = $failed_over ? null : $this->policy->fallback( $agent->model_task );
+
+					if (
+						null === $fallback
+						|| ( $fallback['provider'] === $resolved['provider'] && $fallback['model'] === $resolved['model'] )
+					) {
+						throw $e;
+					}
+
+					$next = $this->providers->get( $fallback['provider'] );
+
+					if ( ! $next instanceof ChatProviderInterface ) {
+						throw $e;
+					}
+
+					// The failed attempt stays on the record as itself — the
+					// inspector must show both attempts, or a flaky primary
+					// reads as a healthy fallback (the exit criterion in
+					// 14 § M1 names exactly this).
+					$code = (string) $e->status();
+
+					if ( '' !== $e->error_code() ) {
+						$code .= ':' . $e->error_code();
+					}
+
+					$this->runs->fail( $run_id, $code, $e->getMessage(), $budget->elapsed_ms() );
+
+					$failed_over = true;
+					$resolved    = $fallback;
+					$provider    = $next;
+					$request     = $request->with_model( $fallback['model'] );
+
+					$run_id = $this->runs->start(
+						$context->conversation_id,
+						$agent->id,
+						$resolved['provider'],
+						$resolved['model'],
+						hash( 'sha256', $this->system_prompt( $agent, $context ) )
+					);
+
+					continue;
+				}
 
 				$usage = $usage->add( $response->usage );
 				$budget->record_tokens( $response->usage->total() );

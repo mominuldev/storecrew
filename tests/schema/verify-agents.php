@@ -296,6 +296,10 @@ $scripted = new class() implements ChatProviderInterface {
 		$next = $this->script[ $this->calls ] ?? null;
 		++$this->calls;
 
+		if ( $next instanceof Throwable ) {
+			throw $next;
+		}
+
 		return $next ?? new ChatResponse( 'done', 'scripted-1', 'scripted', new TokenUsage( 10, 5 ) );
 	}
 };
@@ -552,6 +556,125 @@ $turn = $runner->run( $probe_agent, array( Message::user( 'x' ) ), new SharedCon
 $t( 'a refusal is surfaced as a refusal', AgentTurn::OUTCOME_REFUSED === $turn->outcome );
 $t( 'a refusal asks for escalation', $turn->needs_escalation() );
 $t( 'the customer still gets a sentence', '' !== $turn->text );
+
+echo "\n== Runner: failover (FR-AI, 14 § M1) ==\n";
+
+// A second scripted provider standing in for the merchant's fallback.
+$backup = new class() implements ChatProviderInterface {
+	public array $script   = array();
+	public array $requests = array();
+	public int $calls      = 0;
+
+	public function id(): string { return 'backup'; }
+	public function label(): string { return 'Backup'; }
+	public function capabilities(): Capabilities { return new Capabilities( chat: true, tools: true ); }
+	public function is_configured(): bool { return true; }
+	public function verify(): string { return ''; }
+	public function default_models(): array { return array( 'backup-1' ); }
+
+	public function chat( ChatRequest $request ): ChatResponse {
+		$this->requests[] = $request;
+		$next             = $this->script[ $this->calls ] ?? null;
+		++$this->calls;
+
+		if ( $next instanceof Throwable ) {
+			throw $next;
+		}
+
+		return $next ?? new ChatResponse( 'Answered by the backup.', 'backup-1', 'backup', new TokenUsage( 8, 4 ) );
+	}
+};
+
+$providers->register( $backup );
+$policy->save(
+	array(
+		ModelPolicy::TASK_CHAT => array(
+			'provider' => 'scripted',
+			'model'    => 'scripted-1',
+			'fallback' => array( 'provider' => 'backup', 'model' => 'backup-1' ),
+		),
+	)
+);
+
+$scripted->calls  = 0;
+$backup->calls    = 0;
+$scripted->script = array( new StoreCrew\Ai\Exception\ProviderException( 'primary is down', 503 ) );
+$backup->script   = array();
+
+$turn = $runner->run( $probe_agent, array( Message::user( 'who answers?' ) ), new SharedContext( 0 ) );
+
+$t( 'the turn completes on the fallback', $turn->succeeded(), $turn->outcome . ' ' . $turn->error_message );
+$t( 'with the fallback\'s answer', 'Answered by the backup.' === $turn->text );
+$t( 'the fallback was actually called', 1 === $backup->calls );
+
+$attempts = $runs_repo->for_conversation( 0 );
+$attempts = array_slice( $attempts, -2 );
+$t(
+	'PROBE: the run record shows both attempts',
+	2 === count( $attempts )
+		&& AgentRunRepository::STATUS_FAILED === (string) $attempts[0]->status
+		&& 'scripted-1' === (string) $attempts[0]->model
+		&& AgentRunRepository::STATUS_COMPLETE === (string) $attempts[1]->status
+		&& 'backup-1' === (string) $attempts[1]->model,
+	wp_json_encode( array_map( static fn ( $r ) => $r->model . ':' . $r->status, $attempts ) )
+);
+$t( 'the failed attempt keeps its error', str_contains( (string) $attempts[0]->error_message, 'primary is down' ) );
+
+// Mid-turn: the primary answers with a tool call, executes it, then dies on
+// the continuation. The fallback must continue from that state — the tool
+// must NOT run twice.
+$spy->runs         = 0;
+$scripted->calls   = 0;
+$backup->calls     = 0;
+$backup->requests  = array();
+$scripted->script  = array(
+	new ChatResponse( '', 'scripted-1', 'scripted', new TokenUsage( 5, 5 ), ChatResponse::STOP_TOOL, 0, array(),
+		array( new ToolCall( 'fo1', 'probe.spy', array() ) ) ),
+	new StoreCrew\Ai\Exception\ProviderException( 'died on the continuation', 502 ),
+);
+$backup->script    = array();
+
+$turn = $runner->run( $probe_agent, array( Message::user( 'mid-turn' ) ), new SharedContext( 0 ) );
+
+$t( 'a mid-turn failure still completes on the fallback', $turn->succeeded(), $turn->outcome );
+$t( 'PROBE: the executed tool did not run twice', 1 === $spy->runs, (string) $spy->runs );
+$fb_request = $backup->requests[0] ?? null;
+$t(
+	'PROBE: the fallback continues from the request state, tool results included',
+	null !== $fb_request && count( $fb_request->messages ) >= 3
+		&& Message::ROLE_TOOL === $fb_request->messages[ count( $fb_request->messages ) - 1 ]->role,
+	null === $fb_request ? 'no request' : (string) count( $fb_request->messages )
+);
+
+// Both dead: the failure is terminal after exactly one switch, not a loop.
+$scripted->calls  = 0;
+$backup->calls    = 0;
+$scripted->script = array( new StoreCrew\Ai\Exception\ProviderException( 'primary down', 503 ) );
+$backup->script   = array( new StoreCrew\Ai\Exception\ProviderException( 'backup down too', 503 ) );
+
+$turn = $runner->run( $probe_agent, array( Message::user( 'x' ) ), new SharedContext( 0 ) );
+$t( 'PROBE: both providers down fails after one switch, not a loop', AgentTurn::OUTCOME_FAILED === $turn->outcome );
+$t( 'the terminal error is the fallback\'s', str_contains( $turn->error_message, 'backup down too' ) );
+$t( 'exactly one fallback attempt was made', 1 === $backup->calls );
+
+// No fallback configured: today's behaviour, unchanged.
+$policy->save(
+	array( ModelPolicy::TASK_CHAT => array( 'provider' => 'scripted', 'model' => 'scripted-1' ) )
+);
+$scripted->calls  = 0;
+$backup->calls    = 0;
+$scripted->script = array( new StoreCrew\Ai\Exception\ProviderException( 'down', 503 ) );
+
+$turn = $runner->run( $probe_agent, array( Message::user( 'x' ) ), new SharedContext( 0 ) );
+$t( 'PROBE: no configured fallback fails as before', AgentTurn::OUTCOME_FAILED === $turn->outcome );
+$t( 'PROBE: and never invents one', 0 === $backup->calls );
+
+$policy->save(
+	array(
+		ModelPolicy::TASK_CHAT    => array( 'provider' => 'scripted', 'model' => 'scripted-1' ),
+		ModelPolicy::TASK_ROUTING => array( 'provider' => 'scripted', 'model' => 'scripted-1' ),
+	)
+);
 
 $empty_providers = new ProviderRegistry();
 $lonely = new AgentRunner(
