@@ -12,6 +12,54 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ## [Unreleased]
 
+### Added
+
+**M1 hardening — nine of fifteen exit criteria closed** — 2026-08-07
+
+Six work items in one sweep of 14 § M1, each probe-tested on landing:
+
+- **Retention enforced** (04 § 11 → Implemented): all four windows prune
+  from the hourly sweep, batched at 500. Conversation pruning cascades to
+  messages, runs, and tool calls; **pending approvals are exempt from any
+  window**; sub-floor settings clamp up rather than silently off.
+- **GDPR exporter/eraser** registered with core's personal-data tools.
+  Erasure severs `customer_id`, the proven order, and the session binding —
+  no surviving cookie resumes an erased thread — and blanks content while
+  rows and counters survive. Export excludes operator notes. Reach is
+  bounded by the identity model: anonymous conversations are not
+  attributable by email, deliberately.
+- **Escalation email** (the push half of FR-SUPPORT-07): one email per
+  escalation — the transition rings, further failed turns do not — linking
+  into the inspector, never carrying the customer's words.
+- **Failover executes** (FR-AI): one switch to the configured fallback,
+  continuing from the request state at failure so an executed tool never
+  runs twice; both attempts on the run record; both-dead is terminal after
+  one switch. The settings API had been silently stripping submitted
+  `fallback` keys — fixed, so the failover is configurable at all.
+- **Both dormant `agent_configs` surfaces consumed**: merchant house rules
+  compose additive-only after every shipped guardrail behind a subordinating
+  frame (probed against "Ignore the price rule"); per-agent model policy
+  resolves ahead of the global, with a broken override degrading to the
+  global resolution rather than to a failed turn. FR-AGENT-09's Gate 3
+  rescope is retired.
+- **`product.lookup`**: exact SKU resolution with live price/stock. Unknown,
+  draft, and private SKUs share one indistinguishable miss (no oracle for
+  unpublished catalogue); out-of-stock is found and named, not hidden. The
+  recall harness gains identifier fixtures scored against this path — 3/3,
+  semantic path unconsulted.
+- **Pro ships `uninstall.php`**: exactly its licence options, nothing the
+  free plugin owns; harness probes both directions.
+- **`composer check`**: phpcs (WPCS tuned to the documented conventions —
+  six genuine defects fixed rather than excluded), phpstan level 5 clean
+  (one honest lie found: `Agent`'s own docblock), and
+  `tools/check-invariants.php` — noGlobalWpdb with its carve-outs,
+  noProReferenceInFree, and parse-safety, each self-testing by violating
+  itself once. phpunit was declared and used by nothing; removed.
+
+Still open in M1: streaming (FR-CHAT-02), the onboarding time-to-value
+measurement, adversarial suite v2, budget-host validation, i18n, and the
+.org compliance pass.
+
 ### Verified end to end, live
 
 **First real customer conversation** — 2026-08-07
