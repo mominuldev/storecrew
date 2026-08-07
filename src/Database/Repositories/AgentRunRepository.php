@@ -73,7 +73,8 @@ final class AgentRunRepository extends Repository {
 		int $cost_micros = 0,
 		int $latency_ms = 0,
 		int $tool_call_count = 0,
-		array $retrieved = array()
+		array $retrieved = array(),
+		bool $cost_known = true
 	): bool {
 		return $this->update_by_id(
 			$id,
@@ -83,6 +84,9 @@ final class AgentRunRepository extends Repository {
 				'tokens_in'       => $tokens_in,
 				'tokens_out'      => $tokens_out,
 				'cost_micros'     => $cost_micros,
+				// An unpriced model must not display as a free one — cost that
+				// is unknown reports unknown, never zero (the pricing rule).
+				'cost_known'      => $cost_known ? 1 : 0,
 				'latency_ms'      => $latency_ms,
 				'tool_call_count' => $tool_call_count,
 				// Chunk ids and scores, never chunk text — that would duplicate
@@ -90,7 +94,7 @@ final class AgentRunRepository extends Repository {
 				'retrieved'       => $this->encode_json( $retrieved ),
 				'finished_at'     => $this->now(),
 			),
-			array( '%s', '%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s' )
+			array( '%s', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s' )
 		);
 	}
 

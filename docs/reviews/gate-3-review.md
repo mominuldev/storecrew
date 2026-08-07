@@ -10,6 +10,26 @@ deliberately **not** confirmed from memory — the code was verified to match
 the documents, and the external truths are listed as unverifiable with the
 dates the code carries.
 
+> **Outcomes (2026-08-07, same day):** all nine code findings are **fixed and
+> probe-tested**, per the product owner's decisions (D1: handoff wired as the
+> `agent.handoff` tool; D2: `cost_known` as a first-class column via
+> Migration002 — the migration machinery's first real firing, which worked;
+> D3: FR-AGENT-09 rescoped to persona with the gap recorded). G3-C1–C9 all
+> landed; the four missing regression guards exist (`thoughtSignature`
+> round-trip, mid-turn identity propagation, OpenRouter/DeepSeek shaping,
+> GET retry); and the § 2/§ 3 doc edits are applied to 08/09/15/03/12/04/07
+> with the FR-AGENT-09 scope note in 01. The suites grew 583 → **615**
+> assertions, green in a shuffled run order.
+>
+> Chasing the order-dependence found something worse than a flake: the
+> "unconfigured store" probes in verify-rest and verify-jobs only ever
+> passed because **verify-providers' cleanup was deleting the merchant's
+> real provider keys on every run** — and once the real key was restored,
+> the verify-jobs probe ran the embed job against it: a live, billable call
+> from inside a test. Both are fixed (snapshot-and-restore of the secrets
+> and data-key options; probes now construct the unconfigured state and
+> restore it), and both lessons are in CLAUDE.md's bug table.
+
 **Verdict: not approvable as written.** Nothing found is a security defect —
 the ToolExecutor boundary, the deny-only filter, identity gating, the
 allow-list check, guardrail ordering, and the one-order verification rule all

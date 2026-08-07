@@ -6,7 +6,7 @@
 **Date:** 2026-08-07 (reviewed, remediated, and approved 2026-08-07)
 
 Unusually for a Gate 2 document, this describes an architecture that already
-exists and has been verified — 583 assertions across nine suites, a DB-free
+exists and has been verified — 615 assertions across nine suites, a DB-free
 integration harness, and a live five-turn conversation against a real model.
 Where a choice was validated or falsified by running code, the outcome is
 recorded here rather than the original guess.
@@ -223,10 +223,16 @@ Full treatment in [08](08-agent-framework.md). The architecture in brief:
   them (probe-tested).
 - **`ToolExecutor` is the single security boundary.** Fixed authorisation
   order: tool exists → not disabled for this agent → session capability →
-  identity if required → write approval → final filter. The
-  `storecrew_tool_authorized` filter **may only deny** — its return is ANDed
-  with the prior decision, so no add-on (and no prompt injection reaching an
-  add-on) can grant what earlier steps refused (R-SEC-01).
+  identity if required → `storecrew_tool_authorized` → write approval. The
+  filter **may only deny** — its return is ANDed with the prior decision, so
+  no add-on (and no prompt injection reaching an add-on) can grant what
+  earlier steps refused (R-SEC-01). Approval comes last because it decides
+  *when* a permitted write happens, not *whether*: a call nothing authorised
+  is already refused and never reaches the queue.
+- **Tool arguments are redacted before they are stored.** `identity.verify`
+  takes the customer's email on every attempt, including failed ones, and
+  04 § 11 promises no plugin table holds a raw address. The tool sees the
+  real value; the row does not.
 - **Authorisation state never travels through model-shaped data.**
   `ToolContext` is built from the conversation row and the WordPress session;
   identity verification proves *one order* and `order.lookup` refuses any
@@ -321,17 +327,22 @@ two surfaces have opposite constraints — an authenticated 300 KB SPA versus a
 
 ## 11. Cross-Cutting: Observability and Audit
 
-- Every agent run records provider, model, tokens, cost (or cost-unknown),
-  latency, retrieved chunk ids/scores (ids only — never text, which would
-  duplicate the corpus), and every tool call with arguments, result, and
-  authorisation mode (FR-ADMIN-04, FR-AGENT-07). Retrieval provenance
-  travels by action, not by return path: `Retriever` fires
-  `storecrew_retrieval_performed` with its results, and `AgentRunner`
-  listens for exactly the duration of the run (detached in a `finally`),
-  accumulating each chunk's best score across the turn into
-  `SharedContext` — the same server-side listener pattern as mid-turn
-  identity verification, chosen so tools need no reference back to the run
-  that invoked them.
+- Every agent run records provider, model, tokens, cost, latency, retrieved
+  chunk ids/scores (ids only — never text, which would duplicate the
+  corpus), and every tool call with arguments, result, and authorisation
+  mode (FR-ADMIN-04, FR-AGENT-07). **Cost-unknown is a stored fact, not a
+  convention**: `agent_runs.cost_known` (Migration002) carries `Pricing`'s
+  flag through to the inspector, because a model with no published rate
+  costing "0" and a genuinely free call are indistinguishable otherwise —
+  which is the fabricated zero § 5 forbids, arriving by omission. Refused
+  and failed turns meter what they burned; an unmetered ending is a
+  SpendGuard that under-counts. Retrieval provenance travels by action, not
+  by return path: `Retriever` fires `storecrew_retrieval_performed` with its
+  results, and `AgentRunner` listens for exactly the duration of the run
+  (detached in a `finally`), accumulating each chunk's best score across the
+  turn into `SharedContext` — the same server-side listener pattern as
+  mid-turn identity verification and handoff requests, chosen so tools need
+  no reference back to the run that invoked them.
 - Persisted tool arguments are redacted first: `ToolExecutor` blanks
   identity-bearing values (the `email` key, plus a pattern pass over string
   values) before writing, while the tool itself still receives the raw

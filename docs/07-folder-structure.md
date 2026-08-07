@@ -69,7 +69,8 @@ src/
     Migrator.php               Forward-only, locked, admin_init
     MigrationInterface.php     One forward-only change: version(), up(),
                                deliberately no down()
-    Migrations/                Migration001InitialSchema
+    Migrations/                Migration001InitialSchema,
+                               Migration002RunCostKnown
     Repository.php             Abstract base — where $wpdb actually lives
                                (injected, global fallback) and the 65,535-byte
                                JSON cap (encode_json)
@@ -101,7 +102,7 @@ src/
     Tool/                      The boundary: ToolInterface, ToolExecutor,
                                ToolContext, ToolResult
     Tools/                     product.search, policy.lookup, identity.verify,
-                               order.lookup, order.note
+                               order.lookup, order.note, agent.handoff
   Chat/                        The storefront surface (03 § 8)
     ChatService, Session, RateLimiter, ChatSettings, Widget
   Licensing/

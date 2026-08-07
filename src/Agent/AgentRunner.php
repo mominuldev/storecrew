@@ -126,7 +126,17 @@ final class AgentRunner {
 			$context->set_retrieved( $chunks );
 		};
 
+		// Same pattern for the products the catalogue tool surfaced: a
+		// handoff should carry "which products came up" without the next
+		// agent re-deriving it from the transcript (FR-AGENT-03).
+		$surfaced = static function ( array $product_ids ) use ( $context ): void {
+			foreach ( $product_ids as $product_id ) {
+				$context->saw_product( (int) $product_id );
+			}
+		};
+
 		add_action( 'storecrew_retrieval_performed', $provenance );
+		add_action( 'storecrew_products_surfaced', $surfaced );
 
 		try {
 			while ( true ) {
@@ -140,13 +150,16 @@ final class AgentRunner {
 				$known_cost = $known_cost && $estimate['known'];
 
 				if ( $response->is_refusal() ) {
-					$this->finish( $run_id, AgentRunRepository::STATUS_COMPLETE, $usage, $cost, $budget, $context, $tool_calls );
+					$this->finish( $run_id, AgentRunRepository::STATUS_COMPLETE, $usage, $cost, $budget, $context, $tool_calls, $known_cost );
+					// A refusal burned real tokens; not metering it would make
+					// SpendGuard and the dashboard under-count.
+					$this->meter( $resolved, $usage, $cost, $context );
 
 					return AgentTurn::refused( $agent->id, $run_id );
 				}
 
 				if ( ! $response->has_tool_calls() ) {
-					$this->finish( $run_id, AgentRunRepository::STATUS_COMPLETE, $usage, $cost, $budget, $context, $tool_calls );
+					$this->finish( $run_id, AgentRunRepository::STATUS_COMPLETE, $usage, $cost, $budget, $context, $tool_calls, $known_cost );
 					$this->meter( $resolved, $usage, $cost, $context );
 
 					return AgentTurn::answered( $agent->id, $run_id, $response->text, $usage, $cost, $known_cost );
@@ -156,7 +169,7 @@ final class AgentRunner {
 				// to bound spend, and spending it then reporting the breach
 				// defeats it.
 				if ( $budget->exhausted() ) {
-					$this->finish( $run_id, AgentRunRepository::STATUS_BUDGET, $usage, $cost, $budget, $context, $tool_calls );
+					$this->finish( $run_id, AgentRunRepository::STATUS_BUDGET, $usage, $cost, $budget, $context, $tool_calls, $known_cost );
 					$this->meter( $resolved, $usage, $cost, $context );
 
 					return AgentTurn::budget_exceeded( $agent->id, $run_id, $budget->reason(), $response->text );
@@ -200,11 +213,23 @@ final class AgentRunner {
 				);
 			}
 		} catch ( ProviderException $e ) {
-			$this->runs->fail( $run_id, (string) $e->status(), $e->getMessage(), $budget->elapsed_ms() );
+			// The HTTP status alone distinguishes support cases (404 vs 429);
+			// the provider's own code, when it sent one, says *why* —
+			// "429:RESOURCE_EXHAUSTED" beats either half on its own.
+			$code = (string) $e->status();
+
+			if ( '' !== $e->error_code() ) {
+				$code .= ':' . $e->error_code();
+			}
+
+			$this->runs->fail( $run_id, $code, $e->getMessage(), $budget->elapsed_ms() );
+			// Tokens spent before the failure are still spent.
+			$this->meter( $resolved, $usage, $cost, $context );
 
 			return AgentTurn::failed( $agent->id, 'provider_error', $e->getMessage(), $run_id );
 		} finally {
 			remove_action( 'storecrew_retrieval_performed', $provenance );
+			remove_action( 'storecrew_products_surfaced', $surfaced );
 		}
 	}
 
@@ -266,7 +291,8 @@ final class AgentRunner {
 		int $cost,
 		TurnBudget $budget,
 		SharedContext $context,
-		int $tool_calls
+		int $tool_calls,
+		bool $known_cost = true
 	): void {
 		$this->runs->finish(
 			$run_id,
@@ -277,7 +303,8 @@ final class AgentRunner {
 			$cost,
 			$budget->elapsed_ms(),
 			$tool_calls,
-			$context->retrieved()
+			$context->retrieved(),
+			$known_cost
 		);
 	}
 

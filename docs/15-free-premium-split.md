@@ -110,6 +110,11 @@ The check runs before any `use` of a free-plugin class, so a version mismatch ca
 
 All hooks are prefixed `storecrew_`. Every registry follows the same shape: a filter receiving a registry object, returning it modified.
 
+The tables below were reconciled against the code at the Gate 3 review
+(2026-08-07), which found that this section had drifted into describing an
+intended hook surface rather than the built one. Hooks that do not exist are
+now listed as absent instead of quietly removed — see § 4.2 and § 4.3.
+
 ### 4.1 Registries
 
 | Hook | Type | Purpose |
@@ -124,38 +129,71 @@ All hooks are prefixed `storecrew_`. Every registry follows the same shape: a fi
 | `storecrew_register_container` | filter | Contribute service definitions to the PSR-11 container |
 | `storecrew_register_migrations` | filter | Contribute owned database migrations |
 | `storecrew_register_features` | filter | Declare gateable feature slugs and their required entitlement |
-| `storecrew_register_workflow_nodes` | filter | Contribute workflow node types (premium engine, but open to third parties) |
+| `storecrew_register_workflow_nodes` | filter | *Planned, Phase 2.* Contribute workflow node types. The workflow engine does not exist yet, and per Gate 1 D6 the node API stays premium-internal until it has survived one minor version unchanged |
 
 ### 4.2 Behavioural filters
+
+Built and callable today:
 
 | Hook | Purpose |
 |---|---|
 | `storecrew_feature_enabled` | Final say on whether a feature slug is active. **Server-side authority** (FR-DIST-09) |
 | `storecrew_capability_manifest` | The entitlement object serialised to the SPA |
-| `storecrew_agent_system_prompt` | Adjust an agent's system prompt before dispatch |
-| `storecrew_agent_route` | Override orchestrator routing for a turn |
 | `storecrew_retrieval_results` | Post-process retrieved chunks before they enter the prompt |
 | `storecrew_retrieval_query` | Rewrite a retrieval query |
 | `storecrew_tool_authorized` | Veto a tool call. **May only deny, never grant** (see §6) |
-| `storecrew_provider_request` | Mutate an outbound provider request |
-| `storecrew_conversation_context` | Extend the structured shared context |
-| `storecrew_widget_config` | Adjust storefront widget configuration |
-| `storecrew_usage_limit` | Override metering limits |
+| `storecrew_redacted_argument_keys` | Add argument keys redacted before a tool call is stored. **May only add** — the shipped keys are merged in afterwards, so a filter cannot reopen the leak it exists to close |
+| `storecrew_default_agent` | Which agent owns a turn when routing cannot decide |
+| `storecrew_dense_weight` | Fusion weight between the dense and lexical retrieval arms |
+| `storecrew_model_pricing` | Supply per-model rates the shipped table does not carry |
+| `storecrew_chat_settings` / `storecrew_chat_should_load` / `storecrew_chat_client_ip` | Widget configuration, per-request load decision, and client-IP resolution behind a proxy |
+| `storecrew_product_extract_lines` / `storecrew_order_tracking` | Extend what the product extractor emits; supply tracking detail to the order tools |
+
+**Not built.** Earlier drafts of this document listed
+`storecrew_agent_system_prompt`, `storecrew_agent_route`,
+`storecrew_conversation_context`, `storecrew_provider_request`,
+`storecrew_widget_config`, and `storecrew_usage_limit`. **None of them exist
+in code** — the Gate 3 review found them by grep. They are recorded here as
+absent rather than deleted, because an add-on author who read an earlier
+draft has to be able to discover that the hook they filtered never fired.
+Two of them also need a decision before they could be added: a filter that
+rewrites a system prompt or overrides routing is a path by which an add-on —
+and therefore prompt injection reaching an add-on — influences agent
+behaviour, so either would have to be constrained the way
+`storecrew_tool_authorized` is (§ 6), not shipped as a free hand.
 
 ### 4.3 Event actions
 
 Fire-and-forget notifications. Extensions observe; they do not control flow.
 
+Built and firing today:
+
 | Hook | Fired when |
 |---|---|
-| `storecrew_conversation_started` | A new conversation opens |
-| `storecrew_conversation_ended` | A conversation closes or times out |
-| `storecrew_agent_run_completed` | An agent turn finishes — carries the full run record |
-| `storecrew_tool_executed` | A tool completes — carries arguments and result |
+| `storecrew_agent_turn_completed` | An agent turn finishes — carries the turn, the agent, and the shared context. Fires for a handed-off run too, so an observer counting turns misses none |
 | `storecrew_handoff` | Conversation transferred between agents |
-| `storecrew_escalated` | Escalated to a human |
-| `storecrew_index_completed` | A knowledge-base index run finishes |
-| `storecrew_license_changed` | License state transitions |
+| `storecrew_handoff_requested` | An agent asked to hand over; the transfer itself happens after the current run completes |
+| `storecrew_conversation_escalated` | Escalated to a human |
+| `storecrew_identity_verified` | A customer proved identity mid-turn |
+| `storecrew_retrieval_performed` / `storecrew_products_surfaced` | Retrieval returned chunks; the catalogue tool surfaced products. Both carry run provenance to the run record |
+| `storecrew_retrieval_truncated` | A bounded scan hit its ceiling — incomplete recall is announced, never swallowed |
+| `storecrew_tool_failed` / `storecrew_tool_resolution_failed` | A tool threw; a tool factory could not build one |
+| `storecrew_chat_failed` | A turn failed in a way the customer saw as an apology |
+| `storecrew_spend_cap_exceeded` | Spend passed the ceiling under the `warn` behaviour |
+| `storecrew_embedding_blocked` / `storecrew_index_object_failed` / `storecrew_queue_reindex` | Indexing could not proceed, an object failed, a reindex was queued |
+| `storecrew_maintenance_completed` | The hourly sweep finished |
+| `storecrew_api_ready` / `storecrew_api_frozen` / `storecrew_registry_rejected` | The registration window opened, closed, and refused a late write |
+| `storecrew_activated` / `storecrew_deactivated` | Plugin lifecycle |
+
+**Not built.** `storecrew_conversation_started`, `storecrew_conversation_ended`,
+`storecrew_agent_run_completed`, `storecrew_tool_executed`,
+`storecrew_escalated`, `storecrew_index_completed`, and
+`storecrew_license_changed` appeared in earlier drafts and **do not exist**.
+Three were renamed rather than dropped — `storecrew_agent_turn_completed`,
+`storecrew_conversation_escalated`, and `storecrew_tool_failed` are the real
+names — and the rest were never written. Recorded rather than deleted for the
+same reason as § 4.2: a hook that silently never fires is worse than one
+documented as absent, because the add-on author blames their own code.
 
 ---
 

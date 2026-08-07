@@ -9,6 +9,7 @@ declare( strict_types=1 );
 
 namespace StoreCrew\Agent;
 
+use StoreCrew\Agent\Tools\HandoffTool;
 use StoreCrew\Agent\Tools\IdentityVerifyTool;
 use StoreCrew\Agent\Tools\OrderLookupTool;
 use StoreCrew\Agent\Tools\OrderNoteTool;
@@ -41,11 +42,11 @@ final class CoreAgents {
 				. 'and say when nothing fits rather than pushing the closest thing.',
 			persona: 'Warm and direct. Ask one clarifying question when the request is genuinely '
 				. 'ambiguous; otherwise search and show what you found.',
-			tool_ids: array( ProductSearchTool::ID ),
+			tool_ids: array( ProductSearchTool::ID, HandoffTool::ID ),
 			guardrails: array(
 				'Only recommend products the search tool returned. Never invent a product.',
-				'If a shopper asks about an existing order, say that is handled by the support team '
-					. 'and offer to hand them over — do not attempt it yourself.',
+				'If a shopper asks about an existing order, hand the conversation to the support '
+					. 'specialist with the handoff tool — do not attempt it yourself.',
 			),
 			feature: 'agent.sales',
 		);
@@ -64,6 +65,7 @@ final class CoreAgents {
 				IdentityVerifyTool::ID,
 				OrderLookupTool::ID,
 				OrderNoteTool::ID,
+				HandoffTool::ID,
 			),
 			guardrails: array(
 				'Before discussing any order, confirm the order number and the email address on it '

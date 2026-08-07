@@ -32,6 +32,7 @@ use StoreCrew\Agent\AgentRunner;
 use StoreCrew\Agent\CoreAgents;
 use StoreCrew\Agent\Orchestrator;
 use StoreCrew\Agent\Tool\ToolExecutor;
+use StoreCrew\Agent\Tools\HandoffTool;
 use StoreCrew\Agent\Tools\IdentityVerifyTool;
 use StoreCrew\Agent\Tools\OrderLookupTool;
 use StoreCrew\Agent\Tools\OrderNoteTool;
@@ -60,6 +61,7 @@ use StoreCrew\Core\Queue\MaintenanceJob;
 use StoreCrew\Core\Queue\Scheduler;
 use StoreCrew\Database\MigrationInterface;
 use StoreCrew\Database\Migrations\Migration001InitialSchema;
+use StoreCrew\Database\Migrations\Migration002RunCostKnown;
 use StoreCrew\Database\Migrator;
 use StoreCrew\Database\Repositories\AgentConfigRepository;
 use StoreCrew\Database\Repositories\AgentRunRepository;
@@ -438,7 +440,10 @@ final class Plugin {
 		$this->container->set(
 			Migrator::class,
 			static function (): Migrator {
-				$migrations = array( new Migration001InitialSchema() );
+				$migrations = array(
+					new Migration001InitialSchema(),
+					new Migration002RunCostKnown(),
+				);
 
 				/**
 				 * Contribute database migrations.
@@ -583,6 +588,16 @@ final class Plugin {
 
 		$registry->register( OrderLookupTool::ID, static fn (): OrderLookupTool => new OrderLookupTool() );
 		$registry->register( OrderNoteTool::ID, static fn (): OrderNoteTool => new OrderNoteTool() );
+
+		// The availability callable defers to the orchestrator lazily, so
+		// constructing the tool costs nothing and the target list is always
+		// the same one routing itself would use.
+		$registry->register(
+			HandoffTool::ID,
+			static fn (): HandoffTool => new HandoffTool(
+				static fn (): array => $c->get( Orchestrator::class )->available_agents()
+			)
+		);
 	}
 
 	/**

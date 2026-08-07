@@ -153,6 +153,19 @@ final class ProductSearchTool implements ToolInterface {
 			}
 		}
 
+		if ( array() !== $products ) {
+			/**
+			 * Fires with the ids of products the customer was just shown.
+			 *
+			 * Consumed by a run-scoped listener so the conversation context
+			 * carries "which products came up" into handoffs (FR-AGENT-03)
+			 * without the next agent re-deriving it from the transcript.
+			 *
+			 * @param list<int> $ids Product ids, in the order surfaced.
+			 */
+			do_action( 'storecrew_products_surfaced', array_column( $products, 'id' ) );
+		}
+
 		if ( array() === $products ) {
 			return ToolResult::ok(
 				'No purchasable products matched that. Suggest the shopper try different words, '

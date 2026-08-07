@@ -23,7 +23,10 @@ use StoreCrew\Agent\AgentRunner;
 use StoreCrew\Agent\Orchestrator;
 use StoreCrew\Agent\Tool\ToolContext;
 use StoreCrew\Agent\Tool\ToolExecutor;
+use StoreCrew\Agent\Tool\ToolInterface;
 use StoreCrew\Agent\Tool\ToolResult;
+use StoreCrew\Agent\Tools\HandoffTool;
+use StoreCrew\Ai\ToolDefinition;
 use StoreCrew\Agent\Tools\IdentityVerifyTool;
 use StoreCrew\Agent\Tools\OrderLookupTool;
 use StoreCrew\Ai\Capabilities;
@@ -678,6 +681,146 @@ $t(
 );
 
 // ---------------------------------------------------------------------------
+
+echo "\n== Handoff end to end (FR-AGENT-03) ==\n";
+// The whole chain: the model calls the handoff tool, the run-scoped listener
+// captures it, the receiving agent runs after the first completes, and its
+// answer is the reply the customer sees.
+$pair_registry = new AgentRegistry();
+$pair_registry->register( CoreAgents::support() );
+$pair_registry->register( CoreAgents::sales() );
+
+$tools->register(
+	HandoffTool::ID,
+	static fn () => new HandoffTool( static fn (): array => $pair_registry->all() )
+);
+
+$pair_orchestrator = new Orchestrator( $pair_registry, $runner, $providers, $policy, $features, $configs, $c->get( StoreCrew\Ai\SpendGuard::class ) );
+$pair_chat         = new ChatService( $conversations, $messages, $pair_orchestrator );
+
+$scripted->calls  = 0;
+$scripted->script = array(
+	// Routing picks Support; Support hands to Sales; Sales answers.
+	new ChatResponse( 'support', 'scripted-1', 'scripted', new TokenUsage( 3, 1 ) ),
+	new ChatResponse( '', 'scripted-1', 'scripted', new TokenUsage( 10, 5 ), ChatResponse::STOP_TOOL, 0, array(),
+		array( new ToolCall( 'h1', HandoffTool::ID, array( 'to' => 'sales', 'note' => 'Wants a warm hat for winter.' ) ) ) ),
+	new ChatResponse( 'Passing you to our sales specialist.', 'scripted-1', 'scripted', new TokenUsage( 8, 4 ) ),
+	new ChatResponse( 'Sales here — try the wool beanie.', 'scripted-1', 'scripted', new TokenUsage( 9, 4 ) ),
+);
+
+$handoff_uuid = $conversations->start( hash( 'sha256', 'probe-handoff-token' ) );
+$handoff_row  = $conversations->find_by_uuid( (string) $handoff_uuid );
+
+$handoff_turn = $pair_chat->send( $handoff_row, 'What should I get my dad?' );
+
+$t(
+	'PROBE: the receiving agent answers the customer',
+	'Sales here — try the wool beanie.' === $handoff_turn->text,
+	$handoff_turn->text
+);
+$t( 'the turn is owned by the receiving agent', 'sales' === $handoff_turn->agent_id, $handoff_turn->agent_id );
+$t( 'four model calls: routing, tool turn, acknowledgement, receiving agent', 4 === $scripted->calls, (string) $scripted->calls );
+
+$note_rows = (int) $GLOBALS['wpdb']->get_var(
+	$GLOBALS['wpdb']->prepare(
+		'SELECT COUNT(*) FROM ' . Tables::name( Tables::MESSAGES ) . ' WHERE conversation_id = %d AND role = %s',
+		(int) $handoff_row->id,
+		MessageRepository::ROLE_HANDOFF
+	)
+);
+$t( 'PROBE: the handoff note is recorded under its own role', 1 === $note_rows, (string) $note_rows );
+$t(
+	'PROBE: the note never reaches the public transcript',
+	! str_contains( (string) wp_json_encode( $pair_chat->public_history( (int) $handoff_row->id ) ), 'Wants a warm hat' )
+);
+
+echo "\n== Mid-turn identity propagation (FR-SUPPORT-02) ==\n";
+// The property that carried the most security weight in 08 § 5 rested on a
+// single live run until this probe: a tool proving identity mid-turn must be
+// visible to the *next* tool call in the same turn, via the server-side
+// listener — never via anything model-shaped.
+$fireid = new class() implements ToolInterface {
+	public function id(): string { return 'probe.fireid'; }
+	public function definition(): ToolDefinition {
+		return new ToolDefinition( 'probe.fireid', 'Probe.', array( 'type' => 'object' ) );
+	}
+	public function intent(): string { return ToolInterface::INTENT_READ; }
+	public function required_capability(): string { return ''; }
+	public function requires_identity(): bool { return false; }
+	public function execute( StoreCrew\Agent\Tool\ToolContext $context, array $input ): ToolResult {
+		// What IdentityVerifyTool fires after writing the conversation row.
+		do_action( 'storecrew_identity_verified', $context->conversation_id, 424242, 0 );
+		return ToolResult::ok( 'verified' );
+	}
+};
+
+$needsid = new class() implements ToolInterface {
+	public ?StoreCrew\Agent\Tool\ToolContext $seen = null;
+	public function id(): string { return 'probe.needsid'; }
+	public function definition(): ToolDefinition {
+		return new ToolDefinition( 'probe.needsid', 'Probe.', array( 'type' => 'object' ) );
+	}
+	public function intent(): string { return ToolInterface::INTENT_READ; }
+	public function required_capability(): string { return ''; }
+	public function requires_identity(): bool { return true; }
+	public function execute( StoreCrew\Agent\Tool\ToolContext $context, array $input ): ToolResult {
+		$this->seen = $context;
+		return ToolResult::ok( 'order data' );
+	}
+};
+
+$tools->register( $fireid->id(), static fn () => $fireid );
+$tools->register( $needsid->id(), static fn () => $needsid );
+
+$id_registry = new AgentRegistry();
+$id_registry->register(
+	new StoreCrew\Agent\Agent(
+		id: 'probe-id',
+		label: 'Probe',
+		mission: 'Verify, then look up.',
+		persona: '',
+		tool_ids: array( 'probe.fireid', 'probe.needsid' )
+	)
+);
+
+$id_orchestrator = new Orchestrator( $id_registry, $runner, $providers, $policy, $features, $configs, $c->get( StoreCrew\Ai\SpendGuard::class ) );
+$id_chat         = new ChatService( $conversations, $messages, $id_orchestrator );
+
+$scripted->calls  = 0;
+$scripted->script = array(
+	new ChatResponse( '', 'scripted-1', 'scripted', new TokenUsage( 5, 2 ), ChatResponse::STOP_TOOL, 0, array(),
+		array( new ToolCall( 'i1', 'probe.fireid', array() ) ) ),
+	new ChatResponse( '', 'scripted-1', 'scripted', new TokenUsage( 5, 2 ), ChatResponse::STOP_TOOL, 0, array(),
+		array( new ToolCall( 'i2', 'probe.needsid', array() ) ) ),
+	new ChatResponse( 'Your order is on its way.', 'scripted-1', 'scripted', new TokenUsage( 5, 2 ) ),
+);
+
+$id_uuid = $conversations->start( hash( 'sha256', 'probe-midturn-token' ) );
+$id_row  = $conversations->find_by_uuid( (string) $id_uuid );
+
+$id_turn = $id_chat->send( $id_row, 'Where is my order? #424242, me@example.com' );
+
+$t( 'the turn answered', $id_turn->succeeded(), $id_turn->outcome . ' ' . $id_turn->error_message );
+$t(
+	'PROBE: identity proven mid-turn reaches the next tool call in the same turn',
+	null !== $needsid->seen && true === $needsid->seen->identity_verified
+);
+$t(
+	'PROBE: and it carries the one verified order, no other',
+	null !== $needsid->seen && 424242 === $needsid->seen->verified_order_id
+);
+$t(
+	'the identity listener does not outlive the turn',
+	! has_action( 'storecrew_identity_verified' )
+);
+
+// Remove the two probe conversations and their satellite rows.
+foreach ( array( (int) $handoff_row->id, (int) $id_row->id ) as $probe_cid ) {
+	$messages->delete_for_conversation( $probe_cid );
+	$GLOBALS['wpdb']->query( 'DELETE FROM ' . Tables::name( Tables::AGENT_RUNS ) . " WHERE conversation_id = {$probe_cid}" );
+	$GLOBALS['wpdb']->query( 'DELETE FROM ' . Tables::name( Tables::TOOL_CALLS ) . " WHERE conversation_id = {$probe_cid}" );
+	$GLOBALS['wpdb']->delete( Tables::name( Tables::CONVERSATIONS ), array( 'id' => $probe_cid ), array( '%d' ) );
+}
 
 echo "\n== The spend cap guards routing too (FR-AI-06) ==\n";
 // The classifier is a provider call. With two agents available and the cap

@@ -28,16 +28,20 @@ defined( 'ABSPATH' ) || exit;
  *    from arguments.
  * 4. **Is identity proven, if the tool needs it?** Order data is unreachable
  *    without it, regardless of anything else (FR-SUPPORT-02).
- * 5. **Is a write approved?** Writes default to requiring a human
- *    (FR-AGENT-05).
- * 6. **Does a filter object?** `storecrew_tool_authorized` runs last and
- *    **may only deny**. Its return value is ANDed with the decision already
- *    made, so no filter — and therefore no add-on, and therefore no prompt
- *    injection reaching an add-on — can grant a permission the earlier steps
- *    refused.
+ * 5. **Does a filter object?** `storecrew_tool_authorized` is the last word
+ *    on *whether*, and it **may only deny**. Its return value is ANDed with
+ *    the decision already made, so no filter — and therefore no add-on, and
+ *    therefore no prompt injection reaching an add-on — can grant a
+ *    permission the earlier steps refused.
+ * 6. **Is a write approved?** Writes default to requiring a human
+ *    (FR-AGENT-05). This runs after every deny, so approval decides *when* a
+ *    permitted write happens, never *whether* — a call nothing authorised is
+ *    already refused and never reaches the queue.
  *
  * Every call is recorded before it runs, so an attempt that is denied is as
- * visible as one that succeeds.
+ * visible as one that succeeds — and recorded redacted: `identity.verify`
+ * receives a customer email on every attempt, and no plugin table may store
+ * one (04 § 11).
  *
  * @see docs/01-prd.md FR-AGENT-04, FR-AGENT-05, R-SEC-01, R-SEC-02
  */
@@ -60,12 +64,19 @@ final class ToolExecutor {
 
 		if ( ! $tool instanceof ToolInterface ) {
 			// Recorded even though nothing ran: a model repeatedly inventing
-			// tool names is a prompt problem worth seeing in the inspector.
-			$this->record( $call, $context, $run_id, ToolInterface::INTENT_READ, 'auto', ToolResult::STATUS_ERROR );
+			// tool names is a prompt problem worth seeing in the inspector —
+			// and resolved to *error*, not left pending, so a hallucinated
+			// call is as visible as a denial, never mistaken for one awaiting
+			// approval.
+			$call_id = $this->record( $call, $context, $run_id, ToolInterface::INTENT_READ, 'auto', ToolResult::STATUS_ERROR );
 
-			return ToolResult::error(
+			$missing = ToolResult::error(
 				sprintf( 'There is no tool called "%s".', $call->name )
 			);
+
+			$this->finish( $call_id, $missing );
+
+			return $missing;
 		}
 
 		$mode = $this->configs->tool_mode( $context->agent_id, $tool->id() );

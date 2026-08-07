@@ -42,6 +42,18 @@ $saved_policy = get_option( StoreCrew\Ai\ModelPolicy::OPTION );
 $saved_cap    = get_option( StoreCrew\Ai\SpendGuard::OPTION_CAP_MICROS );
 $saved_breach = get_option( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH );
 
+// The "unconfigured store" probes (canEmbed false, degraded search) mean
+// nothing on a site with a real provider key — they only ever passed here
+// because another suite had wiped the merchant's keys. Construct the state
+// the probes assume instead of inheriting it: snapshot the secrets, clear
+// the provider keys, restore both at cleanup.
+$saved_secrets = get_option( StoreCrew\Security\SecretStore::OPTION_SECRETS, false );
+$suite_secrets = new StoreCrew\Security\SecretStore();
+
+foreach ( array( 'anthropic', 'openai', 'gemini', 'openrouter', 'deepseek' ) as $provider_id ) {
+	$suite_secrets->forget( 'provider.' . $provider_id . '.key' );
+}
+
 do_action( 'rest_api_init' );
 $server = rest_get_server();
 
@@ -376,6 +388,10 @@ $c->get( StoreCrew\Core\Queue\Scheduler::class )->cancel();
 
 $t( 'probe conversation removed', null === $conversations->find_by_uuid( (string) $uuid ) );
 $t( 'no provider key left behind', null === ( new SecretStore() )->get( 'provider.anthropic.key' ) );
+
+// Asserted first, restored second: the assertion proves this suite's own key
+// probes cleaned up; the restore hands the merchant back their real keys.
+$restore( StoreCrew\Security\SecretStore::OPTION_SECRETS, $saved_secrets );
 
 echo "\n" . str_repeat( '-', 60 ) . "\n";
 printf( "%d passed, %d failed\n", $pass, $fail );

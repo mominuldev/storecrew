@@ -105,6 +105,15 @@ $t( 'a permitted read runs', $result->is_ok() && 1 === $spy->runs );
 $result = $executor->execute( new ToolCall( 'c2', 'does.not.exist' ), $open_context );
 $t( 'PROBE: an invented tool name is refused', ! $result->is_ok() );
 
+$invented_status = (string) $GLOBALS['wpdb']->get_var(
+	'SELECT status FROM ' . Tables::name( Tables::TOOL_CALLS ) . ' ORDER BY id DESC LIMIT 1'
+);
+$t(
+	'PROBE: the invented call is resolved to failed, not left pending forever',
+	ToolCallRepository::STATUS_FAILED === $invented_status,
+	$invented_status
+);
+
 $spy->needed_cap = 'manage_options';
 $spy->runs       = 0;
 wp_set_current_user( 0 );
@@ -365,6 +374,9 @@ $grounded = new class() implements ToolInterface {
 			),
 			'probe query'
 		);
+		// And what the catalogue tool announces after surfacing products.
+		do_action( 'storecrew_products_surfaced', array( 31, 32 ) );
+
 		return ToolResult::ok( 'grounded' );
 	}
 };
@@ -385,7 +397,9 @@ $scripted->script = array(
 	new ChatResponse( 'Grounded answer.', 'scripted-1', 'scripted', new TokenUsage( 10, 5 ) ),
 );
 
-$turn = $runner->run( $ground_agent, array( Message::user( 'ground me' ) ), new SharedContext( 0 ) );
+$ground_context = new SharedContext( 0 );
+
+$turn = $runner->run( $ground_agent, array( Message::user( 'ground me' ) ), $ground_context );
 $t( 'the grounded turn answered', $turn->succeeded(), $turn->outcome );
 
 $provenance = $runs_repo->retrieved( $turn->run_id );
@@ -403,6 +417,87 @@ $t(
 	'PROBE: the listener does not outlive the run',
 	! has_action( 'storecrew_retrieval_performed' )
 );
+$t(
+	'PROBE: surfaced products reach the shared context',
+	array( 31, 32 ) === $ground_context->product_ids(),
+	wp_json_encode( $ground_context->product_ids() )
+);
+$t(
+	'the product trail renders into the context prompt',
+	str_contains( $ground_context->to_prompt(), '31, 32' )
+);
+
+// The scripted provider has no published rate, so the run's cost is unknown —
+// and unknown must be stored as unknown, never displayed as free.
+$ground_row = $runs_repo->find( $turn->run_id );
+$t(
+	'PROBE: an unpriced model records cost_known = 0, not a confident zero',
+	null !== $ground_row && 0 === (int) $ground_row->cost_known
+);
+
+echo "\n== Runner: a refusal is metered ==\n";
+$events_before = (int) $GLOBALS['wpdb']->get_var(
+	'SELECT COUNT(*) FROM ' . Tables::name( Tables::USAGE_EVENTS ) . " WHERE provider = 'scripted'"
+);
+
+$scripted->calls  = 0;
+$scripted->script = array(
+	new ChatResponse( '', 'scripted-1', 'scripted', new TokenUsage( 25, 3 ), ChatResponse::STOP_REFUSAL ),
+);
+
+$turn = $runner->run( $probe_agent, array( Message::user( 'do something off-limits' ) ), new SharedContext( 0 ) );
+$t( 'the turn reports refusal', AgentTurn::OUTCOME_REFUSED === $turn->outcome, $turn->outcome );
+
+$events_after = (int) $GLOBALS['wpdb']->get_var(
+	'SELECT COUNT(*) FROM ' . Tables::name( Tables::USAGE_EVENTS ) . " WHERE provider = 'scripted'"
+);
+$t(
+	'PROBE: a refusal burned tokens and they are metered, not lost',
+	$events_after > $events_before,
+	sprintf( '%d -> %d', $events_before, $events_after )
+);
+
+echo "\n== The handoff tool (FR-AGENT-03) ==\n";
+$pair_agents = array(
+	'sales'   => StoreCrew\Agent\CoreAgents::sales(),
+	'support' => StoreCrew\Agent\CoreAgents::support(),
+);
+
+$handoff_tool = new StoreCrew\Agent\Tools\HandoffTool( static fn (): array => $pair_agents );
+
+$requested = array();
+$capture   = static function ( string $to, string $note, int $conversation_id ) use ( &$requested ): void {
+	$requested = array( $to, $note, $conversation_id );
+};
+add_action( 'storecrew_handoff_requested', $capture, 10, 3 );
+
+$support_context = new ToolContext( 77, 0, false, 0, 'support' );
+
+$result = $handoff_tool->execute( $support_context, array( 'to' => 'concierge', 'note' => 'x' ) );
+$t( 'PROBE: an unknown target is refused', ! $result->is_ok() );
+$t( 'and no handoff was requested', array() === $requested );
+
+$result = $handoff_tool->execute( $support_context, array( 'to' => 'support', 'note' => 'x' ) );
+$t( 'PROBE: handing off to yourself is refused', ! $result->is_ok() );
+
+$result = $handoff_tool->execute( $support_context, array( 'to' => 'sales', 'note' => '' ) );
+$t( 'PROBE: a handoff without a note is refused — the next agent inherits nothing else', ! $result->is_ok() );
+
+$result = $handoff_tool->execute( $support_context, array( 'to' => 'sales', 'note' => 'Wants a warm hat under $30.' ) );
+$t( 'a valid handoff is accepted', $result->is_ok() );
+$t(
+	'PROBE: the request carries target, note, and conversation',
+	array( 'sales', 'Wants a warm hat under $30.', 77 ) === $requested,
+	wp_json_encode( $requested )
+);
+$t(
+	'the definition names the available specialists',
+	str_contains( $handoff_tool->definition()->description, 'sales' )
+);
+
+remove_action( 'storecrew_handoff_requested', $capture, 10 );
+
+$t( 'both shipped agents may hand off', $sales->can_use( StoreCrew\Agent\Tools\HandoffTool::ID ) && $support->can_use( StoreCrew\Agent\Tools\HandoffTool::ID ) );
 
 echo "\n== Runner: tools outside the allow-list ==\n";
 $spy->runs        = 0;
@@ -501,7 +596,7 @@ $configs->delete_for_agent( 'probe-agent' );
 echo "\n== Registries ==\n";
 $api = StoreCrew\Plugin::instance()->api();
 $t( 'two agents shipped', 2 === count( $api->agents()->all() ) );
-$t( 'five tools shipped', 5 === count( $api->tools()->all() ) );
+$t( 'six tools shipped', 6 === count( $api->tools()->all() ) );
 $t( 'agent registry is frozen', $api->agents()->is_frozen() );
 $t( 'tool registry is frozen', $api->tools()->is_frozen() );
 $t( 'write tools are identifiable', array_key_exists( 'order.note', $api->tools()->write_tools() ) );

@@ -102,7 +102,13 @@ final class Orchestrator {
 
 		do_action( 'storecrew_handoff', $to_agent_id, $note, $context );
 
-		return $this->runner->run( $agent, $history, $context );
+		$turn = $this->runner->run( $agent, $history, $context );
+
+		// The receiving agent's turn is a turn like any other — an observer
+		// counting turns must not silently miss the handed-off ones.
+		do_action( 'storecrew_agent_turn_completed', $turn, $agent, $context );
+
+		return $turn;
 	}
 
 	/**

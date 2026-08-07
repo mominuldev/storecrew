@@ -69,6 +69,16 @@ $recorder = new class() implements HttpClientInterface {
 
 $secrets = new SecretStore();
 
+// Snapshot the merchant's real secrets before any probe touches the store.
+// The cleanup below used to `forget()` the provider key names — which wiped a
+// configured store's REAL keys on every run, the secrets edition of the
+// wipe-the-model-policy bug this file's own header warns about. Invisible on
+// an unconfigured dev site; on a configured store it silently disabled chat.
+// The data key must travel with the ciphertexts: the rotation probe below
+// replaces it, and restoring old ciphertexts under a new key decrypts nothing.
+$saved_secrets  = get_option( SecretStore::OPTION_SECRETS, false );
+$saved_data_key = get_option( SecretStore::OPTION_DATA_KEY, false );
+
 echo "\n== Secret store ==\n";
 $secrets->put( 'probe.key', 'sk-test-abcdef123456' );
 $t( 'stores and retrieves a secret', 'sk-test-abcdef123456' === $secrets->get( 'probe.key' ) );
@@ -313,6 +323,124 @@ $t(
 $t( 'Anthropic-only install still resolves chat', null !== $lonely->resolve( ModelPolicy::TASK_CHAT ) );
 $t( 'registry reports it cannot embed', ! $anthropic_only->can_embed() );
 
+echo "\n== Gemini thought signatures survive the round trip ==\n";
+// The doc's headline live-found fact: omit the signature on the continuation
+// and Gemini 400s. Until Gate 3 nothing guarded it against a refactor.
+$recorder->next_response = array(
+	'candidates'    => array(
+		array(
+			'content'      => array(
+				'parts' => array(
+					array(
+						'functionCall'     => array(
+							'name' => 'product.search',
+							'args' => array( 'query' => 'hat' ),
+						),
+						'thoughtSignature' => 'sig-probe-abc123',
+					),
+				),
+			),
+			'finishReason' => 'STOP',
+		),
+	),
+	'usageMetadata' => array( 'promptTokenCount' => 10, 'candidatesTokenCount' => 5 ),
+);
+
+$tool_turn = $gemini->chat( new ChatRequest( 'gemini-3.6-flash', array( Message::user( 'find a hat' ) ) ) );
+$t( 'a functionCall becomes a tool call', $tool_turn->has_tool_calls() );
+$t(
+	'the signature rides the tool call',
+	'sig-probe-abc123' === ( $tool_turn->tool_calls[0]->signature ?? '' )
+);
+
+$recorder->next_response = array(
+	'candidates'    => array(
+		array(
+			'content'      => array( 'parts' => array( array( 'text' => 'Found it.' ) ) ),
+			'finishReason' => 'STOP',
+		),
+	),
+	'usageMetadata' => array( 'promptTokenCount' => 10, 'candidatesTokenCount' => 5 ),
+);
+
+$gemini->chat(
+	new ChatRequest(
+		'gemini-3.6-flash',
+		array(
+			Message::user( 'find a hat' ),
+			Message::tool_request( $tool_turn->tool_calls ),
+			Message::tool_result( $tool_turn->tool_calls[0]->id, 'product.search', '{"products":[]}' ),
+		)
+	)
+);
+
+$t(
+	'PROBE: the thought signature is replayed on the continuation',
+	str_contains( (string) wp_json_encode( $recorder->body ), 'sig-probe-abc123' )
+);
+
+echo "\n== OpenRouter and DeepSeek override only what they claim to ==\n";
+// Thin subclasses of the tested base — but the two surfaces they override
+// (host, headers) are exactly the parts the base's coverage cannot reach.
+$recorder->next_response = array(
+	'choices' => array(
+		array(
+			'message'       => array( 'content' => 'ok' ),
+			'finish_reason' => 'stop',
+		),
+	),
+	'usage'   => array( 'prompt_tokens' => 1, 'completion_tokens' => 1 ),
+);
+
+$secrets->put( 'provider.openrouter.key', 'sk-or-probe' );
+$openrouter = new StoreCrew\Ai\Providers\OpenRouterProvider( $secrets, $recorder );
+$openrouter->chat( new ChatRequest( 'anthropic/claude-sonnet-5', array( Message::user( 'hi' ) ) ) );
+$t( 'OpenRouter posts to its own host', str_contains( $recorder->url, 'openrouter.ai/api/v1' ) );
+$t(
+	'PROBE: attribution headers are sent',
+	isset( $recorder->headers['HTTP-Referer'], $recorder->headers['X-Title'] )
+);
+$t( 'bearer auth rides the shared base', 'Bearer sk-or-probe' === ( $recorder->headers['Authorization'] ?? '' ) );
+
+$secrets->put( 'provider.deepseek.key', 'sk-ds-probe' );
+$deepseek = new StoreCrew\Ai\Providers\DeepSeekProvider( $secrets, $recorder );
+$deepseek->chat( new ChatRequest( 'deepseek-chat', array( Message::user( 'hi' ) ) ) );
+$t( 'DeepSeek posts to its own host', str_contains( $recorder->url, 'api.deepseek.com' ) );
+$t( 'DeepSeek declares no embeddings', ! $deepseek->capabilities()->embeddings );
+
+echo "\n== Transport retries GET like POST ==\n";
+// The credential-verification path. Without the retry, a transient 503
+// during verify() reads to the merchant as "your API key was rejected".
+$http_attempts = 0;
+$intercept     = static function ( $preempt, $args, $url ) use ( &$http_attempts ) {
+	unset( $preempt, $args, $url );
+	++$http_attempts;
+
+	if ( $http_attempts < 3 ) {
+		return array(
+			'response' => array( 'code' => 503, 'message' => 'Service Unavailable' ),
+			'body'     => '',
+			'headers'  => array(),
+		);
+	}
+
+	return array(
+		'response' => array( 'code' => 200, 'message' => 'OK' ),
+		'body'     => '{"ok":true}',
+		'headers'  => array(),
+	);
+};
+
+add_filter( 'pre_http_request', $intercept, 10, 3 );
+$got = ( new StoreCrew\Ai\Http\HttpClient() )->get_json( 'https://probe.invalid/models', array(), 'probe' );
+remove_filter( 'pre_http_request', $intercept, 10 );
+
+$t(
+	'PROBE: a transient 503 during verification is retried, not surfaced as a bad key',
+	3 === $http_attempts && true === ( $got['body']['ok'] ?? false ),
+	(string) $http_attempts
+);
+
 echo "\n== Spend guard ==\n";
 $usage_repo = StoreCrew\Plugin::instance()->container()->get(
 	StoreCrew\Database\Repositories\UsageRepository::class
@@ -341,8 +469,20 @@ $t( '401 is not retryable', ! $bad_key->is_retryable() );
 $t( 'PROBE: 401 is identified as an auth failure', $bad_key->is_auth_failure() );
 
 echo "\n== Cleanup ==\n";
-foreach ( array( 'probe.key', 'probe.second', 'provider.anthropic.key', 'provider.openai.key', 'provider.gemini.key' ) as $name ) {
-	$secrets->forget( $name );
+// Restore the snapshot wholesale: probe keys vanish because they were never
+// in it, and the merchant's real keys come back because they were.
+if ( false === $saved_secrets ) {
+	foreach ( array( 'probe.key', 'probe.second', 'provider.anthropic.key', 'provider.openai.key', 'provider.gemini.key', 'provider.openrouter.key', 'provider.deepseek.key' ) as $name ) {
+		$secrets->forget( $name );
+	}
+} else {
+	update_option( SecretStore::OPTION_SECRETS, $saved_secrets, false );
+
+	if ( false === $saved_data_key ) {
+		delete_option( SecretStore::OPTION_DATA_KEY );
+	} else {
+		update_option( SecretStore::OPTION_DATA_KEY, $saved_data_key, false );
+	}
 }
 delete_option( SpendGuard::OPTION_CAP_MICROS );
 delete_option( SpendGuard::OPTION_ON_BREACH );
@@ -352,7 +492,9 @@ $GLOBALS['wpdb']->delete(
 	array( '%s' )
 );
 $usage_repo->rebuild_counters();
-$t( 'probe secrets removed', array() === array_intersect( $secrets->names(), array( 'probe.key', 'provider.openai.key' ) ) );
+// Only the probe names — a configured store legitimately keeps its own
+// provider keys, and the snapshot restore just put them back.
+$t( 'probe secrets removed', array() === array_intersect( $secrets->names(), array( 'probe.key', 'probe.second' ) ) );
 
 echo "\n" . str_repeat( '-', 60 ) . "\n";
 printf( "%d passed, %d failed\n", $pass, $fail );

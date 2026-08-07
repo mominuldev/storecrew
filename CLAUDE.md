@@ -213,7 +213,7 @@ src/
     Agent, AgentRunner, AgentTurn, Orchestrator, TurnBudget, SharedContext
     Tool/                  ToolInterface, ToolExecutor (the security boundary)
     Tools/                 product.search, policy.lookup, identity.verify,
-                           order.lookup, order.note
+                           order.lookup, order.note, agent.handoff
   Chat/
     ChatService            One customer turn, end to end
     Session                Session token: issue, digest, cookie
@@ -254,7 +254,7 @@ because it runs with no database at all.
 
 ## Testing
 
-Nine suites, 583 assertions, green in any run order.
+Nine suites, 615 assertions, green in any run order.
 
 `verify-rest.php` needs `--user=1`: it dispatches through the real REST
 server, and its permission probes deliberately start unauthenticated.
@@ -313,6 +313,8 @@ ciphertext, ragged embedding vectors, and the migration lock.
 | `null === ( $x['k'] ?? 'fallback' )` in a probe | `??` treats a **null value** as absent, so the assertion could never pass whatever the endpoint returned. Use `array_key_exists` when null is the expected value. |
 | Ownership probes run as an administrator | A signed-in customer may reclaim their own conversation from any device, so a "stranger" who is the same logged-in user passes every check. Storefront probes must run as user 0. |
 | `verify-repositories` poisoned FULLTEXT stats for its own future runs | InnoDB keeps deleted rows in the FULLTEXT index — and its term statistics — until OPTIMIZE. Each run left three ghost docs full of the probe's own search terms; IDF decayed until the lexical probe stopped ranking its chunk first, dozens of runs after the cause. Cleanup now OPTIMIZEs the table. Any suite that inserts-and-deletes FULLTEXT rows needs the same. |
+| `verify-providers` cleanup deleted the merchant's **real** provider keys | The forget-list included `provider.gemini.key` etc. with no snapshot — every run silently unconfigured a configured store. Invisible on a keyless dev site; the secrets edition of the wipe-the-model-policy bug. Cleanup now snapshots `storecrew_secrets` **and** `storecrew_data_key` (rotation replaces the key the ciphertexts need) and restores both. |
+| "Unconfigured store" probes assumed the state instead of constructing it | verify-rest's canEmbed/degraded probes and verify-jobs' blocked-embedding probe only ever passed because another suite had just wiped the keys — and on a configured store, the jobs probe ran the embed job against the merchant's **live key**, a billable call from inside a test. Probes that need an unconfigured store now hide the keys for their duration and restore. |
 
 ---
 
@@ -381,12 +383,15 @@ ciphertext, ragged embedding vectors, and the migration lock.
   now says so); no phpcs/phpstan config exists despite `composer.json`
   scripts; Pro has no `uninstall.php` though free's uninstall says it does;
   `storecrew_needs_upgrade` is written but never read.
-- **Gate 3 review (2026-08-07) — see `docs/reviews/gate-3-review.md`.** No
-  security defects, but: `Orchestrator::handoff()` has zero callers while
-  Sales' guardrail promises handovers; `SharedContext::saw_product()` is
-  unwired; `cost_known` never persists to run records (unknown cost displays
-  as free — violates the pricing-honesty rule); refused/failed turns are
-  never metered; invented-tool rows stick at `pending`; Gemini
-  `thoughtSignature` replay and mid-turn identity have no regression probes;
-  `verify-chat` → `verify-jobs` is order-dependent; 15 § 4 lists extension
-  hooks that do not exist (08's names are the real ones).
+- **The Gate 3 findings are remediated** (2026-08-07,
+  `docs/reviews/gate-3-review.md`): handoff is wired via the `agent.handoff`
+  tool and a run-scoped `storecrew_handoff_requested` listener (one hop per
+  customer turn); surfaced products reach `SharedContext` via
+  `storecrew_products_surfaced`; `cost_known` persists (Migration002 — the
+  migration machinery's first real firing); refusals and provider failures
+  are metered; invented-tool rows resolve to `failed`; run `error_code`
+  carries the provider's own code ("429:RESOURCE_EXHAUSTED"); `get_json()`
+  retries like POST; and regression probes exist for `thoughtSignature`
+  replay and mid-turn identity. FR-AGENT-09 is rescoped: persona now,
+  merchant guardrail overrides deferred (`agent_configs.guardrails` is
+  stored but consumed by nothing — deliberate).

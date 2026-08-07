@@ -1,15 +1,23 @@
 # 08 — Agent Framework Architecture
 
 **Product:** StoreCrew AI
-**Status:** Draft complete — documents the built framework as of 2026-08-07
-**Version:** 0.1
+**Status:** Gate 3 reviewed and remediated — documents the built framework
+**Version:** 1.0
+**Date:** 2026-08-07
 
 The frame for every decision here: **the model is a talented, unaccountable
 contractor.** It writes well, reasons usefully, and must never hold a key.
 The framework's job is to let it do the work (PRD principle 1) while making
 it structurally unable to exceed its brief (R-SEC-01/02). Verified by
-`tests/schema/verify-agents.php` and `verify-chat.php`, and by a live
-five-turn conversation on 2026-08-07.
+`tests/schema/verify-agents.php` (94 assertions) and `verify-chat.php` (96),
+and by a live five-turn conversation on 2026-08-07.
+
+The Gate 3 review found no security defect — every claim below about what
+*cannot* happen held in code — but it did find three capabilities this
+document described as working that nothing exercised: handoff had no trigger,
+surfaced products reached no context, and `cost_known` died at the row
+boundary. All three are wired and probe-tested as of 2026-08-07, and the
+sections below describe the mechanisms rather than the intentions.
 
 ---
 
@@ -31,6 +39,14 @@ Consequences: a merchant editing a persona edits a row, not code; premium
 contributes agents through the same registry core uses (15 § 4.1); and the
 suite can construct throwaway agents freely, which is what makes the security
 properties probe-testable.
+
+The override surface is deliberately narrower than the schema suggests:
+`agent_configs` stores `guardrails` and `model_policy` alongside the persona,
+and nothing consumes either. FR-AGENT-09 was rescoped at Gate 3 (product-owner
+decision) to the persona alone — a merchant-supplied guardrail interacts with
+the append-after-persona ordering below, and deciding where a merchant's rule
+sits relative to the universal ones deserves its own design pass, not a quiet
+column read (§ 8).
 
 Missions are written as instructions to a colleague, not as prohibition
 lists. Current models follow system prompts closely, so prompts written to
@@ -57,12 +73,17 @@ the price guardrail in the composed prompt.
 - **Routing** uses a small model on the `routing` task with a one-line
   catalogue of agents and `max_tokens: 16` — classification is cheap,
   high-volume, and does not improve with capability, so paying flagship rates
-  to pick between two labels is pure waste. Live-verified: an ear-warmer
-  question routed to Sales, order and policy questions to Support.
+  to pick between two labels is pure waste. Live-verified across two sessions:
+  an earlier two-turn session routed an ear-warmer question to Sales; the
+  five-turn run routed order and policy questions to Support.
 - **Routing failure is never fatal.** Unconfigured classifier, provider
-  outage, unrecognised output — all fall through to the default agent
+  outage, unrecognised output, fewer than two available agents (nothing to
+  decide), a spend-capped store — all fall through to the default agent
   (`storecrew_default_agent` filter, `support` shipped). A customer must get
-  an answer from *somebody*.
+  an answer from *somebody*. The spend check exists because the classifier is
+  a provider call too: past the cap the runner is about to refuse the turn
+  anyway, so paying flag-fall to route it would leak spend on every capped
+  turn. A capped store's turns are never routed, only defaulted.
 
 **Handoff** (FR-AGENT-03) transfers ownership with a structured note, not a
 transcript: the receiving agent inherits the *conclusion* ("customer wants a
@@ -71,6 +92,26 @@ both cheaper and more reliable. `SharedContext` carries resolved facts,
 touched product ids, and retrieval traces (ids and scores only — chunk text
 would duplicate the corpus into every run row). Everything in it derives from
 verified session state or tool results, never from model prose.
+
+The trigger is a tool, `agent.handoff`, and it is a tool rather than
+orchestrator-side intent detection for the same reason everything else the
+model initiates is: the request passes through the executor, is recorded like
+any other call, and costs no extra classifier turn. The tool validates the
+target against the orchestrator's *own* available-agents list — so it can
+never name a target routing would refuse — and rejects self-handoff, unknown
+targets, and an empty note. It then fires `storecrew_handoff_requested`; a
+conversation-scoped listener in `ChatService` performs the handoff *after*
+the current run completes, capped at **one hop per customer turn**, so two
+agents deciding to hand to each other costs one extra run, not a loop. The
+receiving agent's answer is the customer's reply; the note is recorded under
+its own `handoff` role, which both the prompt window and the public
+transcript already exclude.
+
+A handoff changes only *who* answers, never what they may do: the receiving
+agent's own `tool_ids` allow-list and the executor's authorisation apply to
+it unchanged, so a prompt injection that engineers a handoff has gained
+routing, not privilege (R-SEC-01). Probe-tested end to end (verify-chat,
+"Handoff end to end").
 
 ---
 
@@ -96,9 +137,27 @@ Properties the loop enforces:
   different customer response. The last three set `needs_escalation()`
   (FR-SUPPORT-07).
 - **Everything is recorded** (FR-AGENT-07): provider, model, token usage,
-  cost — or explicitly *cost-unknown*, never zero — latency, tool-call count,
-  retrieved ids, error codes. This is what the conversation inspector
-  (FR-ADMIN-04) reads; a bad answer is explainable, therefore fixable.
+  cost — or explicitly *cost-unknown*, never zero: Pricing's `known` flag is
+  threaded into every finish and persisted as `agent_runs.cost_known`
+  (Migration002, the migration machinery's first real firing), and the
+  inspector exposes it as `costKnown`, so an unknown-rate model displays as
+  unknown rather than as free — latency, tool-call count, retrieved ids, and
+  error codes (the HTTP status plus the provider's own code when it sent
+  one — `429:RESOURCE_EXHAUSTED` beats either half alone). This is what the
+  conversation inspector (FR-ADMIN-04) reads; a bad answer is explainable,
+  therefore fixable. Refused and failed turns meter the tokens they burned
+  like any other ending — an unmetered refusal is a SpendGuard and a
+  dashboard that under-count.
+- **Run state travels by action, never by return value.** Tools receive a
+  `ToolContext`, not the run's `SharedContext`, so what retrieval returned
+  (`storecrew_retrieval_performed`) and which products the catalogue tool
+  surfaced (`storecrew_products_surfaced`) reach the run record through
+  run-scoped listeners the runner attaches around the loop and detaches in
+  `finally`. The retrieval trace is what the inspector shows as grounding;
+  the product ids render into the next agent's prompt as "products already
+  shown" — ids, not names, so a receiving agent reads details live through
+  its own tools rather than trusting a summary (FR-KB-08). This is the same
+  listener pattern § 5 uses for identity, and § 5 says why.
 - **The allow-list is checked in the loop, before the executor.** A tool the
   agent never declared gets a "no such tool for you" tool-result and never
   reaches the security boundary at all — defence in depth ahead of § 4.
@@ -115,25 +174,36 @@ executor authorises in fixed order, and the order is the point:
 
 1. **Does the tool exist?** Models invent names; the invented call is still
    recorded — a model repeatedly hallucinating tools is a prompt problem the
-   inspector should show.
+   inspector should show — and resolved to *error*, never left pending, so a
+   hallucinated call is as visible as a denial and cannot be mistaken for one
+   awaiting approval.
 2. **Merchant configuration** — a disabled tool wins outright.
 3. **Capability**, derived from WordPress, never from arguments.
 4. **Identity**, if the tool requires it (§ 5).
-5. **Write approval** — writes default to a human (FR-AGENT-05). Reads
-   never queue for approval regardless of configured mode: filling the queue
-   with lookups trains merchants to approve without reading. Pending writes
-   park in the approval queue (FR-ADMIN-06) and the model is told to expect
-   a delay.
-6. **`storecrew_tool_authorized`** runs last and **may only deny** — ANDed
-   with the decision already made, so no filter, no add-on, and no prompt
-   injection reaching an add-on can grant what steps 1–5 refused.
-   Probe-tested: a filter returning `true` against a capability denial stays
-   denied.
+5. **`storecrew_tool_authorized`** — the last word on *whether*, and it
+   **may only deny**: ANDed with the decision already made, so no filter, no
+   add-on, and no prompt injection reaching an add-on can grant what steps
+   1–4 refused. Probe-tested: a filter returning `true` against a capability
+   denial stays denied.
+6. **Write approval** — writes default to a human (FR-AGENT-05). This runs
+   after every deny, so a call nothing authorised never reaches the queue —
+   approval decides *when*, not *whether*. Reads never queue for approval
+   regardless of configured mode: filling the queue with lookups trains
+   merchants to approve without reading. Pending writes park in the approval
+   queue (FR-ADMIN-06) and the model is told to expect a delay.
 
 Every call is recorded *before* it runs, so a denied attempt is as visible as
-a success. Tool failures return `ToolResult::error()` to the model rather
-than throwing — "order not found" lets the agent ask for a correct number,
-where an exception ends the turn with nothing. Successful writes are audited.
+a success — and recorded **redacted**. The schema's privacy promise (04 § 11)
+is that no plugin table stores a raw email address, yet `identity.verify`
+receives one as an argument on every attempt, including failed ones.
+`ToolExecutor::redact()` strips identity-bearing values at the recording
+step: declared keys by name, addresses a model volunteers inside free text by
+pattern. The `storecrew_redacted_argument_keys` filter can only *add* keys —
+the shipped ones are merged in afterwards — the same additions-only shape as
+the deny-only filter, for the same reason. Tool failures return
+`ToolResult::error()` to the model rather than throwing — "order not found"
+lets the agent ask for a correct number, where an exception ends the turn
+with nothing. Successful writes are audited.
 
 `ToolContext` is constructed from the conversation row and the current
 WordPress user — never from model output. If a tool could read authorisation
@@ -159,9 +229,17 @@ Three deliberate asymmetries:
 - **Mid-turn propagation is server-side.** When the tool verifies, it fires
   `storecrew_identity_verified`; `ChatService` listens and updates the
   turn's `SharedContext`, so "verify me, then find my order" works in one
-  turn — live-verified as one run with two tool calls. A listener, not a
+  turn — live-verified as one run with two tool calls, and probe-tested
+  since (verify-chat, "Mid-turn identity propagation"). A listener, not a
   return value, because authorisation state must not travel through anything
   model-shaped.
+
+That listener is not an identity one-off; it is the framework's rule for any
+state that must move without passing through the model, applied three times:
+identity verification (here), retrieval provenance and surfaced products
+(§ 3), and handoff requests (§ 2). The shape is always the same — the tool
+fires an action, a listener scoped to the conversation or the run captures
+it, and the hook is detached in `finally` so nothing leaks across turns.
 
 Changing the logged-in customer on a session **revokes** verification
 (shared-device case), and Sales does not declare the tool at all — narrow
@@ -175,11 +253,18 @@ executor.
 | | Sales | Support |
 |---|---|---|
 | Mission | Find the right product; say when nothing fits rather than pushing the closest thing | Orders, delivery, returns, policy — from what the store published, not general knowledge |
-| Tools | `product.search` | `policy.lookup`, `identity.verify`, `order.lookup`, `order.note` |
-| Key guardrails | Only recommend what search returned; hand order questions to Support | Verify before any order talk; never promise refunds/dates; offer a human when upset or off-policy |
+| Tools | `product.search`, `agent.handoff` | `policy.lookup`, `identity.verify`, `order.lookup`, `order.note`, `agent.handoff` |
+| Key guardrails | Only recommend what search returned; hand order questions to Support with the handoff tool | Verify before any order talk; never promise refunds/dates; offer a human when upset or off-policy |
 
 The disjoint tool sets are themselves a control: Support cannot browse the
-catalogue, Sales cannot touch orders.
+catalogue, Sales cannot touch orders. `agent.handoff` is the deliberate
+exception — both hold it, because the point of the boundary is that an agent
+out of its depth *transfers* rather than improvises, and an agent that cannot
+hand over answers anyway.
+
+Six tools ship in total: the five above plus `agent.handoff`, which is a read
+in the executor's sense — it changes which agent answers, not store state, so
+queueing it for approval would strand the customer mid-turn.
 
 ---
 
@@ -187,10 +272,14 @@ catalogue, Sales cannot touch orders.
 
 Premium/third parties (15 § 4): register agents and tools on
 `storecrew_api_ready`; configure per-tool autonomy defaults; observe
-`storecrew_agent_turn_completed`, `storecrew_handoff`,
-`storecrew_tool_failed`, `storecrew_conversation_escalated`; deny via
-`storecrew_tool_authorized`. Nothing lets an extension *raise* privilege —
-the deny-only filter and the frozen registries are the contract.
+`storecrew_agent_turn_completed` (which fires for a handoff run too, so an
+observer counting turns misses none), `storecrew_handoff`,
+`storecrew_handoff_requested`, `storecrew_retrieval_performed`,
+`storecrew_products_surfaced`, `storecrew_tool_failed`,
+`storecrew_conversation_escalated`; deny via `storecrew_tool_authorized`;
+add redacted argument keys via `storecrew_redacted_argument_keys`. Nothing
+lets an extension *raise* privilege — both filters are additions-or-denials
+only, and the frozen registries are the contract.
 
 ---
 
@@ -201,6 +290,14 @@ the deny-only filter and the frozen registries are the contract.
   boundary.
 - **No failover** — `ModelPolicy::fallback()` resolves a target; the runner
   never invokes it on provider error.
+- **Merchant guardrail overrides are unbuilt.** `agent_configs` stores
+  `guardrails` and `model_policy`; nothing reads either. FR-AGENT-09 was
+  rescoped at Gate 3 to the persona alone (§ 1). The open question is not
+  plumbing but ordering: shipped guardrails are appended *after* the persona
+  precisely so an edited persona cannot strip them, and a merchant rule has
+  to sit somewhere in that sequence without becoming a way to loosen one.
+  Tightening-only, appended last, is the likely answer — it wants a design
+  pass and a probe, not a column read.
 - Exchange workflow (FR-SUPPORT-06), coupons (FR-SALES-06), and the Phase 2
   agents are tool-and-agent additions on this framework, not framework
   changes — that is the test the framework was built to pass.

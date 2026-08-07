@@ -141,6 +141,7 @@ CREATE TABLE {prefix}scr_agent_runs (
   tokens_in       INT UNSIGNED    NOT NULL DEFAULT 0,
   tokens_out      INT UNSIGNED    NOT NULL DEFAULT 0,
   cost_micros     BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  cost_known      TINYINT(1) UNSIGNED NOT NULL DEFAULT 1,
   latency_ms      INT UNSIGNED    NOT NULL DEFAULT 0,
   retrieved       LONGTEXT        NULL,
   error_code      VARCHAR(64)     NOT NULL DEFAULT '',
@@ -161,6 +162,10 @@ CREATE TABLE {prefix}scr_agent_runs (
 **`retrieved` stores chunk IDs and scores, not chunk text** — that satisfies FR-KB-10 (merchant can inspect what was retrieved) without duplicating the corpus into every run row.
 
 `budget_exceeded` is a first-class status because FR-AGENT-06 requires a hard turn budget. A run that hits the ceiling is a recorded outcome, not an error to be swallowed.
+
+**`cost_known` is why `cost_micros` can be trusted** (added by Migration002). `Pricing` reports an unpriced model as unknown rather than as zero — but without somewhere to put that flag, the honesty died at the row boundary and the inspector showed an unrated model as a *free* call. That is the fabricated zero the pricing rule exists to prevent, arriving by omission instead of by invention. Existing rows default to `1`: they were written when only priced models were configured, and marking every historical run as suspect would manufacture doubt the data does not support.
+
+`error_code` holds the HTTP status, enriched with the provider's own code when one was sent (`429:RESOURCE_EXHAUSTED`) — the difference between "rate-limited" and "this model is gone for new keys" is the difference between waiting and reconfiguring, and support needs to tell a merchant which.
 
 ### 4.2 `scr_tool_calls`
 
@@ -419,6 +424,10 @@ Forward-only, idempotent, versioned (FR-CORE-04).
 - Schema creation uses `dbDelta()`, which imposes real formatting constraints: two spaces after `PRIMARY KEY`, `KEY` not `INDEX`, one field per line, and lowercase types. These are not style preferences; `dbDelta` silently fails to apply changes when they are violated.
 - A migration lock (`storecrew_migration_lock`, 5-minute TTL) prevents two concurrent admin requests running the same migration twice.
 - Add-ons contribute their own migrations via `storecrew_register_migrations` and own their own version series.
+
+**Two migrations ship; `storecrew_schema_version` is 2.** Migration001 creates every table above. Migration002 adds `agent_runs.cost_known` (§ 4.1) and is the first time this machinery ran in anger rather than in a probe — it worked, which is the only evidence that matters for a mechanism whose failure mode is a half-migrated production store.
+
+Migration002 also sets the pattern for column additions: a guarded `ALTER`, not `dbDelta`. `dbDelta` wants the full `CREATE` statement and diffs it, so adding one column means restating forty and inviting every silent-failure mode in the list above for no benefit. A `SHOW COLUMNS` check before and after makes the migration idempotent — which the forward-only contract requires, because a mid-series failure is resumed by re-running, never by rolling back.
 
 ---
 

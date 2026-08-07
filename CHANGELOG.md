@@ -41,8 +41,60 @@ designed — a sentence to the customer, an escalation with the reason recorded:
   created after the 3.x line shipped** ("no longer available to new users").
   Only a live call finds this class of failure.
 
+### Added
+
+**Gate 3 remediation** — 2026-08-07. The review found no security defect, but
+three capabilities the architecture documents described as working that no
+production path exercised:
+
+- **`agent.handoff`, the trigger FR-AGENT-03 never had.** `Orchestrator::handoff()`
+  had zero callers, so Sales' guardrail was promising customers a transfer that
+  could not happen. The model now calls a tool; it validates the target against
+  the orchestrator's own available-agents list, rejects self-handoff and empty
+  notes, and fires `storecrew_handoff_requested`. A conversation-scoped listener
+  performs the transfer *after* the current run, capped at one hop per customer
+  turn. The receiving agent's allow-list and the executor apply unchanged — a
+  handoff moves routing, never privilege.
+- **`agent_runs.cost_known` (Migration002).** `Pricing` reported unknown cost
+  honestly and the flag then died at the row boundary, so an unpriced model
+  showed in the inspector as a *free* call — the fabricated zero the pricing
+  rule forbids, arriving by omission. Also the migration machinery's first
+  firing outside a probe.
+- **Surfaced products reach the shared context** via
+  `storecrew_products_surfaced`, so a handoff carries what the customer was
+  already shown — ids, not names, so the receiving agent reads details live.
+
 ### Fixed
 
+- **Refusals and provider failures now meter what they burned.** Only answered
+  and budget-exceeded turns metered; refused and failed ones spent real tokens
+  that never reached the counters, so SpendGuard and the dashboard under-counted.
+- **An invented tool name resolves to `failed`**, not left pending forever. The
+  inspector showed a hallucinated call as awaiting approval.
+- **Run `error_code` keeps the provider's own code** (`429:RESOURCE_EXHAUSTED`).
+  The transport extracted it and the runner discarded it, storing only the HTTP
+  status — the difference between waiting and reconfiguring.
+- **`get_json()` retries like `post_json()`.** It is the credential-check path
+  for four of five providers, so a transient 503 while verifying a key read to
+  the merchant as "your key was rejected".
+- **`SpendGuard::status()` no longer fires the breach action.** It computed
+  `blocked` via `allows_call()`, whose `warn` path emits
+  `storecrew_spend_cap_exceeded` — so every `/health` poll past the cap emitted
+  a spend event.
+- **`OpenRouterProvider` no longer defaults to a `gemini-2.5` id** — the
+  generation `GeminiProvider` already records as dead for new keys.
+- **`verify-providers` was deleting the merchant's real provider keys.** Its
+  cleanup forgot `provider.*.key` by name with no snapshot, silently
+  unconfiguring a configured store on every run — the secrets edition of the
+  model-policy bug below. It now snapshots `storecrew_secrets` *and*
+  `storecrew_data_key` (rotation replaces the key the ciphertexts need) and
+  restores both.
+- **"Unconfigured store" probes assumed the state instead of building it.** The
+  `canEmbed`/degraded probes in `verify-rest` and the blocked-embedding probe in
+  `verify-jobs` only passed because another suite had just wiped the keys — and
+  once a real key survived, the jobs probe ran the embed job against it: a live,
+  billable call from inside a test. Both now hide keys for the probe's duration
+  and restore.
 - **Four suites deleted the merchant's configuration on every run.**
   `verify-agents`, `verify-rest`, `verify-knowledge`, and `verify-chat` all
   write the live model-policy option (and chat/spend settings) and cleaned up

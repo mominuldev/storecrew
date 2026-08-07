@@ -123,16 +123,17 @@ partially resolved by measurement).
 | 8 | [Agent Framework Architecture](08-agent-framework.md) | ✅ Draft complete |
 | 9 | [AI Provider Architecture](09-ai-provider-architecture.md) | ✅ Draft complete |
 
-**Gate 3:** 🔴 **Review run 2026-08-07 — approval blocked.** Two verification
-passes found no security defects — the boundary holds everywhere, and 09's
-structural claims verify end to end — but surfaced a cluster of
-**capabilities documented as working that no production path exercises**
-(handoff is dormant while Sales promises transfers; product tracking and
-`cost_known` are unwired; refused turns are never metered), plus 08 having
-missed the Gate 2 remediation pass entirely, a stale extension-point list in
-the approved 15 § 4, and two missing regression guards (`thoughtSignature`
-replay, mid-turn identity). Findings, dispositions, and the three decisions
-awaiting the product owner: [reviews/gate-3-review.md](reviews/gate-3-review.md).
+**Gate 3:** 🟡 **Review run 2026-08-07 — remediated, awaiting approval.** Two
+verification passes found no security defects but surfaced a cluster of
+capabilities documented as working that no production path exercised. All
+nine code findings are fixed per the ratified decisions — handoff wired as
+the `agent.handoff` tool, `cost_known` via Migration002 (the migration
+machinery's first real firing), refusals metered, FR-AGENT-09 rescoped — and
+the missing regression guards now exist. The remediation also caught the
+test suites deleting the merchant's real provider keys and, once restored,
+making a live billable call from a probe; both fixed. Suites: 583 → 615
+assertions, green in shuffled order. Findings and outcomes:
+[reviews/gate-3-review.md](reviews/gate-3-review.md).
 
 ### Gate 4 — Application, UX & Commercial
 | # | Document | Status |

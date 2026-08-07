@@ -147,6 +147,13 @@ final class SharedContext {
 			$lines[] = 'Handed over from another agent: ' . $this->handoff_note;
 		}
 
+		if ( array() !== $this->product_ids ) {
+			// Ids, not names — the receiving agent reads details live through
+			// its own tools rather than trusting a summary (FR-KB-08).
+			$lines[] = 'Products already shown to the customer in this conversation (ids): '
+				. implode( ', ', array_map( 'strval', $this->product_ids ) );
+		}
+
         foreach ( $this->facts as $key => $value ) {
 			$lines[] = sprintf( '%s: %s', $key, is_scalar( $value ) ? (string) $value : (string) wp_json_encode( $value ) );
 		}

@@ -165,6 +165,9 @@ final class ConversationController extends RestController {
 				'tokensIn'   => (int) $run->tokens_in,
 				'tokensOut'  => (int) $run->tokens_out,
 				'costMicros' => (int) $run->cost_micros,
+				// False means the model had no published rate and the figure
+				// under-counts — surfaced so unknown never renders as free.
+				'costKnown'  => 1 === (int) $run->cost_known,
 				'latencyMs'  => (int) $run->latency_ms,
 				// Chunk ids and scores, never chunk text — that is what makes
 				// FR-KB-10 answerable without duplicating the corpus.

@@ -256,8 +256,48 @@ final class ChatService {
 
 		add_action( 'storecrew_identity_verified', $listener, 10, 3 );
 
+		// A handoff request surfaces the same way identity does: the tool
+		// fires an action, a conversation-scoped listener captures it, and the
+		// handoff itself runs *after* the current run completes — never
+		// mid-run, and never through anything model-shaped.
+		$handoff          = array();
+		$handoff_listener = static function ( string $to, string $note, int $conversation_id ) use ( &$handoff, $context ): void {
+			if ( $conversation_id !== $context->conversation_id ) {
+				return;
+			}
+
+			$handoff = array(
+				'to'   => $to,
+				'note' => $note,
+			);
+		};
+
+		add_action( 'storecrew_handoff_requested', $handoff_listener, 10, 3 );
+
 		try {
-			return $this->orchestrator->handle( $message, $history, $context );
+			$turn = $this->orchestrator->handle( $message, $history, $context );
+
+			// One hop per customer turn: the receiving agent's answer is the
+			// reply, and a second hop would need the customer to speak again —
+			// so two agents deciding to hand off to each other costs one extra
+			// run, not a loop.
+			if ( array() !== $handoff && $turn->succeeded() ) {
+				// The note is recorded for the inspector under its own role,
+				// which both the prompt window and the public transcript
+				// already exclude.
+				$this->messages->append(
+					$context->conversation_id,
+					MessageRepository::ROLE_HANDOFF,
+					$handoff['note'],
+					$turn->agent_id
+				);
+
+				$history[] = Message::user( $message );
+
+				$turn = $this->orchestrator->handoff( $handoff['to'], $handoff['note'], $history, $context );
+			}
+
+			return $turn;
 		} catch ( \Throwable $e ) {
 			// Nothing below this line may reach the storefront as a fatal. An
 			// add-on's filter throwing, a provider library changing shape, an
@@ -268,6 +308,7 @@ final class ChatService {
 			return AgentTurn::failed( '', 'chat_exception', $e->getMessage() );
 		} finally {
 			remove_action( 'storecrew_identity_verified', $listener, 10 );
+			remove_action( 'storecrew_handoff_requested', $handoff_listener, 10 );
 		}
 	}
 

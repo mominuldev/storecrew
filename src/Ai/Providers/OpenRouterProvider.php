@@ -35,10 +35,15 @@ final class OpenRouterProvider extends OpenAiCompatibleProvider {
 	}
 
 	public function default_models(): array {
+		// Kept in step with the generations the direct providers list —
+		// shipping a 2.5-era Gemini id here while GeminiProvider records that
+		// generation as dead for new keys was list drift, not a decision.
+		// Not verified against OpenRouter's live catalogue (2026-08-07); a
+		// wrong id fails visibly at verify(), never silently.
 		return array(
 			'anthropic/claude-sonnet-5',
 			'openai/gpt-4.1-mini',
-			'google/gemini-2.5-flash',
+			'google/gemini-3.6-flash',
 		);
 	}
 

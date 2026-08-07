@@ -140,41 +140,58 @@ final class HttpClient implements HttpClientInterface {
 	 * @throws ProviderException On network failure or a non-2xx status.
 	 */
 	public function get_json( string $url, array $headers, string $provider, int $timeout = 30 ): array {
+		$attempt = 0;
 		$started = microtime( true );
 
-		$response = wp_remote_get( $url, array( 'headers' => $headers, 'timeout' => $timeout ) );
+		// The same retry discipline as POST. This is the credential-check
+		// path for most providers, and without it a transient 503 during
+		// verify() reads to the merchant as "your API key was rejected".
+		while ( true ) {
+			$response = wp_remote_get( $url, array( 'headers' => $headers, 'timeout' => $timeout ) );
 
-		$latency = (int) round( ( microtime( true ) - $started ) * 1000 );
+			$latency = (int) round( ( microtime( true ) - $started ) * 1000 );
 
-		if ( is_wp_error( $response ) ) {
-			throw new ProviderException(
-				sprintf( 'Network error contacting %s: %s', $provider, $response->get_error_message() ),
-				$provider,
-				0,
-				true
-			);
+			if ( is_wp_error( $response ) ) {
+				$error = new ProviderException(
+					sprintf( 'Network error contacting %s: %s', $provider, $response->get_error_message() ),
+					$provider,
+					0,
+					true
+				);
+
+				if ( $this->should_give_up( $attempt ) ) {
+					throw $error;
+				}
+
+				$this->sleep_before_retry( $attempt, 0 );
+				++$attempt;
+
+				continue;
+			}
+
+			$status = (int) wp_remote_retrieve_response_code( $response );
+			$raw    = (string) wp_remote_retrieve_body( $response );
+
+			if ( $status >= 200 && $status < 300 ) {
+				$decoded = json_decode( $raw, true );
+
+				return array(
+					'status'     => $status,
+					'body'       => is_array( $decoded ) ? $decoded : array(),
+					'latency_ms' => $latency,
+				);
+			}
+
+			$retry_after = (int) wp_remote_retrieve_header( $response, 'retry-after' );
+			$retryable   = in_array( $status, self::RETRYABLE_STATUSES, true );
+
+			if ( ! $retryable || $this->should_give_up( $attempt ) ) {
+				throw $this->build_error( $provider, $status, $raw, $retryable, $retry_after );
+			}
+
+			$this->sleep_before_retry( $attempt, $retry_after );
+			++$attempt;
 		}
-
-		$status = (int) wp_remote_retrieve_response_code( $response );
-		$raw    = (string) wp_remote_retrieve_body( $response );
-
-		if ( $status < 200 || $status >= 300 ) {
-			throw $this->build_error(
-				$provider,
-				$status,
-				$raw,
-				in_array( $status, self::RETRYABLE_STATUSES, true ),
-				0
-			);
-		}
-
-		$decoded = json_decode( $raw, true );
-
-		return array(
-			'status'     => $status,
-			'body'       => is_array( $decoded ) ? $decoded : array(),
-			'latency_ms' => $latency,
-		);
 	}
 
 	private function should_give_up( int $attempt ): bool {

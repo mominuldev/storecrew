@@ -240,6 +240,18 @@ echo "\n== Embed job without a provider ==\n";
 $scheduler->cancel();
 $embed = $c->get( EmbedJob::class );
 
+// "Without a provider" must be constructed, not assumed: on a configured
+// store this probe used to run the embed job against the merchant's REAL
+// key — a live, billable call from inside the test suite. Hide the keys for
+// the probe's duration; the policy option then resolves nothing because a
+// keyless provider is not configured.
+$saved_secrets_jobs = get_option( StoreCrew\Security\SecretStore::OPTION_SECRETS, false );
+$jobs_secrets       = new StoreCrew\Security\SecretStore();
+
+foreach ( array( 'anthropic', 'openai', 'gemini', 'openrouter', 'deepseek' ) as $provider_id ) {
+	$jobs_secrets->forget( 'provider.' . $provider_id . '.key' );
+}
+
 $blocked_reason = '';
 add_action(
 	'storecrew_embedding_blocked',
@@ -258,6 +270,12 @@ $t(
 	'PROBE: blocked embedding does not reschedule itself into a loop',
 	! $scheduler->is_pending( EmbedJob::HOOK )
 );
+
+if ( false === $saved_secrets_jobs ) {
+	delete_option( StoreCrew\Security\SecretStore::OPTION_SECRETS );
+} else {
+	update_option( StoreCrew\Security\SecretStore::OPTION_SECRETS, $saved_secrets_jobs, false );
+}
 
 echo "\n== Maintenance ==\n";
 $maintenance = $c->get( MaintenanceJob::class );

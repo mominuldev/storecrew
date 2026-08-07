@@ -120,7 +120,10 @@ final class SpendGuard {
 			'spentMicros'     => $spent,
 			'remainingMicros' => $cap > 0 ? max( 0, $cap - $spent ) : 0,
 			'percentUsed'     => $cap > 0 ? round( ( $spent / $cap ) * 100, 1 ) : 0.0,
-			'blocked'         => ! $this->allows_call(),
+			// Computed directly rather than via allows_call(), which fires
+			// the breach action under `warn` — a status *read* from /health
+			// or /settings must never emit spend events.
+			'blocked'         => $cap > 0 && $spent >= $cap && self::BEHAVIOUR_STOP === $this->behaviour(),
 			'behaviour'       => $this->behaviour(),
 		);
 	}
