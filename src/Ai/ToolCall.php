@@ -26,11 +26,22 @@ final readonly class ToolCall {
 	 * @param string               $id        Provider-assigned id, echoed back with the result.
 	 * @param string               $name      Tool name the model chose.
 	 * @param array<string, mixed> $arguments Decoded arguments.
+	 * @param string               $signature Opaque provider token echoed back on replay.
 	 */
 	public function __construct(
 		public string $id,
 		public string $name,
 		public array $arguments = array(),
+		/**
+		 * Provider-specific opaque token that must be replayed verbatim.
+		 *
+		 * Gemini attaches a `thoughtSignature` to function calls and rejects the
+		 * continuation turn with a 400 if it is not echoed back. It is opaque by
+		 * design — never inspect, parse, or synthesise one; carry it and return
+		 * it unchanged, or omit it entirely for providers that have no such
+		 * concept.
+		 */
+		public string $signature = '',
 	) {}
 
 	/**
@@ -42,5 +53,9 @@ final readonly class ToolCall {
 			'name'      => $this->name,
 			'arguments' => $this->arguments,
 		);
+	}
+
+	public function has_signature(): bool {
+		return '' !== $this->signature;
 	}
 }

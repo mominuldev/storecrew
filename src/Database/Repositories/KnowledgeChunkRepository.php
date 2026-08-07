@@ -53,6 +53,63 @@ final class KnowledgeChunkRepository extends Repository {
 	 */
 	public const MAX_DENSE_SCAN = 5000;
 
+	/**
+	 * Corpus size below which every query gets a full dense scan.
+	 *
+	 * Measured, not guessed. Cosine over a 1536-dimension vector costs about
+	 * 90 microseconds in PHP, so a full scan is roughly:
+	 *
+	 *     1,000 chunks -> 91 ms      30,000 chunks -> 2.7 s
+	 *     2,000 chunks -> 182 ms    150,000 chunks -> 13.6 s
+	 *
+	 * 2,000 keeps the scan inside the 300 ms p95 retrieval budget with headroom.
+	 *
+	 * This threshold exists because the two arms are not equally good. On a
+	 * fixture set of ten shopper questions, full dense scan scored **1.00
+	 * recall@3** and the lexical-prefilter path scored **0.80** — below the 0.88
+	 * bar FR-KB-09 sets. The prefilter's failure is structural rather than a
+	 * tuning problem: MySQL FULLTEXT cannot match "warm hat for winter" to a
+	 * product named "Beanie", because they share no words. Widening the
+	 * candidate limit cannot help when the correct answer scores zero lexically
+	 * and is never a candidate at all.
+	 *
+	 * Above this size the prefilter is used anyway, because a multi-second scan
+	 * is worse than an imperfect answer — but recall really is lower there, and
+	 * `search()` reports which path ran so that is visible rather than assumed.
+	 * Fixing the large-corpus case properly needs a real vector index, which is
+	 * the escape hatch R-TECH-01 always named.
+	 */
+	public const DENSE_SCAN_THRESHOLD = 2000;
+
+	/**
+	 * Default weight given to the dense arm when fusing scores.
+	 *
+	 * **1.0 — the lexical term contributes nothing to ranking by default, and
+	 * that is a measured decision rather than a preference.** A sweep over 23
+	 * shopper-phrased fixture questions:
+	 *
+	 *     dense 0.80 -> recall@3 0.83     dense 0.90 -> 0.91
+	 *     dense 0.95 -> recall@3 0.91     dense 1.00 -> 0.96
+	 *
+	 * Recall improves monotonically as lexical influence falls, and 0.80 — the
+	 * previous default — failed the 0.88 bar outright. The mechanism is the
+	 * normalisation: the lexical score is scaled against the best match *within
+	 * the candidate set*, so the top keyword hit always scores 1.0 however weak
+	 * the absolute match. On a narrow candidate set that lets an incidental word
+	 * overlap outrank a strong semantic match, which is how "warm hat for
+	 * winter" returned a wholesale policy page.
+	 *
+	 * The obvious counter-argument — that lexical rescues exact identifier
+	 * lookups — was tested and did not hold: exact product names are retrieved
+	 * correctly at every weight, and an exact SKU fails at every weight. SKU
+	 * lookup needs its own exact-match tool, not a scoring tweak.
+	 *
+	 * Lexical is still load-bearing as the **prefilter** above
+	 * DENSE_SCAN_THRESHOLD, where scanning everything is too slow. That is
+	 * candidate selection, not scoring, and it is a different job.
+	 */
+	public const DEFAULT_DENSE_WEIGHT = 1.0;
+
 	protected function table(): string {
 		return Tables::KNOWLEDGE_CHUNKS;
 	}
@@ -113,20 +170,73 @@ final class KnowledgeChunkRepository extends Repository {
 	}
 
 	/**
-	 * Chunks still awaiting an embedding.
+	 * Chunks still awaiting a usable embedding.
+	 *
+	 * "Usable" is doing real work here. A vector embedded at a different width,
+	 * or by a different model, is **worse than no vector**: cosine similarity
+	 * against a mismatched width returns 0.0, so the chunk silently never ranks
+	 * and nothing anywhere reports a problem. Treating those as pending is what
+	 * makes changing the embedding model or dimensionality a safe, self-healing
+	 * operation rather than a quiet corruption of the whole index.
+	 *
+	 * @param string $model      Current embedding model, or '' to ignore.
+	 * @param int    $dimensions Current width, or 0 to ignore.
 	 *
 	 * @return list<object>
 	 */
-	public function needing_embedding( int $limit = 100 ): array {
+	public function needing_embedding( int $limit = 100, string $model = '', int $dimensions = 0 ): array {
 		$table = $this->table_name();
 
+		$where  = array( 'embedding IS NULL' );
+		$params = array();
+
+		if ( '' !== $model ) {
+			$where[]  = 'embedding_model <> %s';
+			$params[] = $model;
+		}
+
+		if ( $dimensions > 0 ) {
+			$where[]  = 'embedding_dims <> %d';
+			$params[] = $dimensions;
+		}
+
+		$params[] = $limit;
+
+		$sql = "SELECT id, source_id, content FROM {$table} WHERE "
+			. implode( ' OR ', $where )
+			. ' ORDER BY id ASC LIMIT %d';
+
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
-		return $this->db->get_results(
-			$this->db->prepare(
-				"SELECT id, source_id, content FROM {$table} WHERE embedding IS NULL ORDER BY id ASC LIMIT %d",
-				$limit
-			)
-		);
+		return $this->db->get_results( $this->db->prepare( $sql, ...$params ) );
+	}
+
+	/**
+	 * Chunks whose vector does not match the current model and width.
+	 *
+	 * Surfaced separately so index health can say "1,200 chunks were embedded
+	 * with a model you no longer use" rather than reporting a healthy index
+	 * that quietly returns nothing.
+	 */
+	public function count_mismatched( string $model, int $dimensions ): int {
+		if ( '' === $model ) {
+			return 0;
+		}
+
+		$table = $this->table_name();
+
+		$sql = "SELECT COUNT(*) FROM {$table} WHERE embedding IS NOT NULL AND (embedding_model <> %s";
+
+		$params = array( $model );
+
+		if ( $dimensions > 0 ) {
+			$sql     .= ' OR embedding_dims <> %d';
+			$params[] = $dimensions;
+		}
+
+		$sql .= ')';
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		return (int) $this->db->get_var( $this->db->prepare( $sql, ...$params ) );
 	}
 
 	public function delete_for_source( int $source_id ): int {
@@ -140,9 +250,24 @@ final class KnowledgeChunkRepository extends Repository {
 		return (int) $this->db->get_var( 'SELECT COUNT(*) FROM ' . $this->table_name() );
 	}
 
-	public function count_embedded(): int {
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-		return (int) $this->db->get_var( 'SELECT COUNT(*) FROM ' . $this->table_name() . ' WHERE embedding IS NOT NULL' );
+	public function count_embedded( string $model = '', int $dimensions = 0 ): int {
+		$table = $this->table_name();
+
+		if ( '' === $model ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			return (int) $this->db->get_var( "SELECT COUNT(*) FROM {$table} WHERE embedding IS NOT NULL" );
+		}
+
+		$sql    = "SELECT COUNT(*) FROM {$table} WHERE embedding IS NOT NULL AND embedding_model = %s";
+		$params = array( $model );
+
+		if ( $dimensions > 0 ) {
+			$sql     .= ' AND embedding_dims = %d';
+			$params[] = $dimensions;
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		return (int) $this->db->get_var( $this->db->prepare( $sql, ...$params ) );
 	}
 
 	/**
@@ -172,12 +297,44 @@ final class KnowledgeChunkRepository extends Repository {
 		string $query,
 		array $query_vector = array(),
 		int $limit = 5,
-		float $dense_weight = 0.8,
+		?float $dense_weight = null,
 		int $candidate_limit = self::DEFAULT_CANDIDATES
 	): array {
+		/**
+		 * Weight given to the dense arm when fusing retrieval scores.
+		 *
+		 * @param float $weight Between 0 (lexical only) and 1 (dense only).
+		 */
+		$dense_weight = $dense_weight ?? (float) apply_filters(
+			'storecrew_dense_weight',
+			self::DEFAULT_DENSE_WEIGHT
+		);
+
 		$table     = $this->table_name();
 		$strategy  = 'hybrid';
 		$truncated = false;
+
+		// Small corpus: skip the prefilter entirely and score everything. This
+		// is the accurate path, and the measurement says so — see
+		// DENSE_SCAN_THRESHOLD.
+		if ( array() !== $query_vector && $this->count_embedded() <= self::DENSE_SCAN_THRESHOLD ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+			$candidates = $this->db->get_results(
+				$this->db->prepare(
+					"SELECT id, source_id, content, embedding,
+					        MATCH(content) AGAINST(%s IN NATURAL LANGUAGE MODE) AS lex
+					 FROM {$table}
+					 WHERE embedding IS NOT NULL
+					 LIMIT %d",
+					$query,
+					self::MAX_DENSE_SCAN
+				)
+			);
+
+			if ( is_array( $candidates ) && array() !== $candidates ) {
+				return $this->score( $candidates, $query_vector, $limit, $dense_weight, 'dense_full', false );
+			}
+		}
 
 		// Stage 1 — lexical prefilter over the FULLTEXT index.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
@@ -244,7 +401,25 @@ final class KnowledgeChunkRepository extends Repository {
 			);
 		}
 
-		// Stage 2 — score.
+		return $this->score( $candidates, $query_vector, $limit, $dense_weight, $strategy, $truncated );
+	}
+
+	/**
+	 * Fuse dense and lexical scores over a candidate set.
+	 *
+	 * @param list<object> $candidates Rows carrying embedding and lex score.
+	 * @param list<float>  $query_vector Embedded query.
+	 *
+	 * @return array{results: list<array<string, mixed>>, strategy: string, candidates: int, truncated: bool}
+	 */
+	private function score(
+		array $candidates,
+		array $query_vector,
+		int $limit,
+		float $dense_weight,
+		string $strategy,
+		bool $truncated
+	): array {
 		$max_lex = 0.0;
 
 		foreach ( $candidates as $row ) {
@@ -281,6 +456,12 @@ final class KnowledgeChunkRepository extends Repository {
 				'dense'     => $dense,
 				'score'     => ( $dense_weight * $dense ) + ( ( 1.0 - $dense_weight ) * $lexical ),
 			);
+			// Note on the lexical term: it is normalised against the best match
+			// *in this candidate set*, so the top lexical hit always scores 1.0
+			// however weak the absolute match. On a small candidate set that
+			// lets a barely-relevant keyword hit outrank a strong semantic one,
+			// which is precisely how "warm hat for winter" returned a wholesale
+			// policy page. Dense weight is high by default for that reason.
 		}
 
 		usort( $scored, static fn ( array $a, array $b ): int => $b['score'] <=> $a['score'] );

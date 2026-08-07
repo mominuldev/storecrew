@@ -194,7 +194,7 @@ because it runs with no database at all.
 
 ## Testing
 
-Seven suites, 446 assertions, green in any run order.
+Seven suites, 447 assertions, green in any run order.
 
 `verify-rest.php` needs `--user=1`: it dispatches through the real REST
 server, and its permission probes deliberately start unauthenticated.
@@ -235,6 +235,8 @@ ciphertext, ragged embedding vectors, and the migration lock.
 | Eager job-handler resolution | Built every repository on every request; broke the DB-free harness. |
 | Eager REST controller construction | Same root cause, found the same way. Controllers are factories now. |
 | Eager tool construction | Third time. Tools are factories now. Anything depending on repositories must be lazy. |
+| `index_object()` never marked sources indexed | Sources sat at `pending` forever; the dashboard would show an index that never finishes. |
+| Gemini `thoughtSignature` not replayed | Tool calls executed, then the continuation turn 400'd. Only a live call finds this. |
 | Providers depending on concrete `HttpClient` | Request shaping was untestable without network. |
 
 ---
@@ -255,10 +257,14 @@ ciphertext, ragged embedding vectors, and the migration lock.
 
 ## Known gaps
 
-- **FR-KB-09 recall has never been measured.** Both Gate 2 open questions
-  (embedding precision; whether two-stage retrieval clears 0.88 recall) need a
-  real catalogue, a real API key, and a fixture question set. The store
-  currently has **0 products** and no provider key configured.
+- **FR-KB-09 has been measured** — see `tools/measure-recall.php`. recall@3 is
+  0.96 on a 62-chunk corpus with dense weight 1.0. Two findings carried into the
+  design: the lexical arm *hurts* ranking (0.80 vs 1.00), and the two-stage
+  prefilter is only used above 2,000 chunks where a full scan is too slow.
+  **Large-corpus recall is still unmeasured and expected to be worse** — that
+  case needs the external vector index R-TECH-01 named.
+- SKU lookup fails at every fusion weight. Exact-identifier search needs its own
+  tool, not semantic retrieval.
 - No streaming. FR-CHAT-02 needs SSE, which `wp_remote_post` cannot do — it
   needs raw cURL with a write callback.
 - No failover execution. `ModelPolicy::fallback()` resolves a target; nothing

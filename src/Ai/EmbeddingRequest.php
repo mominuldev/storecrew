@@ -34,6 +34,19 @@ final readonly class EmbeddingRequest {
 		public array $inputs,
 		public string $task = self::TASK_DOCUMENT,
 		public int $timeout = 60,
+		/**
+		 * Requested output dimensionality, where the provider supports it.
+		 *
+		 * Zero means the model's default. This is the single largest lever on
+		 * index size: Gemini's default is 3072 dimensions — 12 KB per vector —
+		 * and truncating to 1536 or 768 halves or quarters storage. At 50,000
+		 * products that is the difference between roughly 1.8 GB and 460 MB,
+		 * which decides whether the plugin is viable on budget shared hosting
+		 * at all.
+		 *
+		 * Recall at each setting has to be measured, not assumed.
+		 */
+		public int $dimensions = 0,
 	) {
 		if ( array() === $inputs ) {
 			throw new \InvalidArgumentException( 'An embedding request needs at least one input.' );

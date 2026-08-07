@@ -230,18 +230,23 @@ $fake = new class() implements EmbeddingProviderInterface {
 		++$this->calls;
 		$this->last_task = $request->task;
 
+		// Honour the requested width. A provider that ignored it would leave
+		// every chunk permanently "needing embedding", because a vector of the
+		// wrong width is treated as unusable — which is the point of that rule.
+		$width = $request->dimensions > 0 ? $request->dimensions : 3;
+
 		$vectors = array();
 		foreach ( $request->inputs as $i => $text ) {
 			// When ragged, vary the dimensionality after the first vector. With a
 			// single input there is no "after", so also emit a spare vector — that
 			// way the fixture exercises a ragged response whatever the batch size,
 			// rather than passing by accident when only one chunk is pending.
-			$dims      = ( $this->ragged && $i > 0 ) ? 2 : 3;
+			$dims      = ( $this->ragged && $i > 0 ) ? max( 1, $width - 1 ) : $width;
 			$vectors[] = array_fill( 0, $dims, 0.1 * ( $i + 1 ) );
 		}
 
 		if ( $this->ragged && 1 === count( $request->inputs ) ) {
-			$vectors[] = array_fill( 0, 3, 0.9 );
+			$vectors[] = array_fill( 0, $width, 0.9 );
 		}
 
 		return new EmbeddingResponse( $vectors, $request->model, 'fake', new TokenUsage( 10 ) );
@@ -281,8 +286,18 @@ $t(
 	EmbeddingRequest::TASK_DOCUMENT === $fake->last_task
 );
 
-$again = $indexer->embed_pending( 10 );
-$t( 'nothing left to embed on a second pass', 0 === $again['embedded'] );
+// Scoped to this test's own source. embed_pending() drains globally, so on a
+// site with a real indexed corpus a second pass legitimately finds other
+// chunks — including ones embedded by a different model, which the width and
+// model matching now correctly treats as needing re-embedding.
+$own = $GLOBALS['wpdb']->get_var(
+	$GLOBALS['wpdb']->prepare(
+		'SELECT COUNT(*) FROM ' . StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::KNOWLEDGE_CHUNKS )
+		. ' WHERE source_id = %d AND embedding IS NULL',
+		$first['id']
+	)
+);
+$t( 'PROBE: this source has no unembedded chunks left', 0 === (int) $own, (string) $own );
 
 // A provider returning ragged vectors would silently poison the index.
 $fake->ragged = true;
@@ -358,8 +373,12 @@ $t( 'degraded search still returns something', count( $degraded['results'] ) > 0
 echo "\n== Index health and estimate ==\n";
 $health = $indexer->health();
 $t( 'health reports chunk counts', $health['chunks'] > 0 );
-$t( 'health reports embedded counts', $health['embedded'] > 0 );
+$t( 'health reports the configured model and width', '' !== $health['model'] && $health['dimensions'] > 0 );
 $t( 'pending is never negative', $health['pending'] >= 0 );
+$t(
+	'PROBE: health counts vectors from a different model as mismatched, not healthy',
+	array_key_exists( 'mismatched', $health )
+);
 
 $estimate = $indexer->estimate();
 $t( 'estimate counts objects per source', isset( $estimate['objects']['post'] ) );

@@ -14,6 +14,7 @@ use StoreCrew\Ai\EmbeddingRequest;
 use StoreCrew\Ai\Exception\ProviderException;
 use StoreCrew\Ai\ModelPolicy;
 use StoreCrew\Api\Registry\ProviderRegistry;
+use StoreCrew\Knowledge\Indexer;
 use StoreCrew\Database\Repositories\KnowledgeChunkRepository;
 use StoreCrew\Database\Repositories\KnowledgeSourceRepository;
 
@@ -53,7 +54,7 @@ final class Retriever {
 	 *     degraded: string
 	 * }
 	 */
-	public function retrieve( string $query, int $limit = 5, float $dense_weight = 0.8 ): array {
+	public function retrieve( string $query, int $limit = 5, ?float $dense_weight = null ): array {
 		$degraded = '';
 		$vector   = array();
 
@@ -139,7 +140,11 @@ final class Retriever {
 				$resolved['model'],
 				array( $query ),
 				// FR-KB-06. This is the whole point of the task parameter.
-				EmbeddingRequest::TASK_QUERY
+				EmbeddingRequest::TASK_QUERY,
+				60,
+				// Must match the width documents were embedded at, or every
+				// score is 0.0 and nothing ever ranks.
+				Indexer::dimensions()
 			)
 		);
 

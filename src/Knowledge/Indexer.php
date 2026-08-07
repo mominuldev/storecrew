@@ -96,6 +96,11 @@ final class Indexer {
 
 		$chunk_ids = $this->chunks->replace_for_source( $upsert['id'], $pieces );
 
+		// Without this the source stays `pending` forever: needing_index()
+		// keeps returning it, index health reports nothing as indexed, and a
+		// merchant watching the dashboard sees a run that never finishes.
+		$this->sources->mark_indexed( $upsert['id'], count( $chunk_ids ) );
+
 		$this->usage->record( UsageRepository::METRIC_DOCUMENT, 1 );
 
 		return array(
@@ -147,7 +152,7 @@ final class Indexer {
 			);
 		}
 
-		$pending = $this->chunks->needing_embedding( $batch );
+		$pending = $this->chunks->needing_embedding( $batch, $resolved['model'], self::dimensions() );
 
 		if ( array() === $pending ) {
 			return array( 'embedded' => 0, 'failed' => 0, 'blocked' => false, 'reason' => '' );
@@ -163,7 +168,13 @@ final class Indexer {
 
 		try {
 			$response = $provider->embed(
-				new EmbeddingRequest( $resolved['model'], $texts, EmbeddingRequest::TASK_DOCUMENT )
+				new EmbeddingRequest(
+					$resolved['model'],
+					$texts,
+					EmbeddingRequest::TASK_DOCUMENT,
+					60,
+					self::dimensions()
+				)
 			);
 		} catch ( ProviderException $e ) {
 			return array(
@@ -212,6 +223,18 @@ final class Indexer {
 			'blocked'  => false,
 			'reason'   => '',
 		);
+	}
+
+	/**
+	 * Configured embedding dimensionality. Zero means the model's default.
+	 *
+	 * Read from an option so the recall-versus-storage tradeoff can be changed
+	 * and re-measured without a code change. Changing it invalidates the index:
+	 * vectors of different widths score 0.0 against each other, so a re-embed
+	 * is required.
+	 */
+	public static function dimensions(): int {
+		return max( 0, (int) get_option( 'storecrew_embedding_dimensions', 1536 ) );
 	}
 
 	/**
@@ -283,14 +306,24 @@ final class Indexer {
 	 * @return array{sources: array<string, int>, chunks: int, embedded: int, pending: int}
 	 */
 	public function health(): array {
+		$resolved = $this->policy->resolve( ModelPolicy::TASK_EMBEDDING );
+
+		$model = $resolved['model'] ?? '';
+		$dims  = self::dimensions();
+
 		$chunks   = $this->chunks->count();
-		$embedded = $this->chunks->count_embedded();
+		$embedded = $this->chunks->count_embedded( $model, $dims );
 
 		return array(
-			'sources'  => $this->sources->status_counts(),
-			'chunks'   => $chunks,
-			'embedded' => $embedded,
-			'pending'  => max( 0, $chunks - $embedded ),
+			'sources'    => $this->sources->status_counts(),
+			'chunks'     => $chunks,
+			'embedded'   => $embedded,
+			'pending'    => max( 0, $chunks - $embedded ),
+			'model'      => $model,
+			'dimensions' => $dims,
+			// Embedded, but with the wrong model or width — so scoring 0.0
+			// against every query while looking perfectly healthy.
+			'mismatched' => $this->chunks->count_mismatched( $model, $dims ),
 		);
 	}
 }

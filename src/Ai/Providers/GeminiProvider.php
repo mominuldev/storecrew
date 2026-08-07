@@ -102,7 +102,9 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 	}
 
 	public function default_embedding_models(): array {
-		return array( 'gemini-embedding-001', 'text-embedding-004' );
+		// Verified against the live models endpoint on 2026-08-07. `text-embedding-004`
+		// was listed here previously and 404s — it is not offered on v1beta.
+		return array( 'gemini-embedding-001', 'gemini-embedding-2' );
 	}
 
 	public function chat( ChatRequest $request ): ChatResponse {
@@ -137,12 +139,20 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 				}
 
 				foreach ( $message->tool_calls as $call ) {
-					$parts[] = array(
+					$part = array(
 						'functionCall' => array(
 							'name' => $call->name,
 							'args' => (object) $call->arguments,
 						),
 					);
+
+					// Gemini rejects the continuation turn with a 400 unless the
+					// signature it issued is echoed back on the same part.
+					if ( $call->has_signature() ) {
+						$part['thoughtSignature'] = $call->signature;
+					}
+
+					$parts[] = $part;
 				}
 
 				$contents[] = array( 'role' => 'model', 'parts' => $parts );
@@ -209,11 +219,17 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 		$requests = array();
 
 		foreach ( $request->inputs as $text ) {
-			$requests[] = array(
+			$entry = array(
 				'model'    => $model,
 				'content'  => array( 'parts' => array( array( 'text' => $text ) ) ),
 				'taskType' => $task_type,
 			);
+
+			if ( $request->dimensions > 0 ) {
+				$entry['outputDimensionality'] = $request->dimensions;
+			}
+
+			$requests[] = $entry;
 		}
 
 		$result = $this->http->post_json(
@@ -275,7 +291,9 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 				$tool_calls[] = new ToolCall(
 					'gemini-' . $index,
 					(string) ( $fn['name'] ?? '' ),
-					(array) ( $fn['args'] ?? array() )
+					(array) ( $fn['args'] ?? array() ),
+					// Opaque; carried so the continuation turn can replay it.
+					(string) ( $part['thoughtSignature'] ?? '' )
 				);
 
 				++$index;

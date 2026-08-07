@@ -14,6 +14,66 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**First live run, and the FR-KB-09 measurement** — 2026-08-07
+
+- `tools/seed-demo-catalogue.php` — 30 products with descriptions written so a
+  shopper's words differ from the catalogue's, which is the only way retrieval
+  quality is measurable at all.
+- `tools/measure-recall.php` — the FR-KB-09 harness. 23 shopper-phrased fixture
+  questions, recall@3 and recall@5, and a sweep over the fusion weight.
+- Embedding dimensionality is now requestable and configurable
+  (`storecrew_embedding_dimensions`, default 1536). Gemini defaults to 3072 —
+  12 KB per vector — so this is the single largest lever on index size.
+- Index health now reports the configured model, width, and a **mismatched**
+  count: vectors embedded by a different model or at a different width look
+  perfectly healthy while scoring 0.0 against every query.
+
+### Fixed
+
+- **`index_object()` never called `mark_indexed()`.** Sources stayed `pending`
+  forever, `chunk_count` stayed 0, `needing_index()` never drained, and the
+  dashboard would have reported an index that never finished.
+- **Gemini tool calls failed on the continuation turn.** Newer models attach a
+  `thoughtSignature` to each `functionCall` and reject the follow-up with a 400
+  unless it is echoed back verbatim. `ToolCall` now carries an opaque
+  provider signature. Only a live call could have found this.
+- **`gemini-embedding-001` is 3072 dimensions, not the 1536 the schema sizing
+  assumed** — double the storage. `text-embedding-004` was in the default model
+  list and 404s; it is not offered on v1beta.
+- Chunks embedded by a different model or at a different width are now treated
+  as needing embedding, so changing either is self-healing rather than a silent
+  corruption of the whole index.
+
+### Changed
+
+- **The default fusion weight is now 1.0 — the lexical arm no longer
+  contributes to ranking.** Measured over 23 fixtures: dense 0.80 (the previous
+  default) scored **recall@3 0.83, failing the 0.88 bar**; 0.90 scored 0.91;
+  1.00 scored 0.96. Recall improves monotonically as lexical influence falls.
+  The cause is the normalisation — the lexical score is scaled against the best
+  match *within the candidate set*, so the top keyword hit always scores 1.0
+  however weak the match, which is how "warm hat for winter" returned a
+  wholesale policy page. The counter-argument that lexical rescues exact
+  identifier lookups was tested and did not hold.
+- **Retrieval is now adaptive.** Below 2,000 chunks every query gets a full
+  dense scan; above it the lexical prefilter is used. That threshold is
+  measured, not guessed: cosine over a 1536-dimension vector costs ~90 µs, so a
+  full scan is 91 ms at 1,000 chunks, 454 ms at 5,000, and 13.6 s at 150,000.
+  The two-stage prefilter scored **0.80 recall@3 against pure dense's 1.00** on
+  the same corpus — its weakness is structural, since MySQL FULLTEXT cannot
+  match "warm hat for winter" to a product called "Beanie" at any candidate
+  limit. Large catalogues still need the external vector index R-TECH-01 named.
+
+### Verified end to end
+
+Two live turns against Gemini: routing picked Sales for an ear-warmer question
+and Support for a returns question, both tools executed, and both answers were
+grounded in real catalogue and policy data with live prices.
+
+---
+
+### Added
+
 **Agent framework** — 2026-08-07
 
 - Provider tool-calling across all three families. Anthropic uses `tool_use` /
