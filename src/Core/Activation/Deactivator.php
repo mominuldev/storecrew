@@ -28,7 +28,7 @@ final class Deactivator {
 		// Scheduled work is cancelled so a deactivated plugin does not keep
 		// consuming the merchant's Action Scheduler queue.
 		if ( function_exists( 'as_unschedule_all_actions' ) ) {
-			as_unschedule_all_actions( '', array(), 'storecrew' );
+			as_unschedule_all_actions( '', array(), \StoreCrew\Core\Queue\Scheduler::GROUP );
 		}
 
 		/**

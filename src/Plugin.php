@@ -27,9 +27,14 @@ use StoreCrew\Knowledge\Chunker;
 use StoreCrew\Knowledge\Extractor\PostExtractor;
 use StoreCrew\Knowledge\Extractor\ProductExtractor;
 use StoreCrew\Knowledge\Indexer;
+use StoreCrew\Knowledge\Jobs\EmbedJob;
+use StoreCrew\Knowledge\Jobs\IndexJob;
+use StoreCrew\Knowledge\Jobs\ReindexJob;
 use StoreCrew\Knowledge\Retriever;
 use StoreCrew\Security\SecretStore;
 use StoreCrew\Core\Container\Container;
+use StoreCrew\Core\Queue\MaintenanceJob;
+use StoreCrew\Core\Queue\Scheduler;
 use StoreCrew\Database\MigrationInterface;
 use StoreCrew\Database\Migrations\Migration001InitialSchema;
 use StoreCrew\Database\Migrator;
@@ -117,6 +122,7 @@ final class Plugin {
 		add_action( 'init', array( $this, 'load_textdomain' ) );
 
 		$this->register_reindex_hooks();
+		$this->register_jobs();
 
 		// Schema reconciliation runs here rather than on activation: a fatal
 		// mid-migration during activation leaves a site with no way to retry,
@@ -221,6 +227,48 @@ final class Plugin {
 				$c->get( ModelPolicy::class ),
 				$c->get( KnowledgeChunkRepository::class ),
 				$c->get( KnowledgeSourceRepository::class )
+			)
+		);
+
+		$this->container->set(
+			Scheduler::class,
+			static fn (): Scheduler => new Scheduler()
+		);
+
+		$this->container->set(
+			IndexJob::class,
+			static fn ( Container $c ): IndexJob => new IndexJob(
+				$c->get( ExtractorRegistry::class ),
+				$c->get( Indexer::class ),
+				$c->get( IndexRunRepository::class ),
+				$c->get( Scheduler::class )
+			)
+		);
+
+		$this->container->set(
+			EmbedJob::class,
+			static fn ( Container $c ): EmbedJob => new EmbedJob(
+				$c->get( Indexer::class ),
+				$c->get( Scheduler::class )
+			)
+		);
+
+		$this->container->set(
+			ReindexJob::class,
+			static fn ( Container $c ): ReindexJob => new ReindexJob(
+				$c->get( Indexer::class ),
+				$c->get( Scheduler::class )
+			)
+		);
+
+		$this->container->set(
+			MaintenanceJob::class,
+			static fn ( Container $c ): MaintenanceJob => new MaintenanceJob(
+				$c->get( IndexRunRepository::class ),
+				$c->get( AgentRunRepository::class ),
+				$c->get( ConversationRepository::class ),
+				$c->get( AuditLogRepository::class ),
+				$c->get( Scheduler::class )
 			)
 		);
 
@@ -392,6 +440,42 @@ final class Plugin {
 		$registry->register( new GeminiProvider( $secrets, $http ) );
 		$registry->register( new OpenRouterProvider( $secrets, $http ) );
 		$registry->register( new DeepSeekProvider( $secrets, $http ) );
+	}
+
+	/**
+	 * Register background job handlers.
+	 *
+	 * Handlers are registered on every request, not just when a job is queued —
+	 * Action Scheduler runs them in a later request than the one that scheduled
+	 * them, so a hook registered conditionally would never fire.
+	 *
+	 * @see docs/01-prd.md FR-CORE-06
+	 */
+	private function register_jobs(): void {
+		$container = $this->container;
+
+		// Resolve lazily. Registering a handler must not construct the job — and
+		// therefore its repositories — on every request; a storefront page load
+		// that will never run a job should not pay to build one. Action
+		// Scheduler executes handlers in a later request anyway, so the object
+		// is built when the work actually runs.
+		$lazy = static function ( string $class, string $method = 'run' ) use ( $container ): callable {
+			return static function ( ...$args ) use ( $container, $class, $method ) {
+				return $container->get( $class )->{$method}( ...$args );
+			};
+		};
+
+		add_action( IndexJob::HOOK, $lazy( IndexJob::class ), 10, 1 );
+		add_action( EmbedJob::HOOK, $lazy( EmbedJob::class ) );
+		add_action( ReindexJob::HOOK, $lazy( ReindexJob::class ), 10, 2 );
+		add_action( MaintenanceJob::HOOK, $lazy( MaintenanceJob::class ) );
+
+		// The kernel's save hooks emit this; the reindex job consumes it.
+		add_action( 'storecrew_queue_reindex', $lazy( ReindexJob::class, 'queue' ), 10, 2 );
+
+		// Scheduling the recurring sweep belongs on an admin request, not on
+		// every storefront hit.
+		add_action( 'admin_init', $lazy( MaintenanceJob::class, 'ensure_scheduled' ) );
 	}
 
 	/**

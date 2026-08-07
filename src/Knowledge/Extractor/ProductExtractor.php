@@ -36,6 +36,8 @@ defined( 'ABSPATH' ) || exit;
  */
 final class ProductExtractor implements ExtractorInterface {
 
+	use PagesPostTypeIds;
+
 	public const SOURCE_TYPE = 'product';
 
 	public function source_type(): string {
@@ -55,15 +57,7 @@ final class ProductExtractor implements ExtractorInterface {
 			return 0;
 		}
 
-		$products = wc_get_products(
-			array(
-				'status' => 'publish',
-				'limit'  => -1,
-				'return' => 'ids',
-			)
-		);
-
-		return is_array( $products ) ? count( $products ) : 0;
+		return $this->count_post_type( array( 'product' ) );
 	}
 
 	public function ids( int $after_id = 0, int $limit = 50 ): array {
@@ -71,38 +65,7 @@ final class ProductExtractor implements ExtractorInterface {
 			return array();
 		}
 
-		$products = wc_get_products(
-			array(
-				'status'  => 'publish',
-				'limit'   => $limit,
-				'orderby' => 'ID',
-				'order'   => 'ASC',
-				'return'  => 'ids',
-				// Keyset pagination. An offset would skip or repeat rows if the
-				// product set changes between batches of a long-running index.
-				'include' => array(),
-				'exclude' => array(),
-				'meta_query' => array(), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
-				'date_query' => array(),
-				'paginate'   => false,
-				'post__not_in' => array(),
-			)
-		);
-
-		if ( ! is_array( $products ) ) {
-			return array();
-		}
-
-		$products = array_values(
-			array_filter(
-				array_map( 'intval', $products ),
-				static fn ( int $id ): bool => $id > $after_id
-			)
-		);
-
-		sort( $products );
-
-		return array_slice( $products, 0, $limit );
+		return $this->paged_post_ids( array( 'product' ), $after_id, $limit );
 	}
 
 	public function extract( int $object_id ): ?ExtractedDocument {

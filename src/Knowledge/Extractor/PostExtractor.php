@@ -23,6 +23,8 @@ defined( 'ABSPATH' ) || exit;
  */
 final class PostExtractor implements ExtractorInterface {
 
+	use PagesPostTypeIds;
+
 	public const SOURCE_TYPE = 'post';
 
 	/**
@@ -45,42 +47,11 @@ final class PostExtractor implements ExtractorInterface {
 	}
 
 	public function count(): int {
-		$query = new \WP_Query(
-			array(
-				'post_type'      => $this->post_types,
-				'post_status'    => 'publish',
-				'posts_per_page' => 1,
-				'fields'         => 'ids',
-				'no_found_rows'  => false,
-			)
-		);
-
-		return (int) $query->found_posts;
+		return $this->count_post_type( $this->post_types );
 	}
 
 	public function ids( int $after_id = 0, int $limit = 50 ): array {
-		$query = new \WP_Query(
-			array(
-				'post_type'      => $this->post_types,
-				'post_status'    => 'publish',
-				'posts_per_page' => $limit,
-				'orderby'        => 'ID',
-				'order'          => 'ASC',
-				'fields'         => 'ids',
-				'no_found_rows'  => true,
-			)
-		);
-
-		$ids = array_values(
-			array_filter(
-				array_map( 'intval', $query->posts ),
-				static fn ( int $id ): bool => $id > $after_id
-			)
-		);
-
-		sort( $ids );
-
-		return array_slice( $ids, 0, $limit );
+		return $this->paged_post_ids( $this->post_types, $after_id, $limit );
 	}
 
 	public function extract( int $object_id ): ?ExtractedDocument {
