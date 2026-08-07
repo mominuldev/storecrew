@@ -98,7 +98,11 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 	}
 
 	public function default_models(): array {
-		return array( 'gemini-2.5-pro', 'gemini-2.5-flash' );
+		// Verified against the live models endpoint on 2026-08-07. The 2.5
+		// generation 404s for keys created after the 3.x line shipped — "no
+		// longer available to new users" — so a fresh install offering it would
+		// fail on the first real turn.
+		return array( 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview' );
 	}
 
 	public function default_embedding_models(): array {

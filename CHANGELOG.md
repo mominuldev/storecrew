@@ -12,6 +12,50 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ## [Unreleased]
 
+### Verified end to end, live
+
+**First real customer conversation** — 2026-08-07
+
+Five turns through the storefront widget against live Gemini
+(`gemini-3.6-flash` chat, `gemini-3.1-flash-lite` routing,
+`gemini-embedding-001` embeddings, 67/67 chunks embedded):
+
+1. A product question routed to **Sales**, ran `product.search`, and answered
+   from the catalogue.
+2. A policy question routed to **Support** and grounded in the indexed returns
+   policy.
+3. An order question with no identity was refused with the next step — and
+   leaked nothing.
+4. A wrong email did not verify.
+5. The right email verified and read the real order **in the same turn** — one
+   run, two tool calls (`identity.verify` then `order.lookup`), which is the
+   mid-turn identity listener working as designed. Status, items, and total came
+   from live Woo data.
+
+The first attempt failed usefully, twice, and both failures were handled as
+designed — a sentence to the customer, an escalation with the reason recorded:
+
+- The key was free-tier, which has **zero quota for `gemini-2.5-pro`** — every
+  chat call 429'd.
+- `gemini-2.5-flash` then 404'd: **the 2.5 generation is refused for keys
+  created after the 3.x line shipped** ("no longer available to new users").
+  Only a live call finds this class of failure.
+
+### Fixed
+
+- **Four suites deleted the merchant's configuration on every run.**
+  `verify-agents`, `verify-rest`, `verify-knowledge`, and `verify-chat` all
+  write the live model-policy option (and chat/spend settings) and cleaned up
+  with `delete_option` — so running the plugin's own tests on a configured
+  store wiped its provider assignments. Invisible until now because no site had
+  ever *been* configured. All four snapshot at start and restore at cleanup,
+  and `verify-chat` asserts the restoration.
+- `GeminiProvider::default_models()` now lists the 3.x line. Offering 2.5-era
+  ids meant a fresh install's settings screen proposed models that fail on the
+  first real turn.
+
+---
+
 ### Added
 
 **The storefront chat surface** — 2026-08-07

@@ -58,6 +58,11 @@ $t = static function ( string $label, bool $ok, string $detail = '' ) use ( &$pa
 
 $c = StoreCrew\Plugin::instance()->container();
 
+// This suite writes the live model-policy option and must hand it back as it
+// found it — deleting it at cleanup wiped a configured store's policy every
+// time its own tests ran.
+$saved_policy = get_option( ModelPolicy::OPTION );
+
 $calls_repo  = $c->get( ToolCallRepository::class );
 $runs_repo   = $c->get( AgentRunRepository::class );
 $configs     = $c->get( AgentConfigRepository::class );
@@ -414,7 +419,11 @@ $t( 'PROBE: a broken tool factory resolves to null, not a fatal', null === $brok
 $t( 'a sibling tool still resolves', null !== $broken->get( 'good' ) );
 
 echo "\n== Cleanup ==\n";
-delete_option( ModelPolicy::OPTION );
+if ( false === $saved_policy ) {
+	delete_option( ModelPolicy::OPTION );
+} else {
+	update_option( ModelPolicy::OPTION, $saved_policy, false );
+}
 $configs->delete_for_agent( 'probe-agent' );
 
 $wpdb = $GLOBALS['wpdb'];

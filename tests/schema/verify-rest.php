@@ -36,6 +36,12 @@ $t = static function ( string $label, bool $ok, string $detail = '' ) use ( &$pa
 
 $c = StoreCrew\Plugin::instance()->container();
 
+// The settings probes write the live model-policy and spend options. Snapshot
+// and restore rather than delete — a configured store keeps its configuration.
+$saved_policy = get_option( StoreCrew\Ai\ModelPolicy::OPTION );
+$saved_cap    = get_option( StoreCrew\Ai\SpendGuard::OPTION_CAP_MICROS );
+$saved_breach = get_option( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH );
+
 do_action( 'rest_api_init' );
 $server = rest_get_server();
 
@@ -356,9 +362,16 @@ $GLOBALS['wpdb']->query(
 	"DELETE FROM " . Tables::name( Tables::AUDIT_LOG ) . " WHERE action LIKE 'provider.key_%' OR action = 'settings.updated'"
 );
 $GLOBALS['wpdb']->query( "DELETE FROM " . Tables::name( Tables::INDEX_RUNS ) . " WHERE type = 'full'" );
-delete_option( StoreCrew\Ai\ModelPolicy::OPTION );
-delete_option( StoreCrew\Ai\SpendGuard::OPTION_CAP_MICROS );
-delete_option( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH );
+$restore = static function ( string $option, $value ): void {
+	if ( false === $value ) {
+		delete_option( $option );
+	} else {
+		update_option( $option, $value, false );
+	}
+};
+$restore( StoreCrew\Ai\ModelPolicy::OPTION, $saved_policy );
+$restore( StoreCrew\Ai\SpendGuard::OPTION_CAP_MICROS, $saved_cap );
+$restore( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH, $saved_breach );
 $c->get( StoreCrew\Core\Queue\Scheduler::class )->cancel();
 
 $t( 'probe conversation removed', null === $conversations->find_by_uuid( (string) $uuid ) );

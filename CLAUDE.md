@@ -341,12 +341,23 @@ ciphertext, ragged embedding vectors, and the migration lock.
   calls it yet.
 - `Pro\Licence` is a **stub** — local option, no remote validation, no grace
   period. Not a security boundary; must not ship as-is.
-- **The storefront chat surface exists** (21 REST routes now) and has been driven
-  end to end in a real browser — mount, keyboard open, a full turn, Markdown
-  rendering, resume across a page load, dark mode, mobile. That run used a
-  scripted provider registered from a temporary mu-plugin, because no API key was
-  configured. **No agent has yet answered a customer from a real model on the
-  storefront.**
+- **The storefront chat surface is live-verified** (21 REST routes). Five turns
+  through the widget against real Gemini: routing picked Sales then Support,
+  `product.search` and `policy.lookup` grounded the answers, a wrong email did
+  not verify, and the right one verified and read the real order **in one turn**
+  (two tool calls in one run — the mid-turn identity listener). The site's
+  working policy: `gemini-3.6-flash` chat, `gemini-3.1-flash-lite` routing,
+  `gemini-embedding-001` embeddings.
+- **Gemini's 2.5 generation is dead for new keys** — 404 "no longer available to
+  new users" — and free-tier keys have zero quota for the Pro tiers (429). Both
+  were found live on 2026-08-07; neither is findable from a test suite. When a
+  merchant reports "chat says something went wrong", the run record's
+  `error_code` distinguishes them.
+- **Suites must snapshot-and-restore any live option they touch.** Four suites
+  cleaned up with `delete_option` on the model policy and wiped a configured
+  store's provider assignments every run — invisible until a site had actually
+  been configured. The pattern is in each suite's head; keep it for any new
+  option a test writes.
 - The admin app has been verified in a real browser (Playwright: all six
   screens, both themes, mobile, and a settings write round-trip). It has still
   never been seen with a *populated* inbox against live traffic.

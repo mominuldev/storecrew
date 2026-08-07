@@ -46,6 +46,10 @@ $t = static function ( string $label, bool $ok, string $detail = '' ) use ( &$pa
 
 $container = StoreCrew\Plugin::instance()->container();
 
+// Snapshot the live model policy: this suite saves its own and must hand the
+// merchant's back at the end rather than deleting it.
+$saved_policy = get_option( ModelPolicy::OPTION );
+
 echo "\n== Chunker ==\n";
 $chunker = new Chunker( target_tokens: 40, max_tokens: 80, overlap_tokens: 8 );
 
@@ -439,7 +443,12 @@ if ( $product_id > 0 ) {
 	wp_delete_post( $product_id, true );
 }
 wp_delete_post( (int) $page_id, true );
-delete_option( ModelPolicy::OPTION );
+
+if ( false === $saved_policy ) {
+	delete_option( ModelPolicy::OPTION );
+} else {
+	update_option( ModelPolicy::OPTION, $saved_policy, false );
+}
 $GLOBALS['wpdb']->delete(
 	StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::USAGE_EVENTS ),
 	array( 'provider' => 'fake' ),

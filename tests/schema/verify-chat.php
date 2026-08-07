@@ -91,6 +91,17 @@ $data_of = static fn ( $result ): array => $result instanceof WP_REST_Response ?
 
 echo "\n== Routes are public, and registered ==\n";
 
+// A configured store is not a pristine one. The probes below assert the
+// out-of-the-box state — chat off, nothing to talk to — so the merchant's real
+// settings are snapshotted here and restored in cleanup. The first version of
+// this file deleted them instead, which destroyed a configured site's model
+// policy every time its own tests ran.
+$saved_chat   = get_option( ChatSettings::OPTION );
+$saved_policy = get_option( ModelPolicy::OPTION );
+
+delete_option( ChatSettings::OPTION );
+delete_option( ModelPolicy::OPTION );
+
 $server = rest_get_server();
 $routes = array_keys( $server->get_routes() );
 
@@ -673,12 +684,23 @@ if ( $order_id > 0 ) {
 	wp_delete_post( $order_id, true );
 }
 
-delete_option( ModelPolicy::OPTION );
-delete_option( ChatSettings::OPTION );
+// Restore what the merchant had, rather than leaving the site reset.
+if ( false === $saved_policy ) {
+	delete_option( ModelPolicy::OPTION );
+} else {
+	update_option( ModelPolicy::OPTION, $saved_policy, false );
+}
+
+if ( false === $saved_chat ) {
+	delete_option( ChatSettings::OPTION );
+} else {
+	update_option( ChatSettings::OPTION, $saved_chat, true );
+}
+
 RateLimiter::configured()->forget( $owner_token );
 
 $t( 'probe conversations removed', null === $conversations->find_by_uuid( $uuid ) );
-$t( 'chat settings removed', false === get_option( ChatSettings::OPTION ) );
+$t( 'merchant settings restored untouched', get_option( ChatSettings::OPTION ) === $saved_chat && get_option( ModelPolicy::OPTION ) === $saved_policy );
 
 echo "\n" . str_repeat( '-', 60 ) . "\n";
 printf( "%d passed, %d failed\n", $pass, $fail );
