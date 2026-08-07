@@ -27,10 +27,20 @@ use StoreCrew\Api\Rest\Controllers\KnowledgeController;
 use StoreCrew\Api\Rest\Controllers\ProviderController;
 use StoreCrew\Api\Rest\Controllers\SettingsController;
 use StoreCrew\Api\Registry\AdminRouteRegistry;
+use StoreCrew\Agent\AgentRunner;
+use StoreCrew\Agent\CoreAgents;
+use StoreCrew\Agent\Orchestrator;
+use StoreCrew\Agent\Tool\ToolExecutor;
+use StoreCrew\Agent\Tools\OrderLookupTool;
+use StoreCrew\Agent\Tools\OrderNoteTool;
+use StoreCrew\Agent\Tools\PolicyLookupTool;
+use StoreCrew\Agent\Tools\ProductSearchTool;
+use StoreCrew\Api\Registry\AgentRegistry;
 use StoreCrew\Api\Registry\ControllerRegistry;
 use StoreCrew\Api\Registry\ExtractorRegistry;
 use StoreCrew\Api\Registry\FeatureRegistry;
 use StoreCrew\Api\Registry\ProviderRegistry;
+use StoreCrew\Api\Registry\ToolRegistry;
 use StoreCrew\Knowledge\Chunker;
 use StoreCrew\Knowledge\Extractor\PostExtractor;
 use StoreCrew\Knowledge\Extractor\ProductExtractor;
@@ -118,6 +128,8 @@ final class Plugin {
 		$this->register_core_features();
 		$this->register_core_providers();
 		$this->register_core_extractors();
+		$this->register_core_tools();
+		$this->register_core_agents();
 		$this->register_core_controllers();
 
 		$this->api = $this->container->get( ExtensionApi::class );
@@ -212,6 +224,52 @@ final class Plugin {
 		$this->container->set(
 			ProviderRegistry::class,
 			static fn (): ProviderRegistry => new ProviderRegistry()
+		);
+
+		$this->container->set(
+			AgentRegistry::class,
+			static fn (): AgentRegistry => new AgentRegistry()
+		);
+
+		$this->container->set(
+			ToolRegistry::class,
+			static fn (): ToolRegistry => new ToolRegistry()
+		);
+
+		$this->container->set(
+			ToolExecutor::class,
+			static fn ( Container $c ): ToolExecutor => new ToolExecutor(
+				$c->get( ToolRegistry::class ),
+				$c->get( ToolCallRepository::class ),
+				$c->get( AgentConfigRepository::class ),
+				$c->get( AuditLogRepository::class )
+			)
+		);
+
+		$this->container->set(
+			AgentRunner::class,
+			static fn ( Container $c ): AgentRunner => new AgentRunner(
+				$c->get( ProviderRegistry::class ),
+				$c->get( ModelPolicy::class ),
+				$c->get( ToolRegistry::class ),
+				$c->get( ToolExecutor::class ),
+				$c->get( AgentRunRepository::class ),
+				$c->get( AgentConfigRepository::class ),
+				$c->get( UsageRepository::class ),
+				$c->get( SpendGuard::class )
+			)
+		);
+
+		$this->container->set(
+			Orchestrator::class,
+			static fn ( Container $c ): Orchestrator => new Orchestrator(
+				$c->get( AgentRegistry::class ),
+				$c->get( AgentRunner::class ),
+				$c->get( ProviderRegistry::class ),
+				$c->get( ModelPolicy::class ),
+				$c->get( FeatureGate::class ),
+				$c->get( AgentConfigRepository::class )
+			)
 		);
 
 		$this->container->set(
@@ -389,7 +447,9 @@ final class Plugin {
 				$c->get( AdminRouteRegistry::class ),
 				$c->get( ProviderRegistry::class ),
 				$c->get( ExtractorRegistry::class ),
-				$c->get( ControllerRegistry::class )
+				$c->get( ControllerRegistry::class ),
+				$c->get( AgentRegistry::class ),
+				$c->get( ToolRegistry::class )
 			)
 		);
 	}
@@ -464,6 +524,39 @@ final class Plugin {
 		$registry->register( new GeminiProvider( $secrets, $http ) );
 		$registry->register( new OpenRouterProvider( $secrets, $http ) );
 		$registry->register( new DeepSeekProvider( $secrets, $http ) );
+	}
+
+	/**
+	 * Register the tools this plugin ships.
+	 */
+	private function register_core_tools(): void {
+		$c        = $this->container;
+		$registry = $c->get( ToolRegistry::class );
+
+		// Factories. Nothing here — including retrieval and its repositories —
+		// is constructed until a turn actually reaches for the tool.
+		$registry->register(
+			ProductSearchTool::ID,
+			static fn (): ProductSearchTool => new ProductSearchTool( $c->get( Retriever::class ) )
+		);
+
+		$registry->register(
+			PolicyLookupTool::ID,
+			static fn (): PolicyLookupTool => new PolicyLookupTool( $c->get( Retriever::class ) )
+		);
+
+		$registry->register( OrderLookupTool::ID, static fn (): OrderLookupTool => new OrderLookupTool() );
+		$registry->register( OrderNoteTool::ID, static fn (): OrderNoteTool => new OrderNoteTool() );
+	}
+
+	/**
+	 * Register the agents this plugin ships.
+	 */
+	private function register_core_agents(): void {
+		$registry = $this->container->get( AgentRegistry::class );
+
+		$registry->register( CoreAgents::sales() );
+		$registry->register( CoreAgents::support() );
 	}
 
 	/**

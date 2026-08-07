@@ -37,7 +37,13 @@ final readonly class ChatResponse {
 		public int $latency_ms = 0,
 		/** Provider-specific detail, for the conversation inspector. */
 		public array $raw_meta = array(),
+		/** @var list<ToolCall> What the model asked to run. Requests, not grants. */
+		public array $tool_calls = array(),
 	) {}
+
+	public function has_tool_calls(): bool {
+		return array() !== $this->tool_calls;
+	}
 
 	public function is_refusal(): bool {
 		return self::STOP_REFUSAL === $this->stop_reason;

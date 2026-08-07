@@ -103,8 +103,18 @@ across. `StoreCrew\` must contain zero references to `StoreCrew\Pro\`.
 ### 7. Retrieved content is untrusted input
 
 It can never alter tool authorisation or agent routing.
-`storecrew_tool_authorized` **may only deny, never grant**. Authorisation
-derives from session capabilities, never from model output.
+`storecrew_tool_authorized` **may only deny, never grant** — its return is ANDed
+with the decision already made in `ToolExecutor`. Authorisation derives from
+session capabilities, never from model output. Retrieved text enters the prompt
+as user-role content, never as system.
+
+Three further invariants live in the agent layer, each probe-tested:
+
+- An agent's `tool_ids` is an allow-list checked *before* the executor, so a
+  tool an agent never declared cannot reach the security boundary at all.
+- A merchant-edited persona cannot strip guardrails — they are appended after it.
+- Identity verification proves *one* identity. `order.lookup` refuses any order
+  other than the one confirmed.
 
 ### 8. Never bundle an HTTP client
 
@@ -146,6 +156,10 @@ src/
     Extractor/             Product, Post, keyset pagination trait
     Chunker, Indexer, Retriever, Vector
     Jobs/                  IndexJob, EmbedJob, ReindexJob
+  Agent/
+    Agent, AgentRunner, AgentTurn, Orchestrator, TurnBudget, SharedContext
+    Tool/                  ToolInterface, ToolExecutor (the security boundary)
+    Tools/                 product.search, policy.lookup, order.lookup, order.note
   Licensing/FeatureGate.php
   Security/SecretStore.php Envelope encryption, rotatable
 docs/                      Architecture deliverables
@@ -166,27 +180,28 @@ Deterministic, and everything downstream depends on it:
 Writing to a frozen registry throws under `WP_DEBUG` and is logged in
 production. Add-ons must register on `storecrew_api_ready`.
 
-Registries: features, admin routes, providers, extractors, REST controllers.
-Still to come: agents, tools (Gate 3).
+Registries: features, admin routes, providers, extractors, REST controllers,
+tools, agents.
 
-**Controllers and job handlers are lazy.** Controllers are stored as factories
+**Controllers, tools, and job handlers are lazy.** Controllers are stored as factories
 resolved at `rest_api_init`; job handlers resolve from the container when the
 job runs. Registering either eagerly builds every repository on every request —
 a storefront page load must not pay to construct an API it will never serve.
-This has been reintroduced twice; the integration harness catches it because it
-runs with no database at all.
+This has been reintroduced three times; the integration harness catches it
+because it runs with no database at all.
 
 ---
 
 ## Testing
 
-Six suites, 409 assertions, green in any run order.
+Seven suites, 446 assertions, green in any run order.
 
 `verify-rest.php` needs `--user=1`: it dispatches through the real REST
 server, and its permission probes deliberately start unauthenticated.
 
 ```bash
 # Real MySQL / real WooCommerce / real Action Scheduler / real WP_REST_Server
+wp eval-file wp-content/plugins/storecrew/tests/schema/verify-agents.php --user=1
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-rest.php --user=1
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-schema.php
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-repositories.php
@@ -219,6 +234,7 @@ ciphertext, ragged embedding vectors, and the migration lock.
 | `LEXICAL_FLOOR = 3` | A query matching 1–2 chunks is *precise*, not failed. Treating it as failure triggered the full dense scan the two-stage design exists to avoid. |
 | Eager job-handler resolution | Built every repository on every request; broke the DB-free harness. |
 | Eager REST controller construction | Same root cause, found the same way. Controllers are factories now. |
+| Eager tool construction | Third time. Tools are factories now. Anything depending on repositories must be lazy. |
 | Providers depending on concrete `HttpClient` | Request shaping was untestable without network. |
 
 ---
@@ -249,6 +265,8 @@ ciphertext, ragged embedding vectors, and the migration lock.
   calls it yet.
 - `Pro\Licence` is a **stub** — local option, no remote validation, no grace
   period. Not a security boundary; must not ship as-is.
-- No agent framework and no admin SPA. The REST API exists (18 routes,
-  `storecrew/v1`) but nothing consumes it yet.
+- No admin SPA, and no chat surface. The REST API (18 routes) and the agent
+  framework both exist, but nothing has run an agent against a real model — the
+  suite drives a scripted provider.
+- No streaming, so a turn returns all at once.
 - Model IDs and pricing are point-in-time (verified 2026-06-24) and will drift.

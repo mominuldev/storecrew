@@ -14,6 +14,66 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**Agent framework** — 2026-08-07
+
+- Provider tool-calling across all three families. Anthropic uses `tool_use` /
+  `tool_result` content blocks with results on a *user* turn; OpenAI uses a
+  `tool_calls` array with a dedicated `tool` role and arguments as a JSON
+  *string*; Gemini uses `functionCall` / `functionResponse` parts, assigns no
+  call ids at all, and matches results back by tool *name*. Normalised once in
+  `Message` rather than at three call sites.
+- `ToolInterface` — every tool declares read-or-write, the capability required,
+  and whether identity must be proven. The model supplies only which tool and
+  what arguments; both are untrusted.
+- `ToolExecutor` — **the security boundary**. Authorisation runs in a fixed
+  order: tool exists → not disabled → capability held → identity proven → write
+  approved → filter veto. `storecrew_tool_authorized` runs last and its return
+  is ANDed with the decision already made, so **no filter can grant a permission
+  the earlier checks refused** (R-SEC-01).
+- `TurnBudget` — three independent ceilings (tool calls, tokens, wall-clock)
+  because the failure modes differ. Exhaustion is a recorded `budget_exceeded`
+  run status, not a silent short answer (FR-AGENT-06).
+- `SharedContext` — structured handoff state rather than a concatenated
+  transcript, so a receiving agent inherits conclusions instead of re-deriving
+  them (FR-AGENT-03).
+- `AgentRunner` — the tool loop. Retrieved content enters as user-role content,
+  never as system: a product description is data to reason about, not an
+  instruction to obey.
+- `Orchestrator` — routes on the cheap `routing` model, and falls through to a
+  default agent whenever classification fails. A classifier outage must not cost
+  a customer their answer (FR-AGENT-02).
+- Four tools: `product.search` (reads live price and stock — the values
+  deliberately absent from the index, and drops anything unpurchasable per
+  FR-SALES-02), `policy.lookup` (says "not published" rather than letting the
+  model invent a returns window), `order.lookup` (identity-gated, and refuses
+  orders other than the one verified), `order.note` (the first write, so the
+  first requiring approval).
+- Sales and Support agents with narrow tool allow-lists — Support cannot search
+  the catalogue and Sales cannot touch orders, so an injection that oversteps
+  fails at the agent boundary before reaching the executor.
+- 68 assertions, driven by a scripted provider.
+
+### Security
+
+- A merchant-edited persona cannot strip the guardrails. Mission and constraints
+  are appended *after* the persona, so FR-AGENT-09 cannot be used to disable
+  FR-SALES-09.
+- Verification proves *an* identity, not *every* identity. `order.lookup`
+  refuses an order other than the one confirmed, so verification cannot become a
+  skeleton key to the order table (R-SEC-02).
+
+### Changed
+
+- Tools are registered as **factories, resolved on first use and memoised** —
+  the same treatment given to REST controllers and job handlers. Constructing
+  retrieval and its repositories on every storefront page load, for a visitor
+  who never opens the chat widget, is waste. This is the third time eager
+  resolution has been caught by the database-free integration harness.
+
+---
+
+### Added
+
 **REST API** — 2026-08-07
 
 - `storecrew/v1` namespace, 18 routes across 7 controllers, contributed through

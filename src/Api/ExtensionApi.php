@@ -10,10 +10,12 @@ declare( strict_types=1 );
 namespace StoreCrew\Api;
 
 use StoreCrew\Api\Registry\AdminRouteRegistry;
+use StoreCrew\Api\Registry\AgentRegistry;
 use StoreCrew\Api\Registry\ControllerRegistry;
 use StoreCrew\Api\Registry\ExtractorRegistry;
 use StoreCrew\Api\Registry\FeatureRegistry;
 use StoreCrew\Api\Registry\ProviderRegistry;
+use StoreCrew\Api\Registry\ToolRegistry;
 use StoreCrew\Core\Container\Container;
 
 defined( 'ABSPATH' ) || exit;
@@ -45,6 +47,8 @@ final class ExtensionApi {
 		private readonly ProviderRegistry $providers,
 		private readonly ExtractorRegistry $extractors,
 		private readonly ControllerRegistry $controllers,
+		private readonly AgentRegistry $agents,
+		private readonly ToolRegistry $tools,
 	) {}
 
 	/**
@@ -96,6 +100,20 @@ final class ExtensionApi {
 	 */
 	public function controllers(): ControllerRegistry {
 		return $this->controllers;
+	}
+
+	/**
+	 * Registry of agents.
+	 */
+	public function agents(): AgentRegistry {
+		return $this->agents;
+	}
+
+	/**
+	 * Registry of agent tools.
+	 */
+	public function tools(): ToolRegistry {
+		return $this->tools;
 	}
 
 	/**
@@ -164,6 +182,23 @@ final class ExtensionApi {
 		 * @param ControllerRegistry $controllers The controller registry.
 		 */
 		apply_filters( 'storecrew_register_rest_controllers', $this->controllers );
+
+		/**
+		 * Contribute agent tools.
+		 *
+		 * Registration is not permission — an agent must still name the
+		 * tool, and the executor still authorises every call.
+		 *
+		 * @param ToolRegistry $tools The tool registry.
+		 */
+		apply_filters( 'storecrew_register_tools', $this->tools );
+
+		/**
+		 * Contribute agents.
+		 *
+		 * @param AgentRegistry $agents The agent registry.
+		 */
+		apply_filters( 'storecrew_register_agents', $this->agents );
 	}
 
 	/**
@@ -175,6 +210,8 @@ final class ExtensionApi {
 		$this->providers->freeze();
 		$this->extractors->freeze();
 		$this->controllers->freeze();
+		$this->tools->freeze();
+		$this->agents->freeze();
 
 		/**
 		 * Fires after every registry has been frozen.
@@ -201,6 +238,8 @@ final class ExtensionApi {
 			'providers'    => $this->providers,
 			'extractors'   => $this->extractors,
 			'controllers'  => $this->controllers,
+			'tools'        => $this->tools,
+			'agents'       => $this->agents,
 		);
 
 		foreach ( $registries as $key => $registry ) {

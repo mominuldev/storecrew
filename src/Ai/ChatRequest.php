@@ -35,6 +35,8 @@ final readonly class ChatRequest {
 		/** Cache the system prompt where the provider supports breakpoints. */
 		public bool $cache_system = false,
 		public int $timeout = 60,
+		/** @var list<ToolDefinition> */
+		public array $tools = array(),
 	) {
 		if ( array() === $messages ) {
 			throw new \InvalidArgumentException( 'A chat request needs at least one message.' );
@@ -43,6 +45,30 @@ final readonly class ChatRequest {
 		if ( $max_tokens < 1 ) {
 			throw new \InvalidArgumentException( 'max_tokens must be positive.' );
 		}
+	}
+
+	public function has_tools(): bool {
+		return array() !== $this->tools;
+	}
+
+	/**
+	 * Copy with additional messages appended — used to continue a tool loop.
+	 *
+	 * @param list<Message> $messages Turns to append.
+	 */
+	public function with_messages( array $messages ): self {
+		return new self(
+			$this->model,
+			array_merge( $this->messages, $messages ),
+			$this->system,
+			$this->max_tokens,
+			$this->temperature,
+			$this->stream,
+			$this->effort,
+			$this->cache_system,
+			$this->timeout,
+			$this->tools,
+		);
 	}
 
 	/**
@@ -71,6 +97,7 @@ final readonly class ChatRequest {
 			$this->effort,
 			$this->cache_system,
 			$this->timeout,
+			$this->tools,
 		);
 	}
 }

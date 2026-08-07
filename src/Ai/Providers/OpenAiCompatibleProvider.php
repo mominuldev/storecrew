@@ -15,6 +15,9 @@ use StoreCrew\Ai\ChatRequest;
 use StoreCrew\Ai\ChatResponse;
 use StoreCrew\Ai\Exception\ProviderException;
 use StoreCrew\Ai\Http\HttpClientInterface;
+use StoreCrew\Ai\Message;
+use StoreCrew\Ai\ToolCall;
+use StoreCrew\Ai\ToolDefinition;
 use StoreCrew\Ai\TokenUsage;
 use StoreCrew\Security\SecretStore;
 
@@ -88,7 +91,7 @@ abstract class OpenAiCompatibleProvider implements ChatProviderInterface {
 	}
 
 	public function chat( ChatRequest $request ): ChatResponse {
-		$messages = $request->messages_array();
+		$messages = $this->to_messages( $request->messages );
 
 		if ( '' !== $request->system ) {
 			// Unlike Anthropic, the system prompt rides in the messages array.
@@ -105,6 +108,20 @@ abstract class OpenAiCompatibleProvider implements ChatProviderInterface {
 			$payload['temperature'] = $request->temperature;
 		}
 
+		if ( $request->has_tools() ) {
+			$payload['tools'] = array_map(
+				static fn ( ToolDefinition $t ): array => array(
+					'type'     => 'function',
+					'function' => array(
+						'name'        => $t->name,
+						'description' => $t->description,
+						'parameters'  => $t->input_schema,
+					),
+				),
+				$request->tools
+			);
+		}
+
 		$result = $this->http->post_json(
 			$this->base_url() . '/chat/completions',
 			$this->headers(),
@@ -114,6 +131,57 @@ abstract class OpenAiCompatibleProvider implements ChatProviderInterface {
 		);
 
 		return $this->to_response( $result['body'], $request->model, $result['latency_ms'] );
+	}
+
+	/**
+	 * Map neutral messages onto the OpenAI shape.
+	 *
+	 * Tool results are their own `tool` role here, and arguments travel as a
+	 * JSON *string* rather than an object — a difference that silently produces
+	 * an unusable request if missed.
+	 *
+	 * @param list<Message> $messages Turns.
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	protected function to_messages( array $messages ): array {
+		$out = array();
+
+		foreach ( $messages as $message ) {
+			if ( Message::ROLE_TOOL === $message->role ) {
+				$out[] = array(
+					'role'         => 'tool',
+					'tool_call_id' => $message->tool_call_id,
+					'content'      => $message->content,
+				);
+
+				continue;
+			}
+
+			if ( $message->has_tool_calls() ) {
+				$out[] = array(
+					'role'       => 'assistant',
+					'content'    => '' === $message->content ? null : $message->content,
+					'tool_calls' => array_map(
+						static fn ( ToolCall $c ): array => array(
+							'id'       => $c->id,
+							'type'     => 'function',
+							'function' => array(
+								'name'      => $c->name,
+								'arguments' => (string) wp_json_encode( $c->arguments ),
+							),
+						),
+						$message->tool_calls
+					),
+				);
+
+				continue;
+			}
+
+			$out[] = array( 'role' => $message->role, 'content' => $message->content );
+		}
+
+		return $out;
 	}
 
 	/**
@@ -131,7 +199,27 @@ abstract class OpenAiCompatibleProvider implements ChatProviderInterface {
 	protected function to_response( array $body, string $model, int $latency ): ChatResponse {
 		$choice = (array) ( ( (array) ( $body['choices'] ?? array() ) )[0] ?? array() );
 
-		$text = (string) ( ( (array) ( $choice['message'] ?? array() ) )['content'] ?? '' );
+		$assistant = (array) ( $choice['message'] ?? array() );
+
+		$text = (string) ( $assistant['content'] ?? '' );
+
+		$tool_calls = array();
+
+		foreach ( (array) ( $assistant['tool_calls'] ?? array() ) as $raw ) {
+			$fn = (array) ( $raw['function'] ?? array() );
+
+			// Arguments arrive as a JSON string. A model can emit malformed
+			// JSON here, so decode defensively — an unparseable argument set
+			// becomes an empty one and the executor rejects it against the
+			// schema, rather than a fatal on array access.
+			$decoded = json_decode( (string) ( $fn['arguments'] ?? '' ), true );
+
+			$tool_calls[] = new ToolCall(
+				(string) ( $raw['id'] ?? '' ),
+				(string) ( $fn['name'] ?? '' ),
+				is_array( $decoded ) ? $decoded : array()
+			);
+		}
 
 		$usage_raw = (array) ( $body['usage'] ?? array() );
 
@@ -154,7 +242,9 @@ abstract class OpenAiCompatibleProvider implements ChatProviderInterface {
 			$this->id(),
 			$usage,
 			$this->map_finish_reason( (string) ( $choice['finish_reason'] ?? '' ) ),
-			$latency
+			$latency,
+			array(),
+			$tool_calls
 		);
 	}
 

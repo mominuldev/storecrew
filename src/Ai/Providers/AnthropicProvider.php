@@ -15,6 +15,9 @@ use StoreCrew\Ai\ChatRequest;
 use StoreCrew\Ai\ChatResponse;
 use StoreCrew\Ai\Exception\ProviderException;
 use StoreCrew\Ai\Http\HttpClientInterface;
+use StoreCrew\Ai\Message;
+use StoreCrew\Ai\ToolCall;
+use StoreCrew\Ai\ToolDefinition;
 use StoreCrew\Ai\TokenUsage;
 use StoreCrew\Security\SecretStore;
 
@@ -124,8 +127,19 @@ final class AnthropicProvider implements ChatProviderInterface {
 		$payload = array(
 			'model'      => $request->model,
 			'max_tokens' => $request->max_tokens,
-			'messages'   => $request->messages_array(),
+			'messages'   => $this->to_messages( $request->messages ),
 		);
+
+		if ( $request->has_tools() ) {
+			$payload['tools'] = array_map(
+				static fn ( ToolDefinition $t ): array => array(
+					'name'         => $t->name,
+					'description'  => $t->description,
+					'input_schema' => $t->input_schema,
+				),
+				$request->tools
+			);
+		}
 
 		if ( '' !== $request->system ) {
 			// A system prompt is an array of blocks so a cache breakpoint can be
@@ -164,6 +178,64 @@ final class AnthropicProvider implements ChatProviderInterface {
 	}
 
 	/**
+	 * Map neutral messages onto Anthropic content blocks.
+	 *
+	 * Tool calls are `tool_use` blocks on an assistant turn; results are
+	 * `tool_result` blocks on a *user* turn, not a dedicated role — the one
+	 * shape here that differs most from the other two families.
+	 *
+	 * @param list<Message> $messages Turns.
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	private function to_messages( array $messages ): array {
+		$out = array();
+
+		foreach ( $messages as $message ) {
+			if ( Message::ROLE_TOOL === $message->role ) {
+				$block = array(
+					'type'        => 'tool_result',
+					'tool_use_id' => $message->tool_call_id,
+					'content'     => $message->content,
+				);
+
+				if ( $message->is_error ) {
+					$block['is_error'] = true;
+				}
+
+				$out[] = array( 'role' => 'user', 'content' => array( $block ) );
+
+				continue;
+			}
+
+			if ( $message->has_tool_calls() ) {
+				$blocks = array();
+
+				if ( '' !== $message->content ) {
+					$blocks[] = array( 'type' => 'text', 'text' => $message->content );
+				}
+
+				foreach ( $message->tool_calls as $call ) {
+					$blocks[] = array(
+						'type'  => 'tool_use',
+						'id'    => $call->id,
+						'name'  => $call->name,
+						'input' => (object) $call->arguments,
+					);
+				}
+
+				$out[] = array( 'role' => 'assistant', 'content' => $blocks );
+
+				continue;
+			}
+
+			$out[] = array( 'role' => $message->role, 'content' => $message->content );
+		}
+
+		return $out;
+	}
+
+	/**
 	 * @return array<string, string>
 	 */
 	private function headers(): array {
@@ -179,11 +251,26 @@ final class AnthropicProvider implements ChatProviderInterface {
 	 * @param array<string, mixed> $body Decoded response.
 	 */
 	private function to_response( array $body, string $model, int $latency ): ChatResponse {
-		$text = '';
+		$text       = '';
+		$tool_calls = array();
 
 		foreach ( (array) ( $body['content'] ?? array() ) as $block ) {
-			if ( is_array( $block ) && 'text' === ( $block['type'] ?? '' ) ) {
+			if ( ! is_array( $block ) ) {
+				continue;
+			}
+
+			if ( 'text' === ( $block['type'] ?? '' ) ) {
 				$text .= (string) ( $block['text'] ?? '' );
+
+				continue;
+			}
+
+			if ( 'tool_use' === ( $block['type'] ?? '' ) ) {
+				$tool_calls[] = new ToolCall(
+					(string) ( $block['id'] ?? '' ),
+					(string) ( $block['name'] ?? '' ),
+					(array) ( $block['input'] ?? array() )
+				);
 			}
 		}
 
@@ -207,7 +294,8 @@ final class AnthropicProvider implements ChatProviderInterface {
 				// Populated only on a refusal; null for every other stop reason,
 				// so it is read defensively rather than assumed present.
 				'stop_details' => $body['stop_details'] ?? null,
-			)
+			),
+			$tool_calls
 		);
 	}
 

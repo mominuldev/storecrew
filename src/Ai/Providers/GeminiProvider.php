@@ -19,6 +19,8 @@ use StoreCrew\Ai\EmbeddingResponse;
 use StoreCrew\Ai\Exception\ProviderException;
 use StoreCrew\Ai\Http\HttpClientInterface;
 use StoreCrew\Ai\Message;
+use StoreCrew\Ai\ToolCall;
+use StoreCrew\Ai\ToolDefinition;
 use StoreCrew\Ai\TokenUsage;
 use StoreCrew\Security\SecretStore;
 
@@ -107,6 +109,47 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 		$contents = array();
 
 		foreach ( $request->messages as $message ) {
+			// A tool result is a `functionResponse` part on a *user* turn, and
+			// it is matched to its call by tool NAME rather than by an id —
+			// Gemini assigns no call ids at all, which is why Message carries
+			// the tool name alongside the id.
+			if ( Message::ROLE_TOOL === $message->role ) {
+				$contents[] = array(
+					'role'  => 'user',
+					'parts' => array(
+						array(
+							'functionResponse' => array(
+								'name'     => $message->tool_name,
+								'response' => array( 'result' => $message->content ),
+							),
+						),
+					),
+				);
+
+				continue;
+			}
+
+			if ( $message->has_tool_calls() ) {
+				$parts = array();
+
+				if ( '' !== $message->content ) {
+					$parts[] = array( 'text' => $message->content );
+				}
+
+				foreach ( $message->tool_calls as $call ) {
+					$parts[] = array(
+						'functionCall' => array(
+							'name' => $call->name,
+							'args' => (object) $call->arguments,
+						),
+					);
+				}
+
+				$contents[] = array( 'role' => 'model', 'parts' => $parts );
+
+				continue;
+			}
+
 			$contents[] = array(
 				// Gemini spells the assistant role "model".
 				'role'  => Message::ROLE_ASSISTANT === $message->role ? 'model' : 'user',
@@ -126,6 +169,21 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 		if ( '' !== $request->system ) {
 			$payload['systemInstruction'] = array(
 				'parts' => array( array( 'text' => $request->system ) ),
+			);
+		}
+
+		if ( $request->has_tools() ) {
+			$payload['tools'] = array(
+				array(
+					'functionDeclarations' => array_map(
+						static fn ( ToolDefinition $t ): array => array(
+							'name'        => $t->name,
+							'description' => $t->description,
+							'parameters'  => $t->input_schema,
+						),
+						$request->tools
+					),
+				),
 			);
 		}
 
@@ -203,9 +261,28 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 	private function to_response( array $body, string $model, int $latency ): ChatResponse {
 		$candidate = (array) ( ( (array) ( $body['candidates'] ?? array() ) )[0] ?? array() );
 
-		$text = '';
+		$text       = '';
+		$tool_calls = array();
+		$index      = 0;
 
 		foreach ( (array) ( ( (array) ( $candidate['content'] ?? array() ) )['parts'] ?? array() ) as $part ) {
+			if ( isset( $part['functionCall'] ) ) {
+				$fn = (array) $part['functionCall'];
+
+				// Gemini returns no call id, so one is synthesised. It only has
+				// to be unique within the turn — the result is matched back by
+				// name on the wire.
+				$tool_calls[] = new ToolCall(
+					'gemini-' . $index,
+					(string) ( $fn['name'] ?? '' ),
+					(array) ( $fn['args'] ?? array() )
+				);
+
+				++$index;
+
+				continue;
+			}
+
 			$text .= (string) ( $part['text'] ?? '' );
 		}
 
@@ -225,7 +302,8 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 			$usage,
 			$this->map_finish_reason( (string) ( $candidate['finishReason'] ?? '' ) ),
 			$latency,
-			array( 'safetyRatings' => $candidate['safetyRatings'] ?? null )
+			array( 'safetyRatings' => $candidate['safetyRatings'] ?? null ),
+			$tool_calls
 		);
 	}
 
