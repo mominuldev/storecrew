@@ -163,15 +163,16 @@ costKnown false with no rates.)*
   calls; no telemetry without consent (FR-DIST-11); no webfonts.
 - **IPs are never stored raw** — salted SHA-256 in audit and rate-limit
   state; recognition without identification.
-- **Conversation data is the merchant's.** What is enforced today: the
-  audit log prunes past its retention window from the hourly sweep, and the
-  repository layer holds the deletion primitives
-  (`delete_for_conversation` et al.). What is **not yet** enforced, and
-  must not be claimed in a compliance answer until 14 § M1 closes it:
-  age-based retention windows for transcripts and run records, and the
-  WordPress personal-data exporter/eraser integration. The session token
-  is stored only as a digest; identity verification stores *which order
-  was proven*, never the email offered.
+- **Conversation data is the merchant's, and retention is enforced**
+  (04 § 11, implemented and probe-tested): all four windows prune from the
+  hourly sweep — conversations cascade to everything they own, pending
+  approvals are exempt from any window, and sub-floor settings clamp up
+  rather than silently off. The WordPress personal-data exporter and eraser
+  are registered: export excludes operator notes; erasure severs
+  `customer_id`, the proven order, and the session binding (no surviving
+  cookie resumes the thread) and blanks message content while counters
+  survive. The session token is stored only as a digest; identity
+  verification stores *which order was proven*, never the email offered.
 - Provider processing is disclosed to the merchant: their key, their DPA
   with the provider; the architecture's job is that nothing flows there
   except what a turn requires.

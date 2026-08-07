@@ -100,6 +100,51 @@ final class MessageRepository extends Repository {
 	}
 
 	/**
+	 * Blank message content for a set of conversations (GDPR erasure).
+	 *
+	 * Content is replaced, not deleted: the conversation's shape — how many
+	 * turns, when — is analytics, but what was *said* is the personal data.
+	 *
+	 * @param list<int> $conversation_ids Conversations to erase.
+	 */
+	public function erase_content_for_conversations( array $conversation_ids ): int {
+		$conversation_ids = array_values( array_filter( array_map( 'intval', $conversation_ids ) ) );
+
+		if ( array() === $conversation_ids ) {
+			return 0;
+		}
+
+		$holes = implode( ', ', array_fill( 0, count( $conversation_ids ), '%d' ) );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$affected = $this->db->query(
+			$this->db->prepare(
+				'UPDATE ' . $this->table_name()
+					. " SET content = '[erased at the customer''s request]' WHERE conversation_id IN ({$holes})",
+				$conversation_ids
+			)
+		);
+
+		return false === $affected ? 0 : (int) $affected;
+	}
+
+	/**
+	 * Delete every message for a set of conversations. Retention pruning's
+	 * cascade partner.
+	 *
+	 * @param list<int> $conversation_ids Conversations being pruned.
+	 */
+	public function delete_for_conversations( array $conversation_ids ): int {
+		$deleted = 0;
+
+		foreach ( $conversation_ids as $id ) {
+			$deleted += $this->delete_for_conversation( (int) $id );
+		}
+
+		return $deleted;
+	}
+
+	/**
 	 * Delete every message for a conversation. Used by retention pruning and
 	 * GDPR erasure.
 	 */

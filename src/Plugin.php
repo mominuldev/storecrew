@@ -57,6 +57,7 @@ use StoreCrew\Chat\ChatService;
 use StoreCrew\Chat\Widget;
 use StoreCrew\Core\Admin\AdminPage;
 use StoreCrew\Core\Container\Container;
+use StoreCrew\Core\Privacy\PersonalData;
 use StoreCrew\Core\Queue\MaintenanceJob;
 use StoreCrew\Core\Queue\Scheduler;
 use StoreCrew\Database\MigrationInterface;
@@ -164,6 +165,19 @@ final class Plugin {
 		// whether this request is one they belong on, and a guard here would
 		// only hide them from WP-CLI — where the tests run.
 		( new Widget() )->register();
+
+		// Personal-data exporter and eraser (04 § 11). The *filters* register
+		// here; the object — and therefore its repositories — resolves only
+		// when a privacy screen actually asks, because constructing a
+		// repository requires a $wpdb the DB-free harness deliberately does
+		// not have. (Eager construction here is the mistake this codebase has
+		// now made five times; see CLAUDE.md.)
+		$privacy = function (): PersonalData {
+			return $this->container->get( PersonalData::class );
+		};
+
+		add_filter( 'wp_privacy_personal_data_exporters', static fn ( $e ) => $privacy()->register_exporter( $e ) );
+		add_filter( 'wp_privacy_personal_data_erasers', static fn ( $e ) => $privacy()->register_eraser( $e ) );
 
 		// Routes register on rest_api_init, which fires long after the
 		// registries freeze, so the contributed set is always final by then.
@@ -373,13 +387,24 @@ final class Plugin {
 		);
 
 		$this->container->set(
+			PersonalData::class,
+			static fn ( Container $c ): PersonalData => new PersonalData(
+				$c->get( ConversationRepository::class ),
+				$c->get( MessageRepository::class )
+			)
+		);
+
+		$this->container->set(
 			MaintenanceJob::class,
 			static fn ( Container $c ): MaintenanceJob => new MaintenanceJob(
 				$c->get( IndexRunRepository::class ),
 				$c->get( AgentRunRepository::class ),
 				$c->get( ConversationRepository::class ),
 				$c->get( AuditLogRepository::class ),
-				$c->get( Scheduler::class )
+				$c->get( Scheduler::class ),
+				$c->get( MessageRepository::class ),
+				$c->get( ToolCallRepository::class ),
+				$c->get( UsageRepository::class )
 			)
 		);
 

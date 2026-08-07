@@ -58,15 +58,14 @@ than a semantic query (known gap; it fails at every fusion weight).
   `(conversation_id, id)` — all covered (04). The prompt window is the last
   20 turns, so a long conversation costs a bounded read and a bounded
   prompt, not a growing one.
-- **Growth is swept now and pruned at M1**: the hourly `MaintenanceJob`
-  abandons idle conversations, reaps stalled runs, and prunes the **audit
-  log** past its retention window (batched, so the delete cannot lock a
-  busy store's largest table). Age-based deletion of transcripts and
-  run/tool-call records is **not built** — it is a 14 § M1 exit criterion,
-  to be enforced from this same sweep on the audit pruner's pattern, with
-  the audit log retaining longest (it is the incident record). The
-  repository primitives it will call (`delete_for_conversation` et al.)
-  exist and are what GDPR erasure uses (12 § 9).
+- **Growth is pruned, not accumulated** (implemented, 04 § 11): the hourly
+  `MaintenanceJob` abandons idle conversations, reaps stalled runs, and
+  enforces all four retention windows — conversations (cascading to
+  messages, runs, tool calls), run/tool-call age, usage events (counters
+  survive), and the audit log, which retains longest because it is the
+  incident record. Every pruner is batched at 500 so the delete cannot
+  lock a busy store's largest table, and pending approvals are exempt
+  from any window.
 - **Storefront overhead when idle is near zero**: a page load without the
   widget adds ≤ 2 queries (PRD budget); with the widget it adds one async
   script and zero queries until someone speaks (conversations open on first

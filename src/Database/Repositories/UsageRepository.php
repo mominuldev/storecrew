@@ -212,4 +212,23 @@ final class UsageRepository extends Repository {
 
 		return false === $affected ? 0 : (int) $affected;
 	}
+
+	/**
+	 * Delete usage events past the retention window (04 § 11), batched.
+	 *
+	 * Events only. The counters table is untouched — aggregates hold no
+	 * personal data, and deleting them would corrupt billing history, which
+	 * is the reason 04 § 11 retains them indefinitely.
+	 */
+	public function prune( int $older_than_days, int $batch = 500 ): int {
+		$table  = $this->table_name();
+		$cutoff = gmdate( 'Y-m-d H:i:s', time() - ( $older_than_days * DAY_IN_SECONDS ) );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$affected = $this->db->query(
+			$this->db->prepare( "DELETE FROM {$table} WHERE recorded_at < %s LIMIT %d", $cutoff, $batch )
+		);
+
+		return false === $affected ? 0 : (int) $affected;
+	}
 }

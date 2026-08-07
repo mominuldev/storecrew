@@ -319,6 +319,95 @@ final class ConversationRepository extends Repository {
 	}
 
 	/**
+	 * Conversation ids whose last activity predates the cutoff.
+	 *
+	 * @return list<int>
+	 */
+	public function ids_older_than( int $days, int $limit = 200 ): array {
+		$cutoff = gmdate( 'Y-m-d H:i:s', time() - ( $days * DAY_IN_SECONDS ) );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$ids = $this->db->get_col(
+			$this->db->prepare(
+				'SELECT id FROM ' . $this->table_name() . ' WHERE last_activity_at < %s ORDER BY id ASC LIMIT %d',
+				$cutoff,
+				$limit
+			)
+		);
+
+		return array_map( 'intval', $ids );
+	}
+
+	/**
+	 * Delete a set of conversations. Rows only — the caller owns the cascade,
+	 * because messages, runs, and tool calls live in other repositories and a
+	 * delete that silently reached into their tables would break the
+	 * one-repository-per-table rule the whole data layer stands on.
+	 *
+	 * @param list<int> $ids Conversation ids.
+	 */
+	public function delete_ids( array $ids ): int {
+		$ids = array_values( array_filter( array_map( 'intval', $ids ) ) );
+
+		if ( array() === $ids ) {
+			return 0;
+		}
+
+		$holes = implode( ', ', array_fill( 0, count( $ids ), '%d' ) );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$affected = $this->db->query(
+			$this->db->prepare( 'DELETE FROM ' . $this->table_name() . " WHERE id IN ({$holes})", $ids )
+		);
+
+		return false === $affected ? 0 : (int) $affected;
+	}
+
+	/**
+	 * Conversations belonging to a customer, oldest first. The privacy
+	 * exporter's paging source.
+	 *
+	 * @return list<object>
+	 */
+	public function for_customer( int $customer_id, int $limit = 50, int $offset = 0 ): array {
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		return $this->db->get_results(
+			$this->db->prepare(
+				'SELECT * FROM ' . $this->table_name() . ' WHERE customer_id = %d ORDER BY id ASC LIMIT %d OFFSET %d',
+				$customer_id,
+				$limit,
+				$offset
+			)
+		);
+	}
+
+	/**
+	 * Strip a customer's identity from their conversations (GDPR erasure).
+	 *
+	 * The rows survive — counts and analytics are not personal data — but
+	 * nothing ties them to a person afterwards: no customer id, no proven
+	 * order, and no session token, so a cookie still on some device cannot
+	 * resume a conversation its owner asked to be forgotten.
+	 */
+	public function anonymise_customer( int $customer_id ): int {
+		if ( $customer_id <= 0 ) {
+			return 0;
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$affected = $this->db->query(
+			$this->db->prepare(
+				'UPDATE ' . $this->table_name()
+					. " SET customer_id = 0, identity_verified = 0, verified_order_id = 0, verified_at = NULL, session_token = ''"
+					. ' WHERE customer_id = %d',
+				$customer_id
+			)
+		);
+
+		return false === $affected ? 0 : (int) $affected;
+	}
+
+	/**
 	 * Mark long-idle open conversations as abandoned.
 	 *
 	 * Returns the number affected.

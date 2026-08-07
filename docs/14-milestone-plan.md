@@ -39,8 +39,8 @@ The gap list, from CLAUDE.md, 03 § 13, and the Gate 2–5 reviews
 
 | Item | Exit criterion |
 |---|---|
-| **Retention pruning (04 § 11)** — conversations/messages, agent runs/tool calls, usage events | Each window enforced from the hourly maintenance sweep, batched on the pattern the audit pruner set; a probe proves each fires; 04 § 11's Status column flips to Implemented |
-| **GDPR exporter/eraser (04 § 11)** | Registered with the WordPress personal-data hooks; erasing a customer anonymises `customer_id`, `verified_order_id`, and attributable message content while counters survive; probe-tested |
+| ~~**Retention pruning (04 § 11)**~~ | ✅ **Done 2026-08-07.** All four windows enforced from the hourly sweep, batched; conversation pruning cascades; pending approvals exempt (probed); 04 § 11 flipped to Implemented |
+| ~~**GDPR exporter/eraser (04 § 11)**~~ | ✅ **Done 2026-08-07.** Registered with the personal-data hooks, lazily resolved; erasure severs customer/order/session links and blanks content while counters survive; export excludes operator notes; 21 probes in `verify-repositories` |
 | **Static-analysis configs (03 § 4)** | `composer lint` / `analyse` / `test` run green from the configs they reference; the repositories-only `$wpdb` rule is automated with its three documented carve-outs |
 | **Pro `uninstall.php` (FR-DIST-06)** | Pro removes its own options on uninstall, making free's `uninstall.php` comment true; covered by the integration harness |
 | **Streaming (FR-CHAT-02)** — raw-cURL SSE transport, `stream()` on the chat interface, widget token rendering, buffered fallback per host detection (R-TECH-02) | A streamed turn on a real host *and* the documented fallback exercised on a buffering host; 12 § 10's constraint holds (transport changed, authority untouched) |

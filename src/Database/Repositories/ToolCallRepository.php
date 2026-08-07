@@ -199,4 +199,49 @@ final class ToolCallRepository extends Repository {
 	public function find( int $id ): ?object {
 		return $this->find_row( $id );
 	}
+
+	/**
+	 * Delete tool calls past the retention window (04 § 11 — the runs
+	 * window), batched. Pending approvals are exempt: an undecided write
+	 * must never silently vanish from the queue, however old.
+	 */
+	public function prune( int $older_than_days, int $batch = 500 ): int {
+		$table  = $this->table_name();
+		$cutoff = gmdate( 'Y-m-d H:i:s', time() - ( $older_than_days * DAY_IN_SECONDS ) );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$affected = $this->db->query(
+			$this->db->prepare(
+				"DELETE FROM {$table} WHERE created_at < %s AND NOT (status = %s AND auth_mode = %s) LIMIT %d",
+				$cutoff,
+				self::STATUS_PENDING,
+				self::AUTH_REQUIRED,
+				$batch
+			)
+		);
+
+		return false === $affected ? 0 : (int) $affected;
+	}
+
+	/**
+	 * Delete tool calls belonging to pruned conversations.
+	 *
+	 * @param list<int> $conversation_ids Conversations being pruned.
+	 */
+	public function delete_for_conversations( array $conversation_ids ): int {
+		$conversation_ids = array_values( array_filter( array_map( 'intval', $conversation_ids ) ) );
+
+		if ( array() === $conversation_ids ) {
+			return 0;
+		}
+
+		$holes = implode( ', ', array_fill( 0, count( $conversation_ids ), '%d' ) );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$affected = $this->db->query(
+			$this->db->prepare( 'DELETE FROM ' . $this->table_name() . " WHERE conversation_id IN ({$holes})", $conversation_ids )
+		);
+
+		return false === $affected ? 0 : (int) $affected;
+	}
 }

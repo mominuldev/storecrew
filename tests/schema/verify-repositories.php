@@ -289,6 +289,105 @@ $t(
 $configs->save( 'probe-agent', true, 'Be very concise.' );
 $t( 'save() bumps version', 2 === $configs->get( 'probe-agent' )['version'] );
 
+echo "\n== Retention pruning (04 § 11) ==\n";
+
+// An old conversation with the full family of dependents, aged past every
+// window by writing the dates directly — the clock cannot be probed politely.
+$old_uuid = $conversations->start( hash( 'sha256', 'retention-probe' ), 0, 'widget' );
+$old      = $conversations->find_by_uuid( (string) $old_uuid );
+$old_id   = (int) $old->id;
+
+$messages->append( $old_id, MessageRepository::ROLE_USER, 'An ancient question.' );
+$old_run  = $runs->start( $old_id, 'probe-agent', 'probe', 'probe-1', str_repeat( 'x', 64 ) );
+$old_call = $calls->record( $old_run, $old_id, 'probe.tool', array(), 'read', 'auto' );
+
+$ancient = gmdate( 'Y-m-d H:i:s', time() - ( 400 * DAY_IN_SECONDS ) );
+$w       = $GLOBALS['wpdb'];
+$w->update( StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::CONVERSATIONS ), array( 'last_activity_at' => $ancient ), array( 'id' => $old_id ) );
+$w->update( StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::AGENT_RUNS ), array( 'started_at' => $ancient ), array( 'id' => $old_run ) );
+$w->update( StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::TOOL_CALLS ), array( 'created_at' => $ancient ), array( 'id' => $old_call ) );
+
+$t( 'aged runs prune by their own window', $runs->prune( 180 ) >= 1 );
+$t( 'aged tool calls prune with them', $calls->prune( 180 ) >= 1 );
+
+// A pending approval must survive any window: an undecided write silently
+// vanishing from the queue would be the approval model lying.
+$held = $calls->record( 0, $old_id, 'probe.write', array(), 'write', 'required' );
+$w->update( StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::TOOL_CALLS ), array( 'created_at' => $ancient ), array( 'id' => $held ) );
+$calls->prune( 180 );
+$t( 'PROBE: a pending approval is never pruned, however old', null !== $calls->find( $held ) );
+
+$pruned_ids = $conversations->ids_older_than( 365 );
+$t( 'the aged conversation is selected for pruning', in_array( $old_id, $pruned_ids, true ) );
+
+$messages->delete_for_conversations( array( $old_id ) );
+$runs_repo_deleted = $runs->delete_for_conversations( array( $old_id ) );
+$calls->delete_for_conversations( array( $old_id ) );
+$conversations->delete_ids( array( $old_id ) );
+
+$t( 'the cascade removes the conversation', null === $conversations->find( $old_id ) );
+$t( 'and its transcript', array() === $messages->for_conversation( $old_id ) );
+$t( 'PROBE: a fresh conversation is not selected', ! in_array( $conv_id, $conversations->ids_older_than( 365 ), true ) );
+
+echo "\n== GDPR exporter / eraser (04 § 11) ==\n";
+
+$gdpr_user = wp_insert_user(
+	array(
+		'user_login' => 'scr_privacy_probe_' . wp_rand( 1000, 9999 ),
+		'user_email' => 'privacy.probe@example.test',
+		'user_pass'  => wp_generate_password(),
+		'role'       => 'customer',
+	)
+);
+$gdpr_user = (int) $gdpr_user;
+
+$g_uuid = $conversations->start( hash( 'sha256', 'gdpr-probe' ), $gdpr_user, 'widget' );
+$g_conv = $conversations->find_by_uuid( (string) $g_uuid );
+$g_id   = (int) $g_conv->id;
+$conversations->mark_verified( $g_id, 987654, $gdpr_user );
+$messages->append( $g_id, MessageRepository::ROLE_USER, 'Where is my parcel? My number is 07700 900000.' );
+$messages->append( $g_id, MessageRepository::ROLE_ASSISTANT, 'It ships tomorrow.', 'support' );
+$messages->append( $g_id, MessageRepository::ROLE_SYSTEM, 'Escalated: internal note.', 'support' );
+
+$privacy = new StoreCrew\Core\Privacy\PersonalData( $conversations, $messages );
+
+$export = $privacy->export( 'privacy.probe@example.test' );
+$t( 'export finds the conversation', 1 === count( $export['data'] ), (string) count( $export['data'] ) );
+$t( 'export is complete in one page', true === $export['done'] );
+
+$payload = wp_json_encode( $export['data'] );
+$t( 'export carries what the customer said', str_contains( $payload, '07700 900000' ) );
+$t( 'and which order was discussed', str_contains( $payload, '#987654' ) );
+$t( 'PROBE: operator notes are not exported as their data', ! str_contains( $payload, 'internal note' ) );
+
+$t(
+	'PROBE: an unknown email exports nothing rather than probing',
+	array() === $privacy->export( 'nobody@example.test' )['data']
+);
+
+$erase = $privacy->erase( 'privacy.probe@example.test' );
+$t( 'erase completes', true === $erase['done'] );
+$t( 'erase reports the anonymisation policy', array() !== $erase['messages'] );
+
+$after = $conversations->find( $g_id );
+$t( 'the row survives erasure', null !== $after );
+$t( 'PROBE: the customer link is severed', 0 === (int) $after->customer_id );
+$t( 'PROBE: the proven order is forgotten', 0 === (int) $after->verified_order_id && '0' === (string) $after->identity_verified );
+$t( 'PROBE: the session binding is cut — no cookie can resume it', '' === (string) $after->session_token );
+
+$erased_rows = $messages->for_conversation( $g_id );
+$t( 'message rows survive (the shape is analytics)', 3 === count( $erased_rows ) );
+$t(
+	'PROBE: what was said is gone',
+	! str_contains( wp_json_encode( wp_list_pluck( $erased_rows, 'content' ) ), '07700 900000' )
+);
+
+// Cleanup for this block.
+$messages->delete_for_conversation( $g_id );
+$conversations->delete_ids( array( $g_id ) );
+$w->delete( StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::AGENT_RUNS ), array( 'agent_id' => 'probe-agent' ), array( '%s' ) );
+wp_delete_user( $gdpr_user );
+
 echo "\n== Cleanup ==\n";
 foreach ( $cleanup['conversations'] as $id ) {
 	$messages->delete_for_conversation( $id );

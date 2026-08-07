@@ -176,4 +176,43 @@ final class AgentRunRepository extends Repository {
 
 		return false === $affected ? 0 : (int) $affected;
 	}
+
+	/**
+	 * Delete runs past the retention window (04 § 11), batched.
+	 */
+	public function prune( int $older_than_days, int $batch = 500 ): int {
+		$table  = $this->table_name();
+		$cutoff = gmdate( 'Y-m-d H:i:s', time() - ( $older_than_days * DAY_IN_SECONDS ) );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$affected = $this->db->query(
+			$this->db->prepare( "DELETE FROM {$table} WHERE started_at < %s LIMIT %d", $cutoff, $batch )
+		);
+
+		return false === $affected ? 0 : (int) $affected;
+	}
+
+	/**
+	 * Delete runs belonging to pruned conversations, whatever their age — a
+	 * run without its conversation is unexplainable, which defeats the reason
+	 * runs are kept at all.
+	 *
+	 * @param list<int> $conversation_ids Conversations being pruned.
+	 */
+	public function delete_for_conversations( array $conversation_ids ): int {
+		$conversation_ids = array_values( array_filter( array_map( 'intval', $conversation_ids ) ) );
+
+		if ( array() === $conversation_ids ) {
+			return 0;
+		}
+
+		$holes = implode( ', ', array_fill( 0, count( $conversation_ids ), '%d' ) );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$affected = $this->db->query(
+			$this->db->prepare( 'DELETE FROM ' . $this->table_name() . " WHERE conversation_id IN ({$holes})", $conversation_ids )
+		);
+
+		return false === $affected ? 0 : (int) $affected;
+	}
 }
