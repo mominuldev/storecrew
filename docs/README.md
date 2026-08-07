@@ -85,9 +85,11 @@ Mitigation carried into [01-prd.md](01-prd.md) § Risks as **R-BRAND-01**. The l
 |---|---|---|
 | 1 | [Product Requirements Document](01-prd.md) | ✅ Draft complete |
 | 15 | [Free/Premium Split & Extension API](15-free-premium-split.md) | ✅ Draft complete |
-| 2 | [Product Strategy](02-product-strategy.md) | ⬜ Not started |
+| 2 | [Product Strategy](02-product-strategy.md) | ✅ Draft complete |
 
-**Gate 1:** ⬜ Awaiting review
+**Gate 1:** 🟡 All drafts complete — awaiting review. Deliverable 02 § 9 lists
+the ten decisions (D1–D10) the review must ratify; it consolidates the open
+questions from 01 § 13 and 15 § 9 with recommendations.
 
 > Deliverable 15 is an addition to the original 14, requested 2026-08-07. It sits in Gate 1 because the freemium split is a commercial packaging decision before it is a technical one — it determines what is sold, and therefore what each plugin may contain.
 
