@@ -53,7 +53,7 @@ final class Orchestrator {
 	 *
 	 * @param list<Message> $history Prior turns, oldest first.
 	 */
-	public function handle( string $message, array $history, SharedContext $context ): AgentTurn {
+	public function handle( string $message, array $history, SharedContext $context, ?callable $on_delta = null ): AgentTurn {
 		$available = $this->available_agents();
 
 		if ( array() === $available ) {
@@ -64,7 +64,7 @@ final class Orchestrator {
 
 		$history[] = Message::user( $message );
 
-		$turn = $this->runner->run( $agent, $history, $context );
+		$turn = $this->runner->run( $agent, $history, $context, null, $on_delta );
 
 		/**
 		 * Fires after an agent finishes a turn.

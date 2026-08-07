@@ -691,6 +691,125 @@ $turn = $lonely->run( $probe_agent, array( Message::user( 'x' ) ), new SharedCon
 $t( 'PROBE: no provider fails cleanly rather than fataling', AgentTurn::OUTCOME_FAILED === $turn->outcome );
 $t( 'and names the reason', 'no_provider' === $turn->error_code );
 
+echo "\n== Streaming (FR-CHAT-02, 12 § 10) ==\n";
+
+// A provider that streams from a script: each text response is emitted as
+// word-level deltas, then returned assembled — the contract stream() makes.
+$streamer = new class() implements StoreCrew\Ai\StreamingChatProviderInterface {
+	public array $script   = array();
+	public array $requests = array();
+	public int $calls      = 0;
+	public int $streams    = 0;
+	public bool $can_stream = true;
+
+	public function id(): string { return 'streamer'; }
+	public function label(): string { return 'Streamer'; }
+	public function capabilities(): Capabilities {
+		return new Capabilities( chat: true, tools: true, streaming: $this->can_stream );
+	}
+	public function is_configured(): bool { return true; }
+	public function verify(): string { return ''; }
+	public function default_models(): array { return array( 'streamer-1' ); }
+
+	private function next( ChatRequest $request ): ChatResponse {
+		$this->requests[] = $request;
+		$entry            = $this->script[ $this->calls ] ?? null;
+		++$this->calls;
+
+		if ( $entry instanceof Throwable ) {
+			throw $entry;
+		}
+
+		return $entry ?? new ChatResponse( 'streamed answer done', 'streamer-1', 'streamer', new TokenUsage( 10, 5 ) );
+	}
+
+	public function chat( ChatRequest $request ): ChatResponse {
+		return $this->next( $request );
+	}
+
+	public function stream( ChatRequest $request, callable $on_delta ): ChatResponse {
+		++$this->streams;
+		$response = $this->next( $request );
+
+		foreach ( explode( ' ', $response->text ) as $i => $word ) {
+			if ( '' !== $response->text ) {
+				$on_delta( ( $i > 0 ? ' ' : '' ) . $word );
+			}
+		}
+
+		return $response;
+	}
+};
+
+$providers->register( $streamer );
+$policy->save(
+	array( ModelPolicy::TASK_CHAT => array( 'provider' => 'streamer', 'model' => 'streamer-1' ) )
+);
+
+$deltas = array();
+$on_delta = static function ( string $d ) use ( &$deltas ): void {
+	$deltas[] = $d;
+};
+
+$streamer->script = array( new ChatResponse( 'the answer arrives in pieces', 'streamer-1', 'streamer', new TokenUsage( 12, 6 ) ) );
+$streamer->calls  = 0;
+
+$turn = $runner->run( $probe_agent, array( Message::user( 'stream it' ) ), new SharedContext( 0 ), null, $on_delta );
+
+$t( 'a streamed turn answers', $turn->succeeded(), $turn->outcome );
+$t( 'PROBE: deltas concatenate to exactly the final text', implode( '', $deltas ) === $turn->text, implode( '|', $deltas ) );
+$t( 'more than one delta actually arrived', count( $deltas ) > 1, (string) count( $deltas ) );
+$t( 'the stream path was used', 1 === $streamer->streams );
+
+// A tool round mid-stream: the loop's decisions read the assembled response,
+// so tool calls execute exactly as on the buffered path (12 § 10).
+$spy->runs        = 0;
+$deltas           = array();
+$streamer->calls  = 0;
+$streamer->streams = 0;
+$streamer->script = array(
+	new ChatResponse( 'let me check', 'streamer-1', 'streamer', new TokenUsage( 5, 2 ), ChatResponse::STOP_TOOL, 0, array(),
+		array( new ToolCall( 'st1', 'probe.spy', array() ) ) ),
+	new ChatResponse( 'checked and answered', 'streamer-1', 'streamer', new TokenUsage( 8, 4 ) ),
+);
+
+$turn = $runner->run( $probe_agent, array( Message::user( 'tool then stream' ) ), new SharedContext( 0 ), null, $on_delta );
+
+$t( 'a tool round works mid-stream', $turn->succeeded() && 1 === $spy->runs, $turn->outcome );
+$t( 'PROBE: the preamble and the answer both streamed', str_contains( implode( '', $deltas ), 'let me check' ) && str_contains( implode( '', $deltas ), 'checked and answered' ) );
+
+// Capability off: the runner must not call stream() however willing the class.
+$deltas             = array();
+$streamer->calls    = 0;
+$streamer->streams  = 0;
+$streamer->can_stream = false;
+$streamer->script   = array();
+
+$turn = $runner->run( $probe_agent, array( Message::user( 'x' ) ), new SharedContext( 0 ), null, $on_delta );
+$t( 'PROBE: a declared-false capability keeps the buffered path', 0 === $streamer->streams && $turn->succeeded() );
+$t( 'and no deltas were invented', array() === $deltas );
+$streamer->can_stream = true;
+
+// A non-streaming provider with a delta callback: completes, zero deltas —
+// the negotiation degrades, the turn never fails for want of a transport.
+$policy->save(
+	array( ModelPolicy::TASK_CHAT => array( 'provider' => 'scripted', 'model' => 'scripted-1' ) )
+);
+$deltas           = array();
+$scripted->calls  = 0;
+$scripted->script = array( new ChatResponse( 'buffered as ever', 'scripted-1', 'scripted', new TokenUsage( 3, 2 ) ) );
+
+$turn = $runner->run( $probe_agent, array( Message::user( 'x' ) ), new SharedContext( 0 ), null, $on_delta );
+$t( 'PROBE: a non-streaming provider still completes with a delta callback', 'buffered as ever' === $turn->text );
+$t( 'with zero deltas rather than a failure', array() === $deltas );
+
+$policy->save(
+	array(
+		ModelPolicy::TASK_CHAT    => array( 'provider' => 'scripted', 'model' => 'scripted-1' ),
+		ModelPolicy::TASK_ROUTING => array( 'provider' => 'scripted', 'model' => 'scripted-1' ),
+	)
+);
+
 echo "\n== Merchant guardrails and per-agent model policy (14 § M1) ==\n";
 
 // House rules compose AFTER the shipped guardrails, behind the framing line.

@@ -58,7 +58,10 @@ abstract class OpenAiCompatibleProvider implements ChatProviderInterface {
 		return new Capabilities(
 			chat: true,
 			embeddings: false,
-			streaming: true,
+			// Not yet implemented — flips true when this provider implements
+			// StreamingChatProviderInterface (the Gemini pattern). Declaring it
+			// before then was a capability the code could not honour.
+			streaming: false,
 			tools: true,
 			sampling: true,
 			prompt_caching: false,

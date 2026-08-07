@@ -368,11 +368,18 @@ ciphertext, ragged embedding vectors, and the migration lock.
 - ~~SKU lookup~~ — `product.lookup` (2026-08-07) resolves identifiers exactly;
   the recall harness scores identifier fixtures against it, semantic path
   unconsulted.
-- **No streaming — FR-CHAT-02 is unmet.** The widget uses the buffered path
-  everywhere, not only on the hosts the requirement's fallback clause is for.
-  SSE needs raw cURL with a write callback, which `wp_remote_post` cannot do, and
-  a streaming variant of the provider interface. This is the largest remaining
-  hole in the chat surface.
+- **Streaming is built** (FR-CHAT-02, 2026-08-07): `StreamingChatProviderInterface`
+  (additive, Gemini implements it), `CurlSseClient` (the one sanctioned raw-cURL
+  site, proxy constants honoured), SSE negotiation by Accept header after every
+  guard, and widget token rendering with a single whole-message screen-reader
+  announcement. 22 probes; live `event: delta` frames observed on the wire; the
+  provider-failure path exercised live *through* the SSE transport (customer got
+  a sentence in `done`, conversation escalated). Two live findings on record:
+  Gemini separates SSE events with `\r\n\r\n` (parser normalises), and the
+  free tier meters `streamGenerateContent` separately from `generateContent` —
+  a key can chat but not stream. **Remaining:** timed incremental delivery
+  re-verified when quota allows, and the buffering-host half of R-TECH-02,
+  which belongs to the budget-host validation row.
 - ~~No failover execution~~ — done (2026-08-07): one switch to the configured
   fallback mid-turn, continuing from the request state so executed tools never
   re-run; both attempts on the run record.

@@ -79,9 +79,11 @@ consulted).
 
 The deliberate non-goal: chat turns are synchronous request/response
 (45 s wall-clock ceiling). Queuing turns would survive slower hosts but
-break the product (a shopper will not wait behind a cron). The mitigation
-for slow hosts is model choice (routing on a fast tier) and, when built,
-streaming's perceived latency win (FR-CHAT-02).
+break the product (a shopper will not wait behind a cron). The mitigations
+for slow hosts are model choice (routing on a fast tier) and streaming's
+perceived-latency win, now built (FR-CHAT-02): first tokens paint while the
+rest generate, and on a host that buffers, the same stream arrives whole —
+the fallback is the buffered experience, by construction.
 
 ---
 

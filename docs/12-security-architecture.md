@@ -186,8 +186,10 @@ costKnown false with no rates.)*
   notes — run against a live model, asserting tool-denial rather than model
   virtue. Today's probes prove the boundary with a scripted model; the
   live-model corpus is the remaining step.
-- **Streaming (FR-CHAT-02)** must reuse this chapter unchanged: SSE alters
-  transport, not authority — a design constraint on 09 § 6's future
-  `stream()`.
+- ~~Streaming~~ — built, and the constraint held: the SSE branch diverges
+  from the JSON branch only *after* every guard has run, which is probed
+  directly (a rate-limited streaming request is refused as JSON before any
+  event starts; the merchant veto and a capability-less provider both fall
+  back to buffered). Transport changed; this chapter did not.
 - **`Pro\Licence` replacement** before any Pro ship (10 § 8).
 - Third-party review of `SecretStore`'s cryptography before 1.0.

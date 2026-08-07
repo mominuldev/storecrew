@@ -195,7 +195,7 @@ final class ChatService {
 	 * @param object $conversation The conversation row.
 	 * @param string $message      What the customer typed. Already length-checked.
 	 */
-	public function send( object $conversation, string $message ): AgentTurn {
+	public function send( object $conversation, string $message, ?callable $on_delta = null ): AgentTurn {
 		$conversation_id = (int) $conversation->id;
 
 		// The window is read *before* the new message is stored, because the
@@ -207,7 +207,7 @@ final class ChatService {
 
 		$context = $this->context_for( $conversation );
 
-		$turn = $this->run( $message, $history, $context );
+		$turn = $this->run( $message, $history, $context, $on_delta );
 
 		$this->messages->append(
 			$conversation_id,
@@ -242,7 +242,7 @@ final class ChatService {
 	 *
 	 * @param list<Message> $history Prior turns.
 	 */
-	private function run( string $message, array $history, SharedContext $context ): AgentTurn {
+	private function run( string $message, array $history, SharedContext $context, ?callable $on_delta = null ): AgentTurn {
 		$listener = static function ( int $conversation_id, int $order_id, int $customer_id ) use ( $context ): void {
 			if ( $conversation_id !== $context->conversation_id ) {
 				return;
@@ -275,7 +275,7 @@ final class ChatService {
 		add_action( 'storecrew_handoff_requested', $handoff_listener, 10, 3 );
 
 		try {
-			$turn = $this->orchestrator->handle( $message, $history, $context );
+			$turn = $this->orchestrator->handle( $message, $history, $context, $on_delta );
 
 			// One hop per customer turn: the receiving agent's answer is the
 			// reply, and a second hop would need the customer to speak again —

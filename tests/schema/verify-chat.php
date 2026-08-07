@@ -105,6 +105,21 @@ $saved_policy = get_option( ModelPolicy::OPTION );
 delete_option( ChatSettings::OPTION );
 delete_option( ModelPolicy::OPTION );
 
+/**
+ * Purge every rate-limit window, session and IP alike. The per-IP counter is
+ * keyed on this machine's address and lives in transients, so back-to-back
+ * suite runs inherit each other's spend and the first turn of a fresh run can
+ * open at 429 — which is the limiter working, and the suite lying.
+ */
+$purge_limits = static function (): void {
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+	$GLOBALS['wpdb']->query(
+		"DELETE FROM {$GLOBALS['wpdb']->options} WHERE option_name LIKE '_transient%storecrew_rl_%'"
+	);
+	wp_cache_flush();
+};
+$purge_limits();
+
 $server = rest_get_server();
 $routes = array_keys( $server->get_routes() );
 
@@ -507,6 +522,130 @@ remove_filter( 'pre_wp_mail', $catch_mail, 10 );
 $scripted->script = array();
 $result = $controller->send( $request( 'POST', array( 'uuid' => $uuid, 'message' => 'still here?' ), $owner_token ) );
 $t( 'an escalated conversation still accepts messages', 200 === $status_of( $result ), (string) $status_of( $result ) );
+
+// ---------------------------------------------------------------------------
+
+echo "\n== Streaming transport (FR-CHAT-02) ==\n";
+
+// The emitter, with collectors instead of echo and exit — the default
+// terminator ends the request, and a probe that exits never reports.
+$frames = array();
+$ended  = 0;
+
+$emitter = new StoreCrew\Chat\SseEmitter(
+	static function ( string $chunk ) use ( &$frames ): void {
+		$frames[] = $chunk;
+	},
+	static function () use ( &$ended ): void {
+		++$ended;
+	}
+);
+
+$emitter->delta( 'Hel' );
+$emitter->delta( 'lo' );
+$emitter->done( array( 'outcome' => 'answered' ) );
+
+$t( 'the emitter frames deltas as SSE events', str_starts_with( $frames[0], "event: delta\ndata: " ) && str_ends_with( $frames[0], "\n\n" ), $frames[0] );
+$t( 'delta payloads carry the text', str_contains( $frames[0], '"text":"Hel"' ) );
+$t( 'done carries the JSON path\'s payload shape', str_contains( $frames[2], "event: done" ) && str_contains( $frames[2], '"outcome":"answered"' ) );
+$t( 'done terminates the request', 1 === $ended );
+
+// The controller, negotiating. A streaming-capable scripted provider feeds
+// the same pipeline; the injected emitter collects what production would
+// have flushed to the visitor.
+$frames = array();
+$ended  = 0;
+
+$streaming_controller = new ChatController( $features, $chat, $orchestrator, $policy, $emitter );
+
+$sse_scripted = new class() implements StoreCrew\Ai\StreamingChatProviderInterface {
+	public function id(): string { return 'scripted'; }
+	public function label(): string { return 'Scripted'; }
+	public function capabilities(): Capabilities { return new Capabilities( chat: true, tools: true, streaming: true ); }
+	public function is_configured(): bool { return true; }
+	public function verify(): string { return ''; }
+	public function default_models(): array { return array( 'scripted-1' ); }
+	public function chat( ChatRequest $request ): ChatResponse {
+		return new ChatResponse( 'whole answer', 'scripted-1', 'scripted', new TokenUsage( 5, 3 ) );
+	}
+	public function stream( ChatRequest $request, callable $on_delta ): ChatResponse {
+		$on_delta( 'streamed ' );
+		$on_delta( 'answer' );
+
+		return new ChatResponse( 'streamed answer', 'scripted-1', 'scripted', new TokenUsage( 5, 3 ) );
+	}
+};
+
+// Same registry id, streaming implementation — swap by re-registering is not
+// possible on a frozen registry, so build a parallel stack for this probe.
+$sse_providers = new ProviderRegistry();
+$sse_providers->register( $sse_scripted );
+$sse_policy = new ModelPolicy( $sse_providers );
+$sse_policy->save( array( ModelPolicy::TASK_CHAT => array( 'provider' => 'scripted', 'model' => 'scripted-1' ) ) );
+
+$sse_runner = new AgentRunner(
+	$sse_providers,
+	$sse_policy,
+	$tools,
+	$executor,
+	$c->get( AgentRunRepository::class ),
+	$configs,
+	$c->get( UsageRepository::class ),
+	$c->get( StoreCrew\Ai\SpendGuard::class )
+);
+$sse_orchestrator = new Orchestrator( $agents, $sse_runner, $sse_providers, $sse_policy, $features, $configs, $c->get( StoreCrew\Ai\SpendGuard::class ) );
+$sse_chat         = new ChatService( $conversations, $messages, $sse_orchestrator );
+$sse_controller   = new ChatController( $features, $sse_chat, $sse_orchestrator, $sse_policy, $emitter );
+
+$sse_request = $request( 'POST', array( 'uuid' => $uuid, 'message' => 'stream this' ), $owner_token );
+$sse_request->set_header( 'Accept', 'text/event-stream' );
+
+$result = $sse_controller->send( $sse_request );
+
+$t( 'a streamed turn emits deltas then done', count( $frames ) >= 3, (string) count( $frames ) );
+$t( 'PROBE: deltas reassemble to the reply', str_contains( implode( '', $frames ), 'streamed ' ) && str_contains( implode( '', $frames ), '"content":"streamed answer"' ) );
+$t( 'the request was terminated once', 1 === $ended );
+$t( 'the streamed reply was persisted like any other', str_contains( wp_json_encode( $sse_chat->public_history( (int) $conversations->find_by_uuid( $uuid )->id ) ), 'streamed answer' ) );
+
+// Without the Accept header, the same controller returns plain JSON.
+$frames = array();
+$ended  = 0;
+
+$result = $sse_controller->send( $request( 'POST', array( 'uuid' => $uuid, 'message' => 'no stream' ), $owner_token ) );
+$t( 'PROBE: no Accept header means the JSON path, untouched', 200 === $status_of( $result ) && array() === $frames && 0 === $ended );
+
+// Authority before transport: a rate-limited streaming request is refused as
+// JSON — the guards ran before the transport was even chosen (12 § 10).
+add_filter( 'storecrew_chat_rate_limits', $tighten );
+RateLimiter::configured()->forget( $owner_token );
+$frames = array();
+$ended  = 0;
+
+$limited = 0;
+for ( $i = 0; $i < 4; $i++ ) {
+	$sse_req = $request( 'POST', array( 'uuid' => $uuid, 'message' => "burst {$i}" ), $owner_token );
+	$sse_req->set_header( 'Accept', 'text/event-stream' );
+	$r = $sse_controller->send( $sse_req );
+
+	if ( 429 === $status_of( $r ) ) {
+		++$limited;
+	}
+}
+remove_filter( 'storecrew_chat_rate_limits', $tighten );
+RateLimiter::configured()->forget( $owner_token );
+
+$t( 'PROBE: rate limiting refuses a streaming request before any SSE starts', $limited >= 2, (string) $limited );
+
+// The merchant veto: filtered off, the negotiation declines and JSON serves.
+add_filter( 'storecrew_chat_streaming', '__return_false' );
+$frames = array();
+$ended  = 0;
+$veto_req = $request( 'POST', array( 'uuid' => $uuid, 'message' => 'stream please' ), $owner_token );
+$veto_req->set_header( 'Accept', 'text/event-stream' );
+$result = $sse_controller->send( $veto_req );
+remove_filter( 'storecrew_chat_streaming', '__return_false' );
+
+$t( 'PROBE: the merchant veto forces the buffered path', 200 === $status_of( $result ) && 0 === $ended );
 
 // ---------------------------------------------------------------------------
 
@@ -957,7 +1096,7 @@ if ( false === $saved_chat ) {
 	update_option( ChatSettings::OPTION, $saved_chat, true );
 }
 
-RateLimiter::configured()->forget( $owner_token );
+$purge_limits();
 
 $t( 'probe conversations removed', null === $conversations->find_by_uuid( $uuid ) );
 $t( 'merchant settings restored untouched', get_option( ChatSettings::OPTION ) === $saved_chat && get_option( ModelPolicy::OPTION ) === $saved_policy );

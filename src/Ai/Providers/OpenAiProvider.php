@@ -45,7 +45,10 @@ final class OpenAiProvider extends OpenAiCompatibleProvider implements Embedding
 		return new Capabilities(
 			chat: true,
 			embeddings: true,
-			streaming: true,
+			// Not yet implemented — flips true when this provider implements
+			// StreamingChatProviderInterface (the Gemini pattern). Declaring it
+			// before then was a capability the code could not honour.
+			streaming: false,
 			tools: true,
 			sampling: true,
 			prompt_caching: true,

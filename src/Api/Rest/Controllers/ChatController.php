@@ -16,6 +16,7 @@ use StoreCrew\Chat\ChatService;
 use StoreCrew\Chat\ChatSettings;
 use StoreCrew\Chat\RateLimiter;
 use StoreCrew\Chat\Session;
+use StoreCrew\Chat\SseEmitter;
 use StoreCrew\Licensing\FeatureGate;
 
 defined( 'ABSPATH' ) || exit;
@@ -52,6 +53,9 @@ final class ChatController extends RestController {
 		private readonly ChatService $chat,
 		private readonly Orchestrator $orchestrator,
 		private readonly ModelPolicy $policy,
+		/** Injectable because the default emitter terminates the request —
+		 *  and a probe that exits is a probe that never reports. */
+		private readonly ?SseEmitter $emitter = null,
 	) {
 		parent::__construct( $features );
 	}
@@ -307,20 +311,77 @@ final class ChatController extends RestController {
 			);
 		}
 
+		// Streaming (FR-CHAT-02) is a transport negotiation, decided *after*
+		// every guard above has run — enablement, ownership, liveness, length,
+		// rate limit. 12 § 10's constraint is structural here: the streamed
+		// path and the JSON path diverge only past this line, so no
+		// authorisation can differ between them.
+		if ( $this->wants_stream( $request ) ) {
+			$emitter = $this->emitter ?? new SseEmitter();
+
+			$turn = $this->chat->send(
+				$conversation,
+				$message,
+				static function ( string $delta ) use ( $emitter ): void {
+					$emitter->delta( $delta );
+				}
+			);
+
+			$emitter->done( $this->turn_payload( $conversation, $turn ) );
+
+			// Unreachable in production — done() terminates. Reached only
+			// under a test emitter, which needs a legal REST return.
+			return $this->ok( $this->turn_payload( $conversation, $turn ) );
+		}
+
 		$turn = $this->chat->send( $conversation, $message );
 
-		return $this->ok(
-			array(
-				'uuid'      => (string) $conversation->uuid,
-				'reply'     => array(
-					'role'    => 'assistant',
-					'content' => $turn->text,
-					'agentId' => $turn->agent_id,
-				),
-				'outcome'   => $turn->outcome,
-				'escalated' => $turn->needs_escalation(),
-			)
+		return $this->ok( $this->turn_payload( $conversation, $turn ) );
+	}
+
+	/**
+	 * One response shape, both transports. The SSE `done` event carries
+	 * exactly what the JSON path returns, so the widget has a single
+	 * contract however the answer travelled.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function turn_payload( object $conversation, \StoreCrew\Agent\AgentTurn $turn ): array {
+		return array(
+			'uuid'      => (string) $conversation->uuid,
+			'reply'     => array(
+				'role'    => 'assistant',
+				'content' => $turn->text,
+				'agentId' => $turn->agent_id,
+			),
+			'outcome'   => $turn->outcome,
+			'escalated' => $turn->needs_escalation(),
 		);
+	}
+
+	/**
+	 * Whether this request asked for the answer as it is generated.
+	 *
+	 * The client opts in by Accept header; the merchant can veto with the
+	 * filter (some hosts' proxies mangle SSE badly enough to prefer the
+	 * buffered path outright). When the resolved provider cannot stream, the
+	 * negotiation still succeeds — the stream simply carries no deltas and
+	 * one `done` event, which the widget treats identically to a buffered
+	 * reply. One contract, not three.
+	 */
+	private function wants_stream( \WP_REST_Request $request ): bool {
+		$accept = (string) $request->get_header( 'accept' );
+
+		if ( ! str_contains( $accept, 'text/event-stream' ) ) {
+			return false;
+		}
+
+		/**
+		 * Filter whether chat responses may stream.
+		 *
+		 * @param bool $enabled Default true.
+		 */
+		return (bool) apply_filters( 'storecrew_chat_streaming', true );
 	}
 
 	/**

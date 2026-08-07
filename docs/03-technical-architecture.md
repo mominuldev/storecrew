@@ -280,11 +280,13 @@ The only anonymous-facing subsystem (FR-CHAT). Architecture:
   the 45 KB budget), WCAG 2.2 AA (dialog semantics, focus trap, live-region
   announcements, reduced-motion). Model output reaches the DOM only through
   `createTextNode`/`createElement` — never `innerHTML`.
-- **Unmet: FR-CHAT-02 streaming.** The buffered path is currently used
-  everywhere. SSE requires raw cURL with a write callback (out of
-  `wp_remote_post`'s reach) and a streaming provider interface. This is the
-  largest known architectural gap; R-TECH-02's host-buffering spike remains
-  relevant when it is built.
+- **Streaming is built** (FR-CHAT-02): SSE negotiated by Accept header
+  *after* every guard, so no authorisation can differ between transports;
+  the `done` event carries exactly the JSON path's payload, so the widget
+  has one contract however the answer travelled; and a buffering host
+  delivers the same events in one piece, which the widget parses
+  identically — the R-TECH-02 fallback is the buffered experience, by
+  construction. The provider half is an additive interface (09 § 6).
 
 ---
 

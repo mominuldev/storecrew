@@ -14,6 +14,47 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**Streaming (FR-CHAT-02)** — 2026-08-07
+
+- `StreamingChatProviderInterface` — an *addition* to the provider contract,
+  never a change: third-party providers keep working, and `stream()` returns
+  the same assembled response `chat()` would, so every runner decision reads
+  the assembly. Streaming changes when pixels appear, never what is decided
+  (12 § 10 — probed: a rate-limited streaming request is refused before any
+  event starts).
+- `CurlSseClient` — the one sanctioned raw-cURL site. `wp_remote_post`
+  buffers by design; this honours the WordPress proxy constants and degrades
+  via `available()` on a cURL-less host. Gemini implements the interface and
+  declares the capability only when the transport exists; the three
+  providers that had declared `streaming: true` with nothing behind it are
+  corrected to `false`.
+- SSE negotiation on the messages route by `Accept` header, after every
+  guard; `delta` events, then a `done` event carrying exactly the JSON
+  path's payload — one widget contract however the answer travels. A
+  buffering host delivers the same events in one piece, which the widget
+  parses identically: R-TECH-02's fallback by construction.
+- Widget token rendering: deltas paint as plain text, the finished reply is
+  re-rendered through the Markdown path, and screen readers hear the
+  completed message once via a visually-hidden status region rather than
+  stuttering through fragments (FR-CHAT-04).
+- 22 probes across the runner and transport layers; live `event: delta`
+  frames observed on the wire from real Gemini; the provider-failure path
+  exercised live *through* the SSE transport — the customer got a sentence
+  in `done` and the conversation escalated.
+
+### Fixed
+
+- **Gemini separates SSE events with `\r\n\r\n`.** The parser split on
+  `\n\n` only, so the live stream "succeeded" with zero events parsed —
+  invisible to every scripted probe, which naturally wrote tidy `\n\n`.
+  Only a live call finds this class of bug; this is the fourth entry in
+  that catalogue.
+- A live-only quota fact for support's benefit: **the Gemini free tier
+  meters `streamGenerateContent` separately from `generateContent`** — a
+  key can chat but not stream, and the run record's 429 says which.
+
+### Added
+
 **M1 hardening — nine of fifteen exit criteria closed** — 2026-08-07
 
 Six work items in one sweep of 14 § M1, each probe-tested on landing:

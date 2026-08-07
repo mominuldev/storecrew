@@ -291,9 +291,11 @@ only, and the frozen registries are the contract.
 
 ## 8. Gaps
 
-- **No streaming turn** (FR-CHAT-02) — the loop is request/response;
-  a streaming provider interface changes `AgentRunner`'s inner call, not the
-  boundary.
+- ~~No streaming turn~~ — **done 2026-08-07**, exactly as predicted: the
+  streaming interface changed the runner's inner call and nothing else. The
+  loop's decisions read the assembled response; a tool round works
+  mid-stream with the preamble forwarded; a declared-false capability keeps
+  the buffered path. *(All probed.)*
 - ~~No failover~~ — **done 2026-08-07**: one switch to the configured
   fallback, continuing from the request state at failure so executed tools
   never re-run; both attempts on the run record; both-dead is terminal after

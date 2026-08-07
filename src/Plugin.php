@@ -9,6 +9,7 @@ declare( strict_types=1 );
 
 namespace StoreCrew;
 
+use StoreCrew\Ai\Http\CurlSseClient;
 use StoreCrew\Ai\Http\HttpClient;
 use StoreCrew\Ai\ModelPolicy;
 use StoreCrew\Ai\Providers\AnthropicProvider;
@@ -428,6 +429,11 @@ final class Plugin {
 		);
 
 		$this->container->set(
+			CurlSseClient::class,
+			static fn (): CurlSseClient => new CurlSseClient()
+		);
+
+		$this->container->set(
 			ModelPolicy::class,
 			static fn ( Container $c ): ModelPolicy => new ModelPolicy(
 				$c->get( ProviderRegistry::class )
@@ -585,10 +591,11 @@ final class Plugin {
 		$registry = $this->container->get( ProviderRegistry::class );
 		$secrets  = $this->container->get( SecretStore::class );
 		$http     = $this->container->get( HttpClient::class );
+		$sse      = $this->container->get( CurlSseClient::class );
 
 		$registry->register( new AnthropicProvider( $secrets, $http ) );
 		$registry->register( new OpenAiProvider( $secrets, $http ) );
-		$registry->register( new GeminiProvider( $secrets, $http ) );
+		$registry->register( new GeminiProvider( $secrets, $http, $sse ) );
 		$registry->register( new OpenRouterProvider( $secrets, $http ) );
 		$registry->register( new DeepSeekProvider( $secrets, $http ) );
 	}

@@ -70,7 +70,10 @@ final class AnthropicProvider implements ChatProviderInterface {
 			// No embeddings endpoint exists. This is a fact about the provider,
 			// not a gap in this implementation.
 			embeddings: false,
-			streaming: true,
+			// Not yet implemented — flips true when this provider implements
+			// StreamingChatProviderInterface (the Gemini pattern). Declaring it
+			// before then was a capability the code could not honour.
+			streaming: false,
 			tools: true,
 			// temperature / top_p / top_k return a 400 on current models.
 			sampling: false,

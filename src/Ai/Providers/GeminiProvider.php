@@ -18,6 +18,8 @@ use StoreCrew\Ai\EmbeddingRequest;
 use StoreCrew\Ai\EmbeddingResponse;
 use StoreCrew\Ai\Exception\ProviderException;
 use StoreCrew\Ai\Http\HttpClientInterface;
+use StoreCrew\Ai\Http\SseClientInterface;
+use StoreCrew\Ai\StreamingChatProviderInterface;
 use StoreCrew\Ai\Message;
 use StoreCrew\Ai\ToolCall;
 use StoreCrew\Ai\ToolDefinition;
@@ -40,7 +42,7 @@ defined( 'ABSPATH' ) || exit;
  *
  * @see docs/01-prd.md FR-KB-06
  */
-final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderInterface {
+final class GeminiProvider implements StreamingChatProviderInterface, EmbeddingProviderInterface {
 
 	public const ID = 'gemini';
 
@@ -49,6 +51,7 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 	public function __construct(
 		private readonly SecretStore $secrets,
 		private readonly HttpClientInterface $http,
+		private readonly ?SseClientInterface $sse = null,
 	) {}
 
 	public function id(): string {
@@ -63,7 +66,9 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 		return new Capabilities(
 			chat: true,
 			embeddings: true,
-			streaming: true,
+			// Declared only when the transport exists on this host — a
+			// capability that is sometimes a lie is worse than none.
+			streaming: null !== $this->sse && $this->sse->available(),
 			tools: true,
 			sampling: true,
 			prompt_caching: false,
@@ -112,6 +117,122 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 	}
 
 	public function chat( ChatRequest $request ): ChatResponse {
+		$result = $this->http->post_json(
+			$this->url( 'models/' . rawurlencode( $request->model ) . ':generateContent' ),
+			array(),
+			$this->chat_payload( $request ),
+			self::ID,
+			$request->timeout
+		);
+
+		return $this->to_response( $result['body'], $request->model, $result['latency_ms'] );
+	}
+
+	/**
+	 * One answer, delivered as it is generated.
+	 *
+	 * `alt=sse` turns streamGenerateContent into an SSE stream where each
+	 * event is a partial GenerateContentResponse: text arrives split across
+	 * events, functionCall parts arrive whole, and the final event carries
+	 * usageMetadata and the finish reason. Assembly here mirrors
+	 * to_response() so the runner sees exactly what chat() would have
+	 * returned (12 § 10).
+	 */
+	public function stream( ChatRequest $request, callable $on_delta ): ChatResponse {
+		if ( null === $this->sse || ! $this->sse->available() ) {
+			// Defensive: callers gate on the capability, but a caller that did
+			// not must degrade to buffered, not fail.
+			$response = $this->chat( $request );
+
+			if ( '' !== $response->text ) {
+				$on_delta( $response->text );
+			}
+
+			return $response;
+		}
+
+		$text       = '';
+		$tool_calls = array();
+		$index      = 0;
+		$finish     = '';
+		$meta       = array();
+		$safety     = null;
+
+		$result = $this->sse->post_sse(
+			$this->url( 'models/' . rawurlencode( $request->model ) . ':streamGenerateContent', 'alt=sse' ),
+			array(),
+			$this->chat_payload( $request ),
+			self::ID,
+			function ( array $event ) use ( &$text, &$tool_calls, &$index, &$finish, &$meta, &$safety, $on_delta ): void {
+				$candidate = (array) ( ( (array) ( $event['candidates'] ?? array() ) )[0] ?? array() );
+
+				foreach ( (array) ( ( (array) ( $candidate['content'] ?? array() ) )['parts'] ?? array() ) as $part ) {
+					if ( isset( $part['functionCall'] ) ) {
+						$fn = (array) $part['functionCall'];
+
+						$tool_calls[] = new ToolCall(
+							'gemini-' . $index,
+							(string) ( $fn['name'] ?? '' ),
+							(array) ( $fn['args'] ?? array() ),
+							(string) ( $part['thoughtSignature'] ?? '' )
+						);
+
+						++$index;
+
+						continue;
+					}
+
+					$delta = (string) ( $part['text'] ?? '' );
+
+					if ( '' !== $delta ) {
+						$text .= $delta;
+						$on_delta( $delta );
+					}
+				}
+
+				if ( isset( $candidate['finishReason'] ) ) {
+					$finish = (string) $candidate['finishReason'];
+				}
+
+				if ( isset( $candidate['safetyRatings'] ) ) {
+					$safety = $candidate['safetyRatings'];
+				}
+
+				if ( isset( $event['usageMetadata'] ) ) {
+					$meta = (array) $event['usageMetadata'];
+				}
+			},
+			$request->timeout
+		);
+
+		return new ChatResponse(
+			$text,
+			$request->model,
+			self::ID,
+			new TokenUsage(
+				(int) ( $meta['promptTokenCount'] ?? 0 ),
+				(int) ( $meta['candidatesTokenCount'] ?? 0 ),
+				0,
+				(int) ( $meta['cachedContentTokenCount'] ?? 0 ),
+			),
+			$this->map_finish_reason( $finish ),
+			$result['latency_ms'],
+			array(
+				'safetyRatings' => $safety,
+				'streamed'      => true,
+			),
+			$tool_calls
+		);
+	}
+
+	/**
+	 * The request body chat() and stream() share — one translation of the
+	 * neutral message model into Gemini's dialect, so the two paths cannot
+	 * drift apart.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function chat_payload( ChatRequest $request ): array {
 		$contents = array();
 
 		foreach ( $request->messages as $message ) {
@@ -204,15 +325,7 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 			);
 		}
 
-		$result = $this->http->post_json(
-			$this->url( 'models/' . rawurlencode( $request->model ) . ':generateContent' ),
-			array(),
-			$payload,
-			self::ID,
-			$request->timeout
-		);
-
-		return $this->to_response( $result['body'], $request->model, $result['latency_ms'] );
+		return $payload;
 	}
 
 	public function embed( EmbeddingRequest $request ): EmbeddingResponse {
@@ -272,10 +385,10 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 	 * from here, but it is a reason to prefer another provider on shared
 	 * hosting with verbose logging.
 	 */
-	private function url( string $path ): string {
+	private function url( string $path, string $extra = '' ): string {
 		return self::BASE . '/' . $path . '?key=' . rawurlencode(
 			(string) $this->secrets->get( 'provider.gemini.key' )
-		);
+		) . ( '' !== $extra ? '&' . $extra : '' );
 	}
 
 	/**

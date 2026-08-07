@@ -31,6 +31,7 @@ export class ChatWidget {
 
   private uuid = '';
   private sessionReady = false;
+  private srRegion: HTMLElement | null = null;
   private open = false;
   private busy = false;
   private greeted = false;
@@ -307,10 +308,40 @@ export class ChatWidget {
         this.sessionReady = true;
       }
 
-      const reply = await this.api.send(this.uuid, message);
+      // Streaming (FR-CHAT-02). Deltas paint into a plain-text bubble as they
+      // arrive; the finished text is re-rendered through the Markdown path and
+      // announced once. Accessibility is deliberate here: the log is a polite
+      // live region, and token-by-token churn would make a screen reader
+      // stutter through every fragment — so the streaming bubble is excluded
+      // from announcement while it grows, and the completed reply is announced
+      // whole via the visually-hidden status region (11 § 5).
+      let live: HTMLElement | null = null;
+      let raw = '';
+
+      const reply = await this.api.sendStream(this.uuid, message, (delta) => {
+        if (!live) {
+          typing.remove();
+          live = this.appendStreaming();
+        }
+
+        raw += delta;
+        live.textContent = raw;
+        this.scroll();
+      });
 
       typing.remove();
-      this.append('assistant', reply.reply.content);
+
+      if (live !== null) {
+        // Swap accumulated plain text for the rendered reply, in place.
+        const bubble = (live as HTMLElement).parentElement as HTMLElement;
+        bubble.replaceChildren(renderMessage(reply.reply.content));
+        bubble.removeAttribute('aria-hidden');
+      } else {
+        // No deltas arrived — the buffered path, byte-for-byte the old flow.
+        this.append('assistant', reply.reply.content);
+      }
+
+      this.announce(reply.reply.content);
 
       if (reply.escalated) {
         this.note('Someone from the store team will pick this up.');
@@ -375,6 +406,42 @@ export class ChatWidget {
     this.scroll();
 
     return bubble;
+  }
+
+  /**
+   * A bubble that grows as tokens arrive.
+   *
+   * `aria-hidden` while streaming: the log's live region would otherwise
+   * announce every fragment. The finished text is announced once, whole,
+   * through announce(). Returns the inner element deltas write into.
+   */
+  private appendStreaming(): HTMLElement {
+    const bubble = document.createElement('div');
+    bubble.className = 'scr-msg';
+    bubble.dataset.role = 'assistant';
+    bubble.setAttribute('aria-hidden', 'true');
+
+    const text = document.createElement('span');
+    bubble.appendChild(text);
+
+    this.log.appendChild(bubble);
+    this.scroll();
+
+    return text;
+  }
+
+  /**
+   * One whole-message announcement for screen readers (FR-CHAT-04).
+   */
+  private announce(content: string): void {
+    if (!this.srRegion) {
+      this.srRegion = document.createElement('div');
+      this.srRegion.className = 'scr-sr';
+      this.srRegion.setAttribute('role', 'status');
+      this.panel.appendChild(this.srRegion);
+    }
+
+    this.srRegion.textContent = content;
   }
 
   private append(role: 'user' | 'assistant', content: string): void {

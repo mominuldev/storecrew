@@ -19,6 +19,7 @@ use StoreCrew\Ai\Message;
 use StoreCrew\Ai\ModelPolicy;
 use StoreCrew\Ai\Pricing;
 use StoreCrew\Ai\SpendGuard;
+use StoreCrew\Ai\StreamingChatProviderInterface;
 use StoreCrew\Ai\TokenUsage;
 use StoreCrew\Api\Registry\ProviderRegistry;
 use StoreCrew\Api\Registry\ToolRegistry;
@@ -68,7 +69,8 @@ final class AgentRunner {
 		Agent $agent,
 		array $history,
 		SharedContext $context,
-		?TurnBudget $budget = null
+		?TurnBudget $budget = null,
+		?callable $on_delta = null
 	): AgentTurn {
 		$budget = $budget ?? new TurnBudget();
 
@@ -143,7 +145,17 @@ final class AgentRunner {
 		try {
 			while ( true ) {
 				try {
-					$response = $provider->chat( $request );
+					// Streaming changes when pixels appear, never what is
+					// decided (12 § 10): stream() returns the same assembled
+					// response chat() would, and every decision below — tool
+					// authorisation, budget, refusal, metering — reads that
+					// assembly. Deltas during a tool round are the model's
+					// preamble ("let me check…") and are forwarded as-is.
+					$response = null !== $on_delta
+						&& $provider instanceof StreamingChatProviderInterface
+						&& $provider->capabilities()->streaming
+							? $provider->stream( $request, $on_delta )
+							: $provider->chat( $request );
 				} catch ( ProviderException $e ) {
 					// Failover (FR-AI, 14 § M1): one switch to the merchant's
 					// configured fallback, continuing from the request state

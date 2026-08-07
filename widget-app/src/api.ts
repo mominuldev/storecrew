@@ -74,6 +74,134 @@ export class ChatApi {
     return this.call<ReplyPayload>('POST', `/chat/${uuid}/messages`, { message });
   }
 
+  /**
+   * Send one turn, surfacing text deltas as they arrive (FR-CHAT-02).
+   *
+   * One contract, three transports, all ending in the same payload:
+   * - The server streams and the host passes it through → deltas paint live.
+   * - The host buffers → the same events arrive in one piece at the end and
+   *   parse identically. Nothing detects buffering; buffering just *is* the
+   *   buffered experience.
+   * - The server declines SSE (filtered off, or an intermediary rewrote the
+   *   response to JSON) → parsed as the plain reply.
+   * Failures throw the same ApiFailure send() does.
+   */
+  async sendStream(uuid: string, message: string, onDelta: (text: string) => void): Promise<ReplyPayload> {
+    const headers: Record<string, string> = {
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+    };
+
+    if (this.nonce) {
+      headers['X-WP-Nonce'] = this.nonce;
+    }
+
+    const token = this.token;
+
+    if (token) {
+      headers['X-StoreCrew-Session'] = token;
+    }
+
+    const response = await fetch(`${this.root}/chat/${uuid}/messages`, {
+      method: 'POST',
+      headers,
+      credentials: 'same-origin',
+      body: JSON.stringify({ message }),
+    });
+
+    const type = response.headers.get('content-type') ?? '';
+
+    if (!response.ok || !type.includes('text/event-stream') || !response.body) {
+      // The buffered JSON path, including every error the guards return.
+      const text = await response.text();
+      let parsed: unknown = null;
+
+      try {
+        parsed = text ? JSON.parse(text) : null;
+      } catch {
+        parsed = null;
+      }
+
+      if (!response.ok) {
+        const error = (parsed ?? {}) as { code?: string; message?: string; data?: { retryAfter?: number } };
+
+        throw new ApiFailure(
+          { code: error.code ?? 'http_error', message: error.message ?? 'Something went wrong.', retryAfter: error.data?.retryAfter },
+          response.status,
+        );
+      }
+
+      return ((parsed as { data?: ReplyPayload })?.data ?? ({} as ReplyPayload)) as ReplyPayload;
+    }
+
+    // Incremental SSE parse. Events end at a blank line; anything after the
+    // last separator is a partial event held for the next chunk.
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let done: ReplyPayload | null = null;
+    let failure: ApiFailure | null = null;
+
+    const handle = (raw: string): void => {
+      let event = 'message';
+      let data = '';
+
+      for (const line of raw.split('\n')) {
+        const clean = line.replace(/\r$/, '');
+
+        if (clean.startsWith('event:')) event = clean.slice(6).trim();
+        if (clean.startsWith('data:')) data += clean.slice(5).trim();
+      }
+
+      if (!data) return;
+
+      let payload: unknown;
+
+      try {
+        payload = JSON.parse(data);
+      } catch {
+        return;
+      }
+
+      if (event === 'delta') {
+        const text = (payload as { text?: string }).text ?? '';
+        if (text) onDelta(text);
+      } else if (event === 'done') {
+        done = payload as ReplyPayload;
+      } else if (event === 'error') {
+        const error = payload as { code?: string; message?: string };
+        failure = new ApiFailure({ code: error.code ?? 'stream_error', message: error.message ?? 'Something went wrong.' }, 200);
+      }
+    };
+
+    for (;;) {
+      const { value, done: eof } = await reader.read();
+
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+
+        let cut: number;
+
+        while ((cut = buffer.indexOf('\n\n')) !== -1) {
+          handle(buffer.slice(0, cut));
+          buffer = buffer.slice(cut + 2);
+        }
+      }
+
+      if (eof) break;
+    }
+
+    if (failure) throw failure;
+
+    if (!done) {
+      // The stream ended without its final event — a proxy cut it off. The
+      // deltas the customer saw were real; report the truncation honestly.
+      throw new ApiFailure({ code: 'stream_truncated', message: 'The connection was interrupted.' }, 200);
+    }
+
+    return done;
+  }
+
   async close(uuid: string): Promise<void> {
     await this.call('POST', `/chat/${uuid}/close`);
   }
