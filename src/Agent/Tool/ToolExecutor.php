@@ -65,10 +65,10 @@ final class ToolExecutor {
 		if ( ! $tool instanceof ToolInterface ) {
 			// Recorded even though nothing ran: a model repeatedly inventing
 			// tool names is a prompt problem worth seeing in the inspector —
-			// and resolved to *error*, not left pending, so a hallucinated
-			// call is as visible as a denial, never mistaken for one awaiting
-			// approval.
-			$call_id = $this->record( $call, $context, $run_id, ToolInterface::INTENT_READ, 'auto', ToolResult::STATUS_ERROR );
+			// and resolved by the finish() below, not left pending, so a
+			// hallucinated call is as visible as a denial and is never
+			// mistaken for one awaiting approval.
+			$call_id = $this->record( $call, $context, $run_id, ToolInterface::INTENT_READ, AgentConfigRepository::MODE_AUTO );
 
 			$missing = ToolResult::error(
 				sprintf( 'There is no tool called "%s".', $call->name )
@@ -81,7 +81,7 @@ final class ToolExecutor {
 
 		$mode = $this->configs->tool_mode( $context->agent_id, $tool->id() );
 
-		$call_id = $this->record( $call, $context, $run_id, $tool->intent(), $mode, ToolCallRepository::STATUS_PENDING );
+		$call_id = $this->record( $call, $context, $run_id, $tool->intent(), $mode );
 
 		if ( AgentConfigRepository::MODE_DISABLED === $mode ) {
 			$this->finish( $call_id, ToolResult::disabled( 'That action is switched off for this agent.' ) );
@@ -187,15 +187,24 @@ final class ToolExecutor {
 	}
 
 	/**
-	 * @param array<string, mixed>|null $_unused Reserved.
+	 * Write the call row, redacted, before anything runs.
+	 *
+	 * The row always inserts `pending` — the repository owns that, and this
+	 * method has no say in it. Every path out of `execute()` that ran or
+	 * refused anything resolves the row through `finish()`; the one path that
+	 * deliberately leaves it pending is a write waiting in the approval
+	 * queue, which is what `pending` means to the merchant reading it.
+	 *
+	 * @param string $intent `ToolInterface::INTENT_*` — reads never queue.
+	 * @param string $mode   `AgentConfigRepository::MODE_*` for this agent.
+	 * @return int Row id, for `finish()`.
 	 */
 	private function record(
 		ToolCall $call,
 		ToolContext $context,
 		int $run_id,
 		string $intent,
-		string $mode,
-		string $_status
+		string $mode
 	): int {
 		$auth_mode = AgentConfigRepository::MODE_AUTO === $mode
 			? ToolCallRepository::AUTH_AUTO
