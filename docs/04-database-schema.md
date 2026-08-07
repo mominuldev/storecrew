@@ -16,7 +16,7 @@
 | Engine | InnoDB, always |
 | Charset | `$wpdb->get_charset_collate()` — never hardcoded |
 | Primary keys | `BIGINT UNSIGNED AUTO_INCREMENT` |
-| Public identifiers | A separate `uuid CHAR(36)`. Auto-increment IDs are never exposed in a URL, REST payload, or the widget |
+| Public identifiers | A separate `uuid CHAR(36)`, on conversations only — the one row the public surface must address. An auto-increment ID never reaches a storefront URL, widget payload, or unauthenticated response. Admin REST responses do return run, call, and index-run ids to capability-holding staff: there they are inspector handles, not addresses, and inventing uuids for them would buy nothing |
 | Timestamps | `DATETIME` in UTC. Not `TIMESTAMP` — the 2038 limit is inside a plausible support window |
 | JSON columns | `LONGTEXT` holding JSON, not the native `JSON` type — MariaDB 10.6 and MySQL 8 disagree on behaviour, and `dbDelta` handles `LONGTEXT` predictably |
 | Money | `BIGINT` micros (millionths). No floats anywhere near cost |
@@ -94,7 +94,7 @@ CREATE TABLE {prefix}scr_conversations (
 
 **`identity_verified` is a security column, not a convenience flag.** FR-SUPPORT-02 forbids disclosing any order, customer, or address data until identity is proven. It is set only by the verification tool — either a logged-in session, or an order number matched against its billing email. Every order-reading tool checks it. It resets to `0` if `customer_id` changes mid-conversation, so a session cannot inherit a previous visitor's verification on a shared device.
 
-**No raw email is stored here.** Verification compares a hash and records only which order was proven, so a leaked conversations table does not leak a customer list.
+**No raw email is stored here.** Verification compares the supplied address against the order's billing email in memory and records only which order was proven, so a leaked conversations table does not leak a customer list. (The address the model passed as an argument is redacted before the tool call is persisted — § 11.)
 
 ### 3.2 `scr_messages`
 
@@ -192,7 +192,7 @@ CREATE TABLE {prefix}scr_tool_calls (
 
 **The approval queue is this table, not a separate one** (FR-ADMIN-06). A pending write is a tool call that has not executed yet; modelling it separately would mean two rows describing one act, and an opportunity for them to disagree about whether it ran. `approval_queue` on `(auth_mode, status, created_at)` serves the queue view directly.
 
-`arguments` and `result` are capped at 64 KB by the repository before write. A tool returning a 5 MB payload is a bug, and the log should not amplify it into a disk problem.
+`arguments` and `result` are capped at 65,535 bytes — the `TEXT` ceiling, one byte under 64 KB — before write, and the cap lives in the shared `Repository` base, so **every** JSON column in the plugin carries it, not just these two. The behaviour is replacement, not clipping: an oversized payload is stored as `{"_truncated":true,"_bytes":N}`, because a half-written object that fails to decode later is worse than an honest "this was too big" — and that marker is what an inspector reading the row will see. A tool returning a 5 MB payload is a bug, and the log should not amplify it into a disk problem. (`arguments` also passes through identity redaction before it is written — § 11.)
 
 ---
 
@@ -224,6 +224,8 @@ CREATE TABLE {prefix}scr_knowledge_sources (
 ```
 
 `source_type` ∈ `product | product_variation | category | attribute | page | post | document | faq | policy`.
+
+The enum is vocabulary, not capability: `product` and `post` have extractors today (`page` flows through the post extractor), and the remaining values are **reserved for planned extractors** — declared now so adding one is a registration, never a migration.
 
 **`content_hash` is what makes FR-KB-07 work.** On `save_post` / product save, the extractor hashes the extracted text. Unchanged hash means no re-embedding — which matters because a merchant bulk-editing stock would otherwise trigger a full re-embed and a provider bill. This is the single most important cost control in the indexing pipeline.
 
@@ -258,13 +260,21 @@ CREATE TABLE {prefix}scr_knowledge_chunks (
 
 ## 6. Vector Search at Scale — R-TECH-01 / Assumption A3
 
-Assumption A3 was that MySQL cosine similarity over a custom table is fast enough at 10k–50k chunks. **Scanning every vector on every query does not survive that claim.** The schema is therefore designed for a two-stage retrieval, not a full scan:
+Assumption A3 was that MySQL cosine similarity over a custom table is fast enough at 10k–50k chunks. Cosine over a 1536-dimension packed vector costs about 90 microseconds in PHP — measured, not guessed — so a full scan runs roughly 91 ms at 1,000 chunks, 2.7 s at 30,000, and 13.6 s at 150,000. **A full scan on every query does not survive A3 at scale — but below a couple of thousand chunks it survives it comfortably**, and the two regimes are not equally accurate. `KnowledgeChunkRepository::search()` is therefore built around that dividing line rather than around one strategy, and every query reports which path answered it. Five outcomes:
 
-1. **Lexical prefilter.** `MATCH(content) AGAINST(...)` in boolean mode narrows the corpus to the top *N* candidates (default 200), using the `content_ft` index. This is an indexed operation.
-2. **Dense rerank.** Cosine similarity is computed in PHP over only those *N* packed vectors — 200 × 1536 floats is roughly 1.2 MB of arithmetic, comfortably inside the 300 ms p95 budget.
-3. **Fusion.** Scores combine with configurable weighting (FR-KB-05).
+- **`dense_full`** — at or below `DENSE_SCAN_THRESHOLD = 2000` embedded chunks, the prefilter is skipped and every vector is scored. This is the accurate path, and it is the default for any realistic small store; 2,000 keeps the scan inside the 300 ms p95 retrieval budget with headroom.
+- **`hybrid`** — above the threshold, `MATCH(content) AGAINST(… IN NATURAL LANGUAGE MODE)` narrows the corpus to the top *N* candidates (default 200) over the `content_ft` index, and cosine runs in PHP over only those — 200 × 1536 floats is roughly 1.2 MB of arithmetic.
+- **`dense_fallback`** — the lexical arm returned fewer than `LEXICAL_FLOOR = 1` rows, i.e. nothing at all: a query phrased entirely in words absent from the corpus. A bounded full scan runs instead, capped at `MAX_DENSE_SCAN = 5000` and firing `storecrew_retrieval_truncated` when the cap bites, so incomplete recall is announced rather than swallowed. The floor is deliberately 1 — a query matching one or two chunks is *precise*, not failed, and an earlier floor of 3 triggered the very scan the design exists to avoid.
+- **`lexical_only`** — no query vector exists (no embedding provider configured); FULLTEXT relevance alone.
+- **`empty`** — nothing matched by either arm.
 
-The cost is recall on queries where the lexical arm surfaces nothing useful. That is a measurable quantity, and FR-KB-09 already requires a recall figure against a fixture set before launch. **If measured recall falls below 0.88, the fallback is a widened prefilter, then an external vector store** — which is why nothing outside the retrieval repository knows how vectors are stored.
+`search()` returns `strategy`, `candidates`, and `truncated` alongside the rows, so callers — and the run record — see which path ran instead of assuming.
+
+**Fusion is configurable, and the measured default is all-dense.** `DEFAULT_DENSE_WEIGHT = 1.0`, filterable via `storecrew_dense_weight`: the lexical arm contributes nothing to *ranking* by default, though it still selects candidates on the hybrid path — candidate selection and scoring are different jobs. The reason is in the normalisation: lexical scores are scaled against the best match *within the candidate set*, so the top keyword hit always scores 1.0 however weak the absolute match, and on a narrow candidate set an incidental word overlap outranks a strong semantic match — which is exactly how "warm hat for winter" once returned a wholesale policy page.
+
+**The measurement FR-KB-09 required has been taken, and it is why this section reads as it does.** On the original ten-question fixture set the lexical-prefilter path scored recall@3 = 0.80 — below the 0.88 bar this document set — against 1.00 for the full dense scan. The current 23-fixture set on a 62-chunk corpus scores 0.96 at weight 1.0, and the weight sweep is monotonic: 0.80 → 0.83, 0.90 → 0.91, 0.95 → 0.91, 1.00 → 0.96. The fallback an earlier draft named first — widen the prefilter — is ruled out, and the reason is structural rather than tunable: FULLTEXT cannot match "warm hat for winter" to a product named "Beanie" because they share no words, so widening the candidate limit cannot help when the correct answer scores zero lexically and is never a candidate at all.
+
+What remains open is precisely the case A3 was about. **Above 2,000 chunks the prefilter runs anyway — a multi-second scan is worse than an imperfect answer — and recall there is unmeasured and expected to be worse.** That is the case that would force the external vector store R-TECH-01 named, which is why nothing outside the retrieval repository knows how vectors are stored.
 
 ### Storage sizing
 
@@ -404,7 +414,8 @@ Forward-only, idempotent, versioned (FR-CORE-04).
 
 - Each migration is a class with an integer `version()` and an `up()`. There is no `down()` — a rollback that has to reverse a data transform on a live store is more dangerous than rolling forward.
 - The runner compares `storecrew_schema_version` against the highest registered migration and applies the gap in order.
-- It runs on `admin_init` when `storecrew_needs_upgrade` is set — **not during activation**. A fatal mid-schema during activation leaves a site that cannot retry, and updating by file upload never calls the activation hook at all.
+- It hooks `admin_init` unconditionally and gates on the version comparison itself — `Migrator::needs_migration()` against `storecrew_schema_version` — **not during activation**, and not on a flag. A fatal mid-schema during activation leaves a site that cannot retry, and updating by file upload never calls the activation hook at all. (`storecrew_needs_upgrade` is written by the activator and deleted after a successful run, but it is bookkeeping, never the trigger.)
+- Under WP-CLI the same check also hooks `init` at priority 5, because `admin_init` never fires there — a site administered purely by `wp` would otherwise never get its tables.
 - Schema creation uses `dbDelta()`, which imposes real formatting constraints: two spaces after `PRIMARY KEY`, `KEY` not `INDEX`, one field per line, and lowercase types. These are not style preferences; `dbDelta` silently fails to apply changes when they are violated.
 - A migration lock (`storecrew_migration_lock`, 5-minute TTL) prevents two concurrent admin requests running the same migration twice.
 - Add-ons contribute their own migrations via `storecrew_register_migrations` and own their own version series.
@@ -428,24 +439,26 @@ Owned by `storecrew-pro`, created by its own migrations, sharing the `scr_` pref
 
 ## 11. Retention & Privacy
 
-| Data | Default | Configurable |
-|---|---|---|
-| Conversations and messages | 12 months | Yes, 1–60 months or never |
-| Agent runs and tool calls | 6 months | Yes |
-| Usage events | 24 months | Yes — counters retained indefinitely |
-| Audit log | 24 months | Yes, minimum 6 months |
-| Knowledge chunks | Until source deleted or reindexed | n/a |
+| Data | Default | Configurable | Status |
+|---|---|---|---|
+| Conversations and messages | 12 months | Yes, 1–60 months or never | **Planned — no pruning job exists yet** |
+| Agent runs and tool calls | 6 months | Yes | **Planned — no pruning job exists yet** |
+| Usage events | 24 months | Yes — counters retained indefinitely | **Planned — no pruning job exists yet** |
+| Audit log | 24 months (730 days) | Yes, minimum 6 months (180-day floor) | **Implemented** — hourly maintenance sweep, batched at 500 |
+| Knowledge chunks | Until source deleted or reindexed | n/a | **Implemented** — deletion follows the source |
 
-- Pruning runs as a scheduled Action Scheduler job, batched, never as a single mass `DELETE`.
-- **GDPR erasure** is wired to the WordPress personal-data exporter and eraser. Erasing a customer anonymises `customer_id`, `verified_order_id`, and any message content attributable to them, while leaving aggregate usage counters intact — those contain no personal data and removing them would corrupt billing history.
-- No raw email addresses or IP addresses are stored in any table above.
+Only the audit-log window is enforced today: `MaintenanceJob` prunes it on the hourly sweep, batched rather than as a single mass `DELETE` — which would lock the table on a busy store, exactly when the log is largest. The 180-day minimum is a floor rather than an off switch, because audit history is a security control and letting it be set to a day would quietly disable it. The other three windows are design targets, marked so a privacy reviewer reads them as intent, not behaviour; when their pruning jobs land, they follow the pattern the audit pruner sets.
+
+- **GDPR erasure is planned, not yet wired.** Nothing registers with the WordPress personal-data exporter and eraser today. The specification for that work: erasing a customer anonymises `customer_id`, `verified_order_id`, and any message content attributable to them, while leaving aggregate usage counters intact — those contain no personal data and removing them would corrupt billing history.
+- **Structured storage never holds a raw email address.** `ToolExecutor` redacts identity-bearing arguments before they are persisted — the `email` key becomes `[redacted]`, and a pattern pass scrubs addresses volunteered inside free-text values — so even a failed `identity.verify` attempt records *that* an email was supplied, never which one. (The tool itself still receives the raw value; redaction happens at the storage boundary, not the execution one. The `storecrew_redacted_argument_keys` filter may only add keys, never remove the shipped ones.) The one place an address can still land is `scr_messages.content`, which stores whatever the customer typed — that is question 4 below, not a gap in this rule.
+- **No raw IP address is stored anywhere** — only a salted SHA-256 (§ 8.2).
 
 ---
 
 ## 12. Open Questions for Gate 2 Review
 
 1. **Embedding precision** — float32, float16, or a 768-dimension model? At 50k products this is the difference between 880 MB and 220 MB, and it changes which hosting tier the product is viable on. Needs a recall measurement to decide honestly.
-2. **Is the two-stage retrieval acceptable?** It trades recall on lexically-poor queries for the ability to run on shared hosting without a vector database. FR-KB-09's measurement should gate this before implementation, not after.
+2. **Is the two-stage retrieval acceptable?** Partially answered by the FR-KB-09 measurement (§ 6): on the small corpus, full-dense wins outright — 0.96–1.00 recall@3 against 0.80 for the prefilter path — so below 2,000 chunks the prefilter is not used at all, and it survives only where a full scan is too slow. What still wants an answer is the large-corpus case the prefilter exists for: recall above 2,000 chunks is unmeasured, and a poor figure there forces the external vector store (R-TECH-01).
 3. **Conversation retention default** — 12 months is generous for storage and useful for analytics. A shorter default is safer for privacy and cheaper to host.
 4. **Should `scr_messages.content` be encrypted at rest?** It can contain anything a customer typed. Encryption blocks the `FULLTEXT` search that conversation history search would want.
 5. **The metering decision from PRD Q1** is now deferrable rather than blocking, but still wants answering before the free tier ships.

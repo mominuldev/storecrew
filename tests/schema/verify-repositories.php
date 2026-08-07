@@ -304,6 +304,15 @@ foreach ( $cleanup['sources'] as $id ) {
 	$chunks->delete_for_source( $id );
 	$sources->delete( $id );
 }
+// InnoDB keeps deleted rows in the FULLTEXT index — and in its term
+// statistics — until an OPTIMIZE. Without this, every run of this suite
+// leaves three ghost documents full of the probe's own search terms, the
+// terms' IDF decays a little further, and after enough runs the
+// lexical-search probe above stops ranking its chunk first. The failure
+// arrives dozens of runs after the cause, on whichever suite searches next.
+$GLOBALS['wpdb']->query(
+	'OPTIMIZE TABLE ' . StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::KNOWLEDGE_CHUNKS )
+);
 foreach ( $cleanup['index_runs'] as $id ) {
 	$index_runs->delete( $id );
 }

@@ -124,6 +124,34 @@ wp_set_current_user( 0 );
 $response = $server->dispatch( new WP_REST_Request( 'GET', '/storecrew/v1/chat/boot' ) );
 $t( 'anonymous boot is allowed', 200 === $response->get_status(), (string) $response->get_status() );
 
+// serve_request() applies rest_post_dispatch before headers go out; dispatch()
+// does not, so the probe applies it the way core does. The boot payload
+// carries a fresh nonce and a resumed visitor's transcript — WP core only
+// sends nocache headers for logged-in users, and this caller is anonymous by
+// design, so the marking must be StoreCrew's own.
+$sent = apply_filters(
+	'rest_post_dispatch',
+	$server->dispatch( new WP_REST_Request( 'GET', '/storecrew/v1/chat/boot' ) ),
+	$server,
+	new WP_REST_Request( 'GET', '/storecrew/v1/chat/boot' )
+);
+$t(
+	'PROBE: chat responses are marked no-store — a cached boot payload is served to the next visitor',
+	str_contains( (string) ( $sent->get_headers()['Cache-Control'] ?? '' ), 'no-store' ),
+	wp_json_encode( $sent->get_headers() )
+);
+
+$other = apply_filters(
+	'rest_post_dispatch',
+	new WP_REST_Response( array() ),
+	$server,
+	new WP_REST_Request( 'GET', '/storecrew/v1/health' )
+);
+$t(
+	'the no-store marking is scoped to chat, not blanket',
+	! isset( $other->get_headers()['Cache-Control'] )
+);
+
 $boot = (array) ( $response->get_data()['data'] ?? array() );
 $t( 'boot answers with a payload', array() !== $boot );
 $t(
@@ -214,7 +242,7 @@ $runner = new AgentRunner(
 $agents = new AgentRegistry();
 $agents->register( CoreAgents::support() );
 
-$orchestrator = new Orchestrator( $agents, $runner, $providers, $policy, $features, $configs );
+$orchestrator = new Orchestrator( $agents, $runner, $providers, $policy, $features, $configs, $c->get( StoreCrew\Ai\SpendGuard::class ) );
 $chat         = new ChatService( $conversations, $messages, $orchestrator );
 $controller   = new ChatController( $features, $chat, $orchestrator, $policy );
 
@@ -224,7 +252,7 @@ $controller   = new ChatController( $features, $chat, $orchestrator, $policy );
 $unconfigured = new ChatController(
 	$features,
 	$chat,
-	new Orchestrator( $agents, $runner, new ProviderRegistry(), new ModelPolicy( new ProviderRegistry() ), $features, $configs ),
+	new Orchestrator( $agents, $runner, new ProviderRegistry(), new ModelPolicy( new ProviderRegistry() ), $features, $configs, $c->get( StoreCrew\Ai\SpendGuard::class ) ),
 	new ModelPolicy( new ProviderRegistry() )
 );
 
@@ -650,6 +678,61 @@ $t(
 );
 
 // ---------------------------------------------------------------------------
+
+echo "\n== The spend cap guards routing too (FR-AI-06) ==\n";
+// The classifier is a provider call. With two agents available and the cap
+// exceeded under the stop behaviour, the orchestrator must fall to the
+// default agent without calling the provider — otherwise a capped store pays
+// flag-fall for routing on every refused turn.
+$saved_cap    = get_option( StoreCrew\Ai\SpendGuard::OPTION_CAP_MICROS );
+$saved_breach = get_option( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH );
+
+$usage_repo = $c->get( UsageRepository::class );
+$usage_repo->record( 'tokens_in', 1, 0, 'probe', 'scripted', 'scripted-1', 5_000_000 );
+update_option( StoreCrew\Ai\SpendGuard::OPTION_CAP_MICROS, 1 );
+update_option( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH, StoreCrew\Ai\SpendGuard::BEHAVIOUR_STOP );
+
+$pair = new AgentRegistry();
+$pair->register( CoreAgents::support() );
+$pair->register( CoreAgents::sales() );
+
+$capped = new Orchestrator(
+	$pair,
+	$runner,
+	$providers,
+	$policy,
+	$features,
+	$configs,
+	new StoreCrew\Ai\SpendGuard( $usage_repo )
+);
+
+$scripted->calls  = 0;
+$scripted->script = array();
+$capped_turn      = $capped->handle( 'Which of these is warmest?', array(), new StoreCrew\Agent\SharedContext( 0 ) );
+
+$t(
+	'PROBE: past the cap, the routing classifier never calls the provider',
+	0 === $scripted->calls,
+	(string) $scripted->calls
+);
+$t(
+	'the turn reports the spend cap, not a mystery failure',
+	'spend_cap' === $capped_turn->error_code,
+	$capped_turn->error_code
+);
+
+// Hand the live options back; the probe usage event is removed with the
+// other scripted-provider events in cleanup below.
+if ( false === $saved_cap ) {
+	delete_option( StoreCrew\Ai\SpendGuard::OPTION_CAP_MICROS );
+} else {
+	update_option( StoreCrew\Ai\SpendGuard::OPTION_CAP_MICROS, $saved_cap );
+}
+if ( false === $saved_breach ) {
+	delete_option( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH );
+} else {
+	update_option( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH, $saved_breach );
+}
 
 echo "\n== Cleanup ==\n";
 

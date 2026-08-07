@@ -251,7 +251,7 @@ because it runs with no database at all.
 
 ## Testing
 
-Nine suites, 566 assertions, green in any run order.
+Nine suites, 583 assertions, green in any run order.
 
 `verify-rest.php` needs `--user=1`: it dispatches through the real REST
 server, and its permission probes deliberately start unauthenticated.
@@ -309,6 +309,7 @@ ciphertext, ragged embedding vectors, and the migration lock.
 | Widget Markdown classified a whole block as list-or-paragraph | "Here is what I can tell you:" then three dashed lines is the shape models actually produce, and it fell to the paragraph branch and printed literal hyphens. Group lines into runs. |
 | `null === ( $x['k'] ?? 'fallback' )` in a probe | `??` treats a **null value** as absent, so the assertion could never pass whatever the endpoint returned. Use `array_key_exists` when null is the expected value. |
 | Ownership probes run as an administrator | A signed-in customer may reclaim their own conversation from any device, so a "stranger" who is the same logged-in user passes every check. Storefront probes must run as user 0. |
+| `verify-repositories` poisoned FULLTEXT stats for its own future runs | InnoDB keeps deleted rows in the FULLTEXT index — and its term statistics — until OPTIMIZE. Each run left three ghost docs full of the probe's own search terms; IDF decayed until the lexical probe stopped ranking its chunk first, dozens of runs after the cause. Cleanup now OPTIMIZEs the table. Any suite that inserts-and-deletes FULLTEXT rows needs the same. |
 
 ---
 
@@ -366,14 +367,14 @@ ciphertext, ragged embedding vectors, and the migration lock.
   screens, both themes, mobile, and a settings write round-trip). It has still
   never been seen with a *populated* inbox against live traffic.
 - Model IDs and pricing are point-in-time (verified 2026-06-24) and will drift.
-- **Gate 2 review (2026-08-07) found four code defects behind documented
-  guarantees** — see `docs/reviews/gate-2-review.md` before touching these
-  areas: (1) `SharedContext::set_retrieved()` has no production caller, so
-  every agent run stores `retrieved = []` and the inspector's provenance is
-  empty; (2) `ToolExecutor` persists tool arguments verbatim, so
-  `identity.verify` writes the customer's raw billing email to
-  `wp_scr_tool_calls.arguments` — no redaction exists; (3) `/chat/boot`
-  sends no `Cache-Control: no-store`, and WP core only nocaches logged-in
-  requests, so CDN-cached REST can leak one visitor's nonce/transcript to
-  another; (4) the `Orchestrator::route()` classifier call is not
-  spend-guarded — a capped store still pays for routing every turn.
+- **The four Gate 2 code defects are fixed and probe-tested** (2026-08-07,
+  `docs/reviews/gate-2-review.md`): retrieval provenance now travels by the
+  `storecrew_retrieval_performed` action into `agent_runs.retrieved`;
+  `ToolExecutor` redacts identity-bearing arguments (the tool still sees raw
+  values — verification depends on it); every `/chat/*` response is marked
+  `no-store` via `rest_post_dispatch`; and the routing classifier is
+  spend-guarded. Still open from that review: retention pruning beyond the
+  audit log and the GDPR exporter/eraser are **planned, not built** (04 § 11
+  now says so); no phpcs/phpstan config exists despite `composer.json`
+  scripts; Pro has no `uninstall.php` though free's uninstall says it does;
+  `storecrew_needs_upgrade` is written but never read.

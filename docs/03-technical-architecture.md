@@ -6,7 +6,7 @@
 **Date:** 2026-08-07
 
 Unusually for a Gate 2 document, this describes an architecture that already
-exists and has been verified — 566 assertions across nine suites, a DB-free
+exists and has been verified — 583 assertions across nine suites, a DB-free
 integration harness, and a live five-turn conversation against a real model.
 Where a choice was validated or falsified by running code, the outcome is
 recorded here rather than the original guess.
@@ -79,10 +79,16 @@ and run a deterministic registration window:
 
 | `plugins_loaded` priority | Event |
 |---|---|
-| 5 | Free plugin boots; core features/providers/tools/agents/controllers registered |
+| 5 | Free plugin boots; core features/providers/extractors/tools/agents/controllers registered |
 | 6 | Premium handshakes (FR-DIST-04), hooks `storecrew_api_ready` |
 | 10 | `storecrew_api_ready` fires — add-ons register |
-| 20 | All registries **freeze**; late writes throw under `WP_DEBUG`, log in production |
+| 20 | All registries **freeze**; a late write throws under `WP_DEBUG` |
+
+In production a rejected write does not throw — a fatal there would punish
+the merchant for an add-on author's mistake. It fires
+`do_action( 'storecrew_registry_rejected', $message )` and is otherwise
+dropped; nothing listens by default, so a site that wants the rejection in
+its logs must hook that action.
 
 Everything downstream reads a stable contribution set. The freeze is what
 makes "which plugin contributed this?" answerable, which is what makes the
@@ -103,15 +109,22 @@ the moment anything touches one at registration time.
 Full treatment in [04](04-database-schema.md). Architectural rules:
 
 - **Only repositories touch `$wpdb`** — ten of them, over eleven tables.
-  Enforced by static analysis (`storecrew.noGlobalWpdb`). The payoff is
-  substitution: nothing outside `KnowledgeChunkRepository` knows embeddings
-  are packed float32 in a LONGBLOB, so the R-TECH-01 external-vector-store
-  contingency changes one class.
+  Enforced by convention and checked at review; no automated rule exists
+  yet. One deliberate carve-out sits outside `Database/`:
+  `Knowledge/Extractor/PagesPostTypeIds.php` calls `$wpdb->prepare()` inside
+  a `posts_where` filter to add the keyset-pagination cursor `WP_Query`
+  cannot express — it augments core's own query rather than touching plugin
+  tables, which is what the rule actually protects. (`Tables.php` and the
+  migrator also touch `$wpdb`, but they live inside `Database/`.) The payoff
+  is substitution: nothing outside `KnowledgeChunkRepository` knows
+  embeddings are packed float32 in a LONGBLOB, so the R-TECH-01
+  external-vector-store contingency changes one class.
 - **WooCommerce data goes through CRUD** (`wc_get_product`, `wc_get_order`),
   never post meta — this is what keeps the declared HPOS compatibility true
   (FR-CORE-02) rather than aspirational.
-- **Migrations are forward-only and run on `admin_init`** (plus `init` under
-  WP-CLI), not on activation: a fatal mid-schema during activation leaves no
+- **Migrations are forward-only and run on `admin_init`** (plus `init` at
+  priority 5 under WP-CLI, which never fires `admin_init`), gated by a
+  version comparison in `Migrator::needs_migration()` — not on activation: a fatal mid-schema during activation leaves no
   retry path, and update-by-file-upload never fires activation at all. The
   migration lock is an `add_option` — atomic via the unique index — because a
   transient can be served stale from an object cache to two requests at once.
@@ -144,8 +157,14 @@ choices:
   honours the proxy constants locked-down hosts rely on.
 - **Cost reports unknown, never zero** (`Pricing`). A fabricated figure
   produces a spend cap that never trips while the merchant believes they are
-  protected (R-COST-01). `SpendGuard` enforces a hard monthly ceiling before
-  any call is made.
+  protected (R-COST-01). `SpendGuard` checks the monthly ceiling at each
+  spend site — `AgentRunner`, `Indexer`, and the routing classifier in
+  `Orchestrator` — before the provider is called. The shipped default is no
+  cap until the merchant sets one, and the `warn` behaviour deliberately
+  lets calls proceed while firing `storecrew_spend_cap_exceeded`. Under
+  `stop` the guarantee is "no further calls": the check runs per call,
+  before it, so a single call can still carry the total past the ceiling —
+  the cap bounds damage, it is not a to-the-cent budget.
 - **Secrets** live in `SecretStore`: envelope encryption, data key wrapped by
   a master, master rotation re-wraps one blob, and data-key rotation refuses
   to proceed if any secret fails to decrypt first — a partial rotation would
@@ -170,16 +189,25 @@ Extract → chunk → embed → retrieve, with two measured findings baked in.
   re-embedded without intervention after a key became available.
 - **Retrieval is adaptive, on measured numbers** (FR-KB-09, R-TECH-01).
   Cosine over a 1536-dim vector costs ~90 µs, so a full dense scan is ~91 ms
-  at 1,000 chunks and 13.6 s at 150,000. Below 2,000 chunks every query gets
-  the full scan; above, the lexical prefilter. The measurement also
-  *demoted* the hybrid design: the lexical arm hurt ranking (recall@3 0.80 vs
-  1.00 pure-dense on the fixture set) because its score normalises against
-  the best match within the candidate set, so the top keyword hit always
-  scores 1.0 however weak. Default fusion weight is 1.0 — dense only.
-  Large-corpus recall remains unmeasured; that case is the external-index
-  contingency R-TECH-01 names.
-- **Truncation is never silent** — `storecrew_retrieval_truncated` fires when
-  results are capped.
+  at 1,000 chunks and 13.6 s at 150,000. At or below 2,000 embedded chunks,
+  every query that has a query vector gets the full scan; above, the lexical
+  prefilter. (No embedding provider means no query vector, so retrieval is
+  lexical-only at any corpus size.) The current measurement
+  (`tools/measure-recall.php`: 23 fixtures over the 62-chunk corpus) scores
+  recall@3 0.96 at dense weight 1.0, and the weight sweep is monotonic —
+  0.83 at 0.80, 0.91 at 0.90 and 0.95, 0.96 at 1.00. What *demoted* the
+  hybrid design was the earlier ten-question set: the lexical arm hurt
+  ranking there (recall@3 0.80 vs 1.00 pure-dense — a different, smaller
+  corpus, but the same direction) because its score normalises against the
+  best match within the candidate set, so the top keyword hit always scores
+  1.0 however weak. Default fusion weight is 1.0 — dense only. Large-corpus
+  recall remains unmeasured; that case is the external-index contingency
+  R-TECH-01 names.
+- **Truncation is never silent** — `storecrew_retrieval_truncated` fires
+  when the bounded dense-fallback scan hits its `MAX_DENSE_SCAN` ceiling
+  (5,000 vectors), the one path on which results can be incomplete without
+  the caller knowing. The prefilter's 200-candidate cap is the design
+  working as intended, not truncation, and does not fire it.
 - Known structural gap: exact-identifier lookup (SKU) fails at every fusion
   weight; it needs its own tool, not semantic retrieval.
 
@@ -204,15 +232,22 @@ Full treatment in [08](08-agent-framework.md). The architecture in brief:
   identity verification proves *one order* and `order.lookup` refuses any
   other (R-SEC-02); mid-turn verification propagates via a server-side action
   listener, not via anything the model returns.
-- **Retrieved content is untrusted input**: it enters prompts as user-role
-  content, never system, and the system prompt instructs the model to treat
+- **Retrieved content is untrusted input**: it reaches the model as
+  tool/user-role content, never as a system instruction. The never-system
+  half is unconditional — `Message` carries no system role at all. The
+  tool/user half is provider dialect: Anthropic and Gemini wrap tool
+  results on a user turn, OpenAI-compatible providers use a dedicated
+  `role: 'tool'` message. The system prompt instructs the model to treat
   tool output as data.
 - **Turns are budgeted from outside** (`TurnBudget`: tool calls, tokens,
   wall-clock), and exhaustion is a recorded outcome (`budget_exceeded`), not
   an error — visible in the inspector rather than disguised as a short answer.
 - **Routing is cheap by design**: a small model on the `routing` task picks
   the owning agent; any routing failure falls through to the default agent,
-  because a classifier outage must not cost the customer an answer.
+  because a classifier outage must not cost the customer an answer. The
+  classifier call is spend-guarded like every other — a store past its cap
+  under `stop` routes straight to the default agent rather than paying to
+  classify.
 
 ---
 
@@ -226,7 +261,12 @@ The only anonymous-facing subsystem (FR-CHAT). Architecture:
 - **Cache-safety is a design axis**: the storefront page carries one `async`
   script tag and the REST root — no nonce, no state — because Woo storefronts
   are page-cached and anything in the document is served to the next
-  thousand visitors. Per-visitor data comes from `/chat/boot`, never cached.
+  thousand visitors. Per-visitor data comes from `/chat/boot` — and "never
+  cached" is enforced, not hoped for: `ChatController` marks the whole chat
+  surface `Cache-Control: no-store` via a `rest_post_dispatch` filter, so it
+  covers all five routes and their error responses. WP core's nocache
+  headers apply only to logged-in users, and these routes exist for
+  anonymous ones.
 - **History is rebuilt server-side each turn**; the client posts one message.
 - **Rate limiting is two windows** — per session (tight) and per hashed IP
   (loose backstop) — because either alone is trivially defeated (FR-CHAT-06).
@@ -284,7 +324,20 @@ two surfaces have opposite constraints — an authenticated 300 KB SPA versus a
 - Every agent run records provider, model, tokens, cost (or cost-unknown),
   latency, retrieved chunk ids/scores (ids only — never text, which would
   duplicate the corpus), and every tool call with arguments, result, and
-  authorisation mode (FR-ADMIN-04, FR-AGENT-07).
+  authorisation mode (FR-ADMIN-04, FR-AGENT-07). Retrieval provenance
+  travels by action, not by return path: `Retriever` fires
+  `storecrew_retrieval_performed` with its results, and `AgentRunner`
+  listens for exactly the duration of the run (detached in a `finally`),
+  accumulating each chunk's best score across the turn into
+  `SharedContext` — the same server-side listener pattern as mid-turn
+  identity verification, chosen so tools need no reference back to the run
+  that invoked them.
+- Persisted tool arguments are redacted first: `ToolExecutor` blanks
+  identity-bearing values (the `email` key, plus a pattern pass over string
+  values) before writing, while the tool itself still receives the raw
+  value — the run record shows *that* an email was supplied, never which
+  one. The `storecrew_redacted_argument_keys` filter can only add keys,
+  never remove them.
 - The audit log is append-only by design — no update method exists — and
   stores salted IP hashes, never addresses.
 - Escalation is a status transition that keeps the conversation open, plus a
@@ -308,6 +361,13 @@ live option they write (a suite that `delete_option`s its way to cleanliness
 wipes a configured store — found the day the first store was configured);
 `wp eval-file` runs through `eval()`, so test files carry no
 `declare(strict_types=1)`.
+
+Invocation preconditions are part of the contract, not folklore:
+`verify-rest.php` and `verify-chat.php` take `--user=1` because their
+permission probes deliberately start unauthenticated; `verify-admin.php`
+*requires* it — the suite fatals without a user — and additionally requires
+storecrew-pro active, because one probe asserts a Pro route reaches the
+capability manifest.
 
 ---
 

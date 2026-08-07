@@ -74,6 +74,7 @@ $spy = new class() implements ToolInterface {
 	public string $needed_cap    = '';
 	public bool $needs_identity  = false;
 	public string $tool_intent   = ToolInterface::INTENT_READ;
+	public array $last_input     = array();
 
 	public function id(): string { return 'probe.spy'; }
 	public function definition(): ToolDefinition {
@@ -84,6 +85,7 @@ $spy = new class() implements ToolInterface {
 	public function requires_identity(): bool { return $this->needs_identity; }
 	public function execute( ToolContext $context, array $input ): ToolResult {
 		++$this->runs;
+		$this->last_input = $input;
 		return ToolResult::ok( 'ran' );
 	}
 };
@@ -179,6 +181,42 @@ $t( 'the disabled tool never executed', 0 === $spy->runs );
 $configs->delete_for_agent( 'probe-agent' );
 $spy->tool_intent = ToolInterface::INTENT_READ;
 
+echo "\n== Arguments are redacted before storage (04 § 11) ==\n";
+// identity.verify receives the customer's billing email as an argument on
+// every attempt, including failed ones. The tool must see the real value —
+// verification compares it — but the stored record must not.
+$spy->runs       = 0;
+$spy->last_input = array();
+$result          = $executor->execute(
+	new ToolCall(
+		'r1',
+		'probe.spy',
+		array(
+			'email' => 'shopper@example.com',
+			'note'  => 'reach me at shopper@example.com about this',
+			'order' => '1042',
+		)
+	),
+	$open_context
+);
+$t( 'the redacted call still ran', $result->is_ok() && 1 === $spy->runs );
+$t(
+	'PROBE: the tool itself receives the raw email — verification depends on it',
+	'shopper@example.com' === ( $spy->last_input['email'] ?? '' )
+);
+
+$stored_args = (string) $GLOBALS['wpdb']->get_var(
+	'SELECT arguments FROM ' . Tables::name( Tables::TOOL_CALLS ) . ' ORDER BY id DESC LIMIT 1'
+);
+$t(
+	'PROBE: a raw email never reaches the tool_calls table',
+	! str_contains( $stored_args, 'shopper@example.com' ),
+	$stored_args
+);
+$t( 'the record still shows an email was supplied', str_contains( $stored_args, '[redacted]' ) );
+$t( 'PROBE: an email inside a free-text argument is scrubbed too', ! str_contains( $stored_args, '@example.com' ) );
+$t( 'non-sensitive arguments survive untouched', str_contains( $stored_args, '1042' ) );
+
 echo "\n== Turn budget (FR-AGENT-06) ==\n";
 $budget = new TurnBudget( max_tool_calls: 3, max_tokens: 1000, max_seconds: 60 );
 $t( 'a fresh budget is not exhausted', ! $budget->exhausted() );
@@ -210,6 +248,13 @@ $t(
 	'PROBE: retrieval trace never carries chunk text',
 	! array_key_exists( 'content', $retrieved[0] )
 );
+
+// One turn can retrieve more than once — a product search and then a policy
+// lookup — and the run record should show everything that grounded the answer.
+$context->set_retrieved( array( array( 'id' => 9, 'score' => 0.5 ), array( 'id' => 5, 'score' => 0.99 ) ) );
+$scores = array_column( $context->retrieved(), 'score', 'id' );
+$t( 'retrieval trace accumulates across retrievals', isset( $scores[5], $scores[9] ) );
+$t( 'a chunk retrieved twice keeps its best score', 0.99 === $scores[5] );
 
 echo "\n== Agent allow-lists ==\n";
 $sales   = StoreCrew\Agent\CoreAgents::sales();
@@ -296,6 +341,68 @@ $t( 'PROBE: the tool result was fed back', 3 === count( $second->messages ) );
 $t( 'PROBE: the loop sent an assistant tool-request turn', $second->messages[1]->has_tool_calls() );
 $t( 'PROBE: and a tool-role result', Message::ROLE_TOOL === $second->messages[2]->role );
 $t( 'the result references its call id', 'tc1' === $second->messages[2]->tool_call_id );
+
+echo "\n== Runner: retrieval provenance reaches the run record (FR-ADMIN-04) ==\n";
+// Tools receive a ToolContext, never the run's SharedContext, so provenance
+// travels by the storecrew_retrieval_performed action and the listener the
+// runner attaches. This is the wiring that was once missing entirely — every
+// production run stored `retrieved = []` and no suite noticed.
+$grounded = new class() implements ToolInterface {
+	public function id(): string { return 'probe.grounded'; }
+	public function definition(): ToolDefinition {
+		return new ToolDefinition( 'probe.grounded', 'A probe tool that retrieves.', array( 'type' => 'object' ) );
+	}
+	public function intent(): string { return ToolInterface::INTENT_READ; }
+	public function required_capability(): string { return ''; }
+	public function requires_identity(): bool { return false; }
+	public function execute( ToolContext $context, array $input ): ToolResult {
+		// What Retriever announces after every search.
+		do_action(
+			'storecrew_retrieval_performed',
+			array(
+				array( 'id' => 41, 'score' => 0.91, 'content' => 'chunk text that must never be stored' ),
+				array( 'id' => 42, 'score' => 0.77, 'content' => 'more chunk text' ),
+			),
+			'probe query'
+		);
+		return ToolResult::ok( 'grounded' );
+	}
+};
+$tools->register( $grounded->id(), static fn () => $grounded );
+
+$ground_agent = new Agent(
+	id: 'probe-agent',
+	label: 'Probe',
+	mission: 'Answer probes.',
+	persona: '',
+	tool_ids: array( 'probe.grounded' )
+);
+
+$scripted->calls  = 0;
+$scripted->script = array(
+	new ChatResponse( '', 'scripted-1', 'scripted', new TokenUsage( 10, 5 ), ChatResponse::STOP_TOOL, 0, array(),
+		array( new ToolCall( 'g1', 'probe.grounded', array() ) ) ),
+	new ChatResponse( 'Grounded answer.', 'scripted-1', 'scripted', new TokenUsage( 10, 5 ) ),
+);
+
+$turn = $runner->run( $ground_agent, array( Message::user( 'ground me' ) ), new SharedContext( 0 ) );
+$t( 'the grounded turn answered', $turn->succeeded(), $turn->outcome );
+
+$provenance = $runs_repo->retrieved( $turn->run_id );
+$ids        = null === $provenance ? array() : array_column( $provenance, 'id' );
+$t(
+	'PROBE: the run record carries the retrieved chunk ids',
+	in_array( 41, $ids, true ) && in_array( 42, $ids, true ),
+	wp_json_encode( $provenance )
+);
+$t(
+	'PROBE: stored provenance carries no chunk text',
+	! str_contains( (string) wp_json_encode( $provenance ), 'chunk text' )
+);
+$t(
+	'PROBE: the listener does not outlive the run',
+	! has_action( 'storecrew_retrieval_performed' )
+);
 
 echo "\n== Runner: tools outside the allow-list ==\n";
 $spy->runs        = 0;

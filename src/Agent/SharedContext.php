@@ -79,18 +79,41 @@ final class SharedContext {
 	 * Store what retrieval returned, for the run record.
 	 *
 	 * Ids and scores only — never chunk text, which would duplicate the corpus
-	 * into every run row.
+	 * into every run row. Accumulates rather than replaces: one turn can
+	 * retrieve more than once (a product search and then a policy lookup), and
+	 * the run record should show everything that grounded the answer. A chunk
+	 * retrieved twice keeps its best score.
 	 *
 	 * @param list<array<string, mixed>> $chunks Retrieved chunks.
 	 */
 	public function set_retrieved( array $chunks ): void {
-		$this->retrieved = array_map(
-			static fn ( array $c ): array => array(
-				'id'    => (int) ( $c['id'] ?? 0 ),
-				'score' => round( (float) ( $c['score'] ?? 0 ), 4 ),
-			),
-			$chunks
-		);
+		$best = array();
+
+		foreach ( $this->retrieved as $entry ) {
+			$best[ (int) $entry['id'] ] = (float) $entry['score'];
+		}
+
+		foreach ( $chunks as $c ) {
+			if ( ! is_array( $c ) ) {
+				continue;
+			}
+
+			$id    = (int) ( $c['id'] ?? 0 );
+			$score = round( (float) ( $c['score'] ?? 0 ), 4 );
+
+			if ( ! isset( $best[ $id ] ) || $score > $best[ $id ] ) {
+				$best[ $id ] = $score;
+			}
+		}
+
+		$this->retrieved = array();
+
+		foreach ( $best as $id => $score ) {
+			$this->retrieved[] = array(
+				'id'    => $id,
+				'score' => $score,
+			);
+		}
 	}
 
 	/**

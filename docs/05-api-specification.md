@@ -21,16 +21,32 @@ shape `{ "code": "storecrew_<slug>", "message": "<human sentence>", "data":
 { "status": <int>, ... } }`. Messages are written for humans; codes for
 programs; the SPA and widget branch on codes only.
 
+One stated exception: four of the 400s documented below — missing or
+whitespace provider key, empty `/knowledge/search` query, invalid
+`/approvals` decision, missing chat `message` — are raised by core's
+argument validator *before* the callback runs, so they carry core codes
+(`rest_invalid_param`, `rest_missing_callback_param`), not `storecrew_*`.
+The status is 400 either way; only the prefix differs. Clients treat any
+4xx code as an error and branch on `storecrew_*` codes where they exist.
+
 ### 1.2 Authentication and authorisation
 
 - **Deny by default.** `RestController::permission()` refuses unless a
-  StoreCrew capability is held; there is no route without a permission
-  callback, and an unauthenticated route is declared with the deliberately
-  named `public_access()` so it is visible at the call site.
+  StoreCrew capability is held; StoreCrew registers 21 routes, every one
+  with an explicit permission callback, and an unauthenticated route is
+  declared with the deliberately named `public_access()` so it is visible
+  at the call site. A route listing shows a 22nd pattern — the namespace
+  index at `/storecrew/v1`, which WordPress generates for every namespace
+  (anonymous, enumerates routes and schemas, no permission callback of its
+  own). It is core's, standard on every namespace, not one of ours.
 - Capabilities: `storecrew_manage` (default), `storecrew_manage_agents`,
   `storecrew_view_analytics`, `storecrew_converse`. Granted to
   administrators and shop managers on activation — the admin surface is not
-  `manage_options`-locked (a shop manager runs the crew).
+  `manage_options`-locked (a shop manager runs the crew). Only the first
+  two gate routes: `view_analytics` and `converse` are declared, granted,
+  and surfaced in `/bootstrap`'s user block, but no core route checks them
+  here — `converse` is consumed at the tool-authorisation boundary, not at
+  REST.
 - **Entitlement is re-checked server-side** per request (FR-DIST-09). The
   capability manifest the SPA holds is a rendering hint; editing it in the
   browser earns a 403 here.
@@ -55,7 +71,7 @@ what authorises (§ 3).
 | Route | Method | Purpose |
 |---|---|---|
 | `/bootstrap` | GET | Everything the SPA needs at first paint: version, API version, feature manifest (free features true, premium false until entitled), admin routes, onboarding state (`canEmbed`, key presence). |
-| `/health` | GET | Environment (PHP/WP/Woo versions), queue availability, index health (chunks, embedded, **stranded/mismatched counts** — vectors from another model or width look healthy while scoring 0.0), spend status, encryption key source. |
+| `/health` | GET | Environment (PHP/WP/Woo versions, HPOS mode), queue availability, index health (`sources`, `chunks`, `embedded`, `pending`, `model`, `dimensions`, `mismatched` — a stranded vector surfaces as **pending or mismatched**; vectors from another model or width look healthy while scoring 0.0), spend status, encryption key source. |
 
 ### Providers
 
@@ -79,16 +95,16 @@ what authorises (§ 3).
 |---|---|---|
 | `/index` | GET | Source counts by status, queue health, active run (with heartbeat-derived liveness), recent runs. |
 | `/index/estimate` | GET | Pre-flight cost estimate (R-COST-01). Reports `costKnown: false` rather than a fabricated zero when rates are unknown. |
-| `/index/start` | POST | Queue a full index run → 202 with `runId`. A live concurrent run → 409. |
+| `/index/start` | POST | Queue a full index run → 202 with `runId`. Refusals in order: queue unavailable → 503 (`storecrew_queue_unavailable`) — checked *first*, because on a broken install it is the failure a merchant actually hits; a live concurrent run → 409. |
 | `/index/cancel` | POST | Cancel the active run → 200; nothing to cancel → 409. |
-| `/index/embed` | POST | Queue embedding of pending/stranded chunks. |
+| `/index/embed` | POST | Queue embedding of pending/stranded chunks → 202 with `queued: true`. |
 
 ### Knowledge
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/knowledge/search` | POST | Retrieval dry-run for FR-KB-10 ("what would the agent have seen?"): results with scores, the strategy used (dense / prefilter), and a `degraded` reason when no embedding provider is live. Empty query → 400. |
-| `/knowledge/sources` | GET | Indexed sources with chunk counts and status. |
+| `/knowledge/search` | POST | Retrieval dry-run for FR-KB-10 ("what would the agent have seen?"): results with scores, the `strategy` used — one of `dense_full`, `hybrid`, `dense_fallback`, `lexical_only`, `empty`, reported because each fails for a different reason and the fix differs — and a `degraded` reason when no embedding provider is live. Empty query → 400. |
+| `/knowledge/sources` | GET | Source status histogram (`statusCounts`) plus how many sources await indexing (`needingIndex`). Chunk counts live on `/health` and `/index`, not here. |
 
 ### Conversations & approvals
 
@@ -103,8 +119,14 @@ what authorises (§ 3).
 
 ## 3. Public Chat Routes (FR-CHAT)
 
-The only `public_access()` routes. Three checks replace authentication:
-feature enabled + store ready, session-token ownership, rate limit.
+The only `public_access()` routes. Three checks replace authentication —
+feature enabled + store ready, session-token ownership, rate limit — but
+not all three on every route; the per-route table below is exact.
+Enabled + ready gates only opening a conversation and speaking
+(`/chat/session` and the message POST): a merchant switching chat off must
+not strand a customer's ability to read or close their own open thread, so
+`history` and `close` require ownership alone. The rate limit is spent only
+on speaking.
 
 **Session model.** `POST /chat/session` issues a 64-hex token in an HttpOnly
 `SameSite=Lax` cookie *and* returns it once in the body (only when freshly
@@ -115,11 +137,21 @@ strips `Set-Cookie`. Storage is `sha256(token)`; comparison is
 
 | Route | Method | Behaviour |
 |---|---|---|
-| `/chat/boot` | GET | Widget configuration: enabled, `ready` (a chat model resolves *and* an agent is available — checked before a conversation can be opened, so a store that cannot answer shows no widget), nonce, `maxChars`, appearance, and the caller's resumed conversation with transcript, or `null`. Never cached; the page itself carries none of this. |
+| `/chat/boot` | GET | Widget configuration: enabled, `ready` (a chat model resolves *and* an agent is available — checked before a conversation can be opened, so a store that cannot answer shows no widget), nonce, `maxChars`, appearance, and the caller's resumed conversation with transcript, or `null`. Never cached — enforced, not asserted (below); the page itself carries none of this. |
 | `/chat/session` | POST | Open or resume. Resume order: token's live conversation first; else the signed-in customer's live conversation (FR-CHAT-05 cross-device), re-bound to the presented token — **the superseded token stops working**. Chat disabled → 403; unready → 503. |
 | `/chat/{uuid}/messages` | GET | Transcript (user/assistant rows only — system rows are operator notes and are never exposed). Requires ownership. |
 | `/chat/{uuid}/messages` | POST | One turn. Guards in order: enabled/ready → ownership (404) → conversation live (`escalated` still accepts; closed → 409 `conversation_closed`) → non-empty (400) → length ≤ 2000 chars (413) → rate limit (429 with `retryAfter` seconds in `data` — consumed **only here**, so reading a transcript never spends the allowance to speak). Success returns the reply, outcome, and `escalated` flag. A provider failure is still a 200 with a human sentence — degrade, never break. |
 | `/chat/{uuid}/close` | POST | Customer ends the conversation. |
+
+**Never cached — enforced, not asserted.** Core sends nocache headers on
+REST responses only for logged-in callers, and the chat caller is anonymous
+by design; on a host whose CDN caches REST GETs, an unmarked `/chat/boot`
+would serve one visitor's nonce — and a resuming visitor's transcript — to
+the next. A `rest_post_dispatch` filter therefore marks every
+`/storecrew/v1/chat*` response `Cache-Control: no-store, no-cache,
+must-revalidate, private`, errors included, from one place covering all
+five chat endpoints — a new chat route cannot forget it. Probe-tested in
+`verify-chat.php`.
 
 **The 404 rule:** no token, unknown uuid, and unowned uuid are
 indistinguishable (`storecrew_no_conversation`, 404). Confirming that a

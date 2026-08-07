@@ -201,10 +201,62 @@ final class ToolExecutor {
 			$run_id,
 			$context->conversation_id,
 			$call->name,
-			$call->arguments,
+			$this->redact( $call->arguments ),
 			$intent,
 			$auth_mode
 		);
+	}
+
+	/**
+	 * Strip identity-bearing values before arguments are persisted.
+	 *
+	 * The schema's privacy promise (04 § 11) is that no raw email address is
+	 * stored in any plugin table — and `identity.verify` receives one as an
+	 * argument on every attempt, including failed ones. The record needs to
+	 * show *that* an email was supplied, never which one; the verified outcome
+	 * lives on the conversation row as `verified_order_id`.
+	 *
+	 * Key-based redaction catches declared parameters; the pattern pass
+	 * catches an address a model volunteers inside a free-text argument.
+	 *
+	 * @param array<array-key, mixed> $arguments Model-supplied arguments.
+	 * @return array<array-key, mixed>
+	 */
+	private function redact( array $arguments ): array {
+		/**
+		 * Extend the argument keys whose values are redacted before storage.
+		 *
+		 * Additions only — the shipped keys are merged in afterwards, so a
+		 * filter cannot reintroduce the leak this exists to prevent.
+		 *
+		 * @param list<string> $keys Extra keys to redact, lowercase.
+		 */
+		$keys = array_merge(
+			(array) apply_filters( 'storecrew_redacted_argument_keys', array() ),
+			array( 'email' )
+		);
+
+		foreach ( $arguments as $key => $value ) {
+			if ( is_array( $value ) ) {
+				$arguments[ $key ] = $this->redact( $value );
+				continue;
+			}
+
+			if ( is_string( $key ) && in_array( strtolower( $key ), $keys, true ) ) {
+				$arguments[ $key ] = '[redacted]';
+				continue;
+			}
+
+			if ( is_string( $value ) && str_contains( $value, '@' ) ) {
+				$arguments[ $key ] = (string) preg_replace(
+					'/[^\s@"\'<>]+@[^\s@"\'<>]+\.[^\s@"\'<>.,;]+/',
+					'[redacted]',
+					$value
+				);
+			}
+		}
+
+		return $arguments;
 	}
 
 	private function finish( int $call_id, ToolResult $result, int $duration = 0 ): void {

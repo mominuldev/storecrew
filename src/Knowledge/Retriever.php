@@ -99,6 +99,20 @@ final class Retriever {
 		 */
 		$results = apply_filters( 'storecrew_retrieval_results', $results, $query );
 
+		/**
+		 * Fires after retrieval, with the chunks that will ground the answer.
+		 *
+		 * This is how retrieval provenance reaches the run record. Tools
+		 * receive a ToolContext, never the run's SharedContext — so the
+		 * retrieved ids travel back by action, the same pattern as
+		 * `storecrew_identity_verified`, and the listener AgentRunner attaches
+		 * projects them to ids and scores only before they are stored.
+		 *
+		 * @param list<array<string, mixed>> $results Retrieved chunks.
+		 * @param string                     $query   Original query.
+		 */
+		do_action( 'storecrew_retrieval_performed', $results, $query );
+
 		return array(
 			'results'    => $results,
 			'strategy'   => $found['strategy'],

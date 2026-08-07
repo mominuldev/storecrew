@@ -354,8 +354,23 @@ $t(
 echo "\n== Retriever ==\n";
 $retriever = new Retriever( $providers, $policy, $chunks, $sources );
 
+// Retrieval must announce its results — this action is how provenance
+// reaches the run record, since tools never hold the run's SharedContext.
+$announced = null;
+$capture   = static function ( array $chunks ) use ( &$announced ): void {
+	$announced = $chunks;
+};
+add_action( 'storecrew_retrieval_performed', $capture );
+
 $found = $retriever->retrieve( 'returns policy unworn items', 3 );
+
+remove_action( 'storecrew_retrieval_performed', $capture );
+
 $t( 'retrieval returns results', count( $found['results'] ) > 0, wp_json_encode( $found['strategy'] ) );
+$t(
+	'PROBE: retrieval announces its results for provenance',
+	$announced === $found['results']
+);
 $t(
 	'PROBE: queries embed with the QUERY task type, not DOCUMENT',
 	EmbeddingRequest::TASK_QUERY === $fake->last_task,

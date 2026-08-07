@@ -14,6 +14,7 @@ use StoreCrew\Ai\ChatRequest;
 use StoreCrew\Ai\Exception\ProviderException;
 use StoreCrew\Ai\Message;
 use StoreCrew\Ai\ModelPolicy;
+use StoreCrew\Ai\SpendGuard;
 use StoreCrew\Api\Registry\AgentRegistry;
 use StoreCrew\Api\Registry\ProviderRegistry;
 use StoreCrew\Database\Repositories\AgentConfigRepository;
@@ -44,6 +45,7 @@ final class Orchestrator {
 		private readonly ModelPolicy $policy,
 		private readonly FeatureGate $features,
 		private readonly AgentConfigRepository $configs,
+		private readonly SpendGuard $spend,
 	) {}
 
 	/**
@@ -130,6 +132,14 @@ final class Orchestrator {
 
 		if ( count( $available ) < 2 ) {
 			// Nothing to decide.
+			return $default;
+		}
+
+		// The classifier is a provider call too. Past the spend cap the runner
+		// is about to refuse the turn anyway, so paying flag-fall for routing
+		// on the way there would leak spend on every capped turn (FR-AI-06).
+		// Under the warn behaviour allows_call() passes and routing proceeds.
+		if ( ! $this->spend->allows_call() ) {
 			return $default;
 		}
 

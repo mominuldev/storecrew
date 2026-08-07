@@ -9,6 +9,30 @@ checking every falsifiable claim against `src/`, the live database
 plus a full run of all nine schema suites (**566 assertions, 0 failures**)
 and the DB-free integration harness (all probes passed).
 
+> **Outcomes (2026-08-07, same day):** all four blockers below are **fixed and
+> probe-tested** — G2-C1 via the `storecrew_retrieval_performed` action and a
+> run-scoped listener in `AgentRunner` (accumulating, best-score-wins,
+> ids-only); G2-C2 via argument redaction in `ToolExecutor` (key-based plus a
+> pattern pass; the tool still receives raw values; the
+> `storecrew_redacted_argument_keys` filter may only add); G2-C3 via a
+> `rest_post_dispatch` filter marking every `/chat/*` response `no-store`,
+> errors included; G2-C4 via a `SpendGuard` check ahead of the routing
+> classifier. The suites grew from 566 to **583 assertions**, all green.
+> The § 4 doc-stale edits are applied to 03/04/05/07. Of the § 5 decisions:
+> G2-D1 is dispositioned by documenting the carve-outs, G2-D2 by re-tensing
+> retention/GDPR to *planned* (building them remains open), G2-D3 by
+> rewording to convention-checked (writing the configs remains open). The
+> minor code issues under § 1 remain open as tickets.
+>
+> One additional defect surfaced during remediation, unrelated to the four:
+> `verify-repositories` was poisoning its own future runs — InnoDB keeps
+> deleted rows in the FULLTEXT index and its term statistics until an
+> OPTIMIZE, so each run's three deleted probe chunks decayed the IDF of the
+> probe's own search terms until the lexical-search assertion began failing,
+> dozens of runs after the cause. The suite's cleanup now OPTIMIZEs the
+> chunks table, restoring the "green in any run order" property (and adding
+> the lesson to CLAUDE.md's bug table).
+
 **Verdict: not approvable as written.** The documents are structurally
 excellent — the schema matches the migration and live DB byte-for-byte, all
 21 REST routes verify field-exact, the registration window, security

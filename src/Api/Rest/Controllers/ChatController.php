@@ -57,6 +57,14 @@ final class ChatController extends RestController {
 	}
 
 	public function register_routes(): void {
+		// "Never cached" has to be enforced, not asserted: core only sends
+		// nocache headers on REST responses for logged-in users, and the chat
+		// caller is anonymous by design. On a host whose CDN caches REST GETs,
+		// an unmarked /chat/boot would serve one visitor's nonce — and a
+		// resumed visitor's transcript — to the next. Every chat response is
+		// per-visitor, so the whole surface is marked no-store, errors included.
+		add_filter( 'rest_post_dispatch', array( $this, 'nocache' ), 10, 3 );
+
 		$this->route(
 			'/chat/boot',
 			array(
@@ -105,6 +113,26 @@ final class ChatController extends RestController {
 				'permission_callback' => $this->public_access(),
 			)
 		);
+	}
+
+	/**
+	 * Mark every chat response uncacheable.
+	 *
+	 * Runs on `rest_post_dispatch` so it covers all five routes and their
+	 * error responses from one place — a new chat route cannot forget it.
+	 */
+	public function nocache(
+		\WP_HTTP_Response $response,
+		\WP_REST_Server $server,
+		\WP_REST_Request $request
+	): \WP_HTTP_Response {
+		unset( $server );
+
+		if ( str_starts_with( $request->get_route(), '/' . self::NAMESPACE . '/chat' ) ) {
+			$response->header( 'Cache-Control', 'no-store, no-cache, must-revalidate, private' );
+		}
+
+		return $response;
 	}
 
 	/**

@@ -10,7 +10,15 @@ Two principles decide where a file lives:
    only directory allowed to touch `$wpdb`; `Ai/Providers/` the only one that
    speaks a provider dialect; `Agent/Tool/` (singular) is the security
    boundary while `Agent/Tools/` (plural) is the things it authorises. A
-   reviewer can see a boundary violation in a diff's *paths*.
+   reviewer can see a boundary violation in a diff's *paths*. The `$wpdb` rule
+   carries three deliberate carve-outs, recorded here so a grep does not
+   falsify it: `Tables.php` (the naming authority needs the live prefix, and
+   its existence check queries `SHOW TABLES`), the initial migration (needs
+   `get_charset_collate()`), and — the one outside `Database/` —
+   `Knowledge/Extractor/PagesPostTypeIds.php`, which uses `$wpdb->prepare()`
+   inside a `posts_where` filter for keyset pagination: it augments a
+   WP_Query, it never queries a plugin table. The rule is convention, checked
+   at review — no static-analysis config enforces it yet.
 2. **Parse-safety is a location property.** Four files must stay
    PHP 5.6-parseable because they load before the version guard runs:
    `storecrew.php`, `uninstall.php`, `src/Core/Requirements.php`, and
@@ -25,8 +33,10 @@ Two principles decide where a file lives:
 ```
 storecrew.php                  Bootstrap + guards            (PHP 5.6-parseable)
 uninstall.php                  Opt-in destruction only       (PHP 5.6-parseable)
-composer.json / composer.lock  PSR-4 autoload; no runtime deps shipped
-package.json                   Admin SPA + widget builds
+composer.json / composer.lock  PSR-4 autoload; one shipped dependency,
+                               psr/container ^2.0 (interfaces only)
+package.json / package-lock.json  Admin SPA + widget builds
+.gitignore                     vendor/, node_modules/, build outputs, *.mo
 vite.config.ts                 Admin SPA build  → assets/admin/
 vite.widget.config.ts          Widget build     → assets/widget/  (separate on
                                purpose: opposite size constraints — see 03 § 10)
@@ -57,16 +67,28 @@ src/
   Database/
     Tables.php                 The only place table names are built
     Migrator.php               Forward-only, locked, admin_init
+    MigrationInterface.php     One forward-only change: version(), up(),
+                               deliberately no down()
     Migrations/                Migration001InitialSchema
-    Repositories/              10 repositories — the only $wpdb consumers
+    Repository.php             Abstract base — where $wpdb actually lives
+                               (injected, global fallback) and the 65,535-byte
+                               JSON cap (encode_json)
+    Repositories/              10 repositories extending it — the only $wpdb
+                               consumers (carve-outs: principle 1 above)
   Ai/
+    ProviderInterface          id / label / capabilities — the identity base
+                               both halves extend; the split below is intact
     ChatProviderInterface, EmbeddingProviderInterface   (separate: 03 § 5)
     ChatRequest/Response, EmbeddingRequest/Response, Message,
     ToolCall, ToolDefinition, TokenUsage, Capabilities  (value objects)
     ModelPolicy, Pricing, SpendGuard
     Exception/                 ProviderException
     Http/                      HttpClientInterface + WP HTTP implementation
-    Providers/                 Anthropic, OpenAi, Gemini, OpenRouter, DeepSeek
+    Providers/                 Six files: Anthropic, OpenAi, Gemini, OpenRouter,
+                               DeepSeek, and OpenAiCompatibleProvider — the
+                               abstract base for the OpenAI chat-completions
+                               shape (OpenAi, OpenRouter, DeepSeek differ by
+                               base URL and headers, not by copied code)
   Knowledge/
     ExtractorInterface, ExtractedDocument, Chunker, Indexer,
     Retriever, Vector
@@ -121,11 +143,19 @@ tools/                         Operator/measurement scripts, not shipped:
                                measure-recall.php (FR-KB-09 harness),
                                seed-demo-catalogue.php
 
-languages/                     Text domain: storecrew
-vendor/                        Composer autoloader only — no runtime libraries
-                               (no HTTP client: 03 § 5)
-node_modules/                  Never shipped; .org build excludes with
-                               admin-app/, widget-app/, tests/, tools/, docs/
+languages/                     Text domain: storecrew. Not in the repo — .org
+                               installs get translations from
+                               translate.wordpress.org; this directory exists
+                               for self-hosted/local .mo files (the Domain Path
+                               header and load_plugin_textdomain point here)
+                               and appears when the first one lands
+vendor/                        Composer autoloader plus the psr/container
+                               interfaces the hand-written container implements
+                               — no runtime code libraries, no HTTP client
+                               (03 § 5)
+node_modules/                  Never shipped; .org build excludes it with
+                               admin-app/, widget-app/, tests/, tools/, docs/,
+                               package-lock.json, composer.lock, .gitignore
 ```
 
 ### What is deliberately absent
@@ -145,7 +175,8 @@ Current tree (the Phase 1 skeleton that proves the seam):
 
 ```
 storecrew-pro.php              Bootstrap + handshake         (PHP 5.6-parseable)
-composer.json / composer.lock  PSR-4: StoreCrew\Pro\
+composer.json / composer.lock  PSR-4: StoreCrew\Pro\ — vendor/ here genuinely
+                               is autoloader-only, not even psr/container
 CHANGELOG.md, CLAUDE.md
 src/
   Plugin.php                   Handshake (FR-DIST-04/05), registers on
@@ -196,7 +227,7 @@ node both work; the release build regenerates and verifies them.
 
 | Rule here | Enforces |
 |---|---|
-| Repositories-only `$wpdb` | 03 § 4, 04 § 1 |
+| Repositories-only `$wpdb` (three carve-outs — principle 1) | 03 § 4, 04 § 1 |
 | Four parse-safe files | FR-CORE version guard UX |
 | Pro references nothing outside `Api\` | FR-DIST-02, 15 § 7 |
 | Separate widget build | FR-CHAT-01 budget |

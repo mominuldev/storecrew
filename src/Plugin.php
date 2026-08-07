@@ -286,7 +286,8 @@ final class Plugin {
 				$c->get( ProviderRegistry::class ),
 				$c->get( ModelPolicy::class ),
 				$c->get( FeatureGate::class ),
-				$c->get( AgentConfigRepository::class )
+				$c->get( AgentConfigRepository::class ),
+				$c->get( SpendGuard::class )
 			)
 		);
 

@@ -117,6 +117,17 @@ final class AgentRunner {
 		$tool_calls = 0;
 		$known_cost = true;
 
+		// Tools receive a ToolContext, never the run's SharedContext, so
+		// retrieval provenance travels back by action — the same way mid-turn
+		// identity verification does. Without this listener every run records
+		// `retrieved = []` and the inspector cannot show what grounded the
+		// answer (FR-ADMIN-04).
+		$provenance = static function ( array $chunks ) use ( $context ): void {
+			$context->set_retrieved( $chunks );
+		};
+
+		add_action( 'storecrew_retrieval_performed', $provenance );
+
 		try {
 			while ( true ) {
 				$response = $provider->chat( $request );
@@ -192,6 +203,8 @@ final class AgentRunner {
 			$this->runs->fail( $run_id, (string) $e->status(), $e->getMessage(), $budget->elapsed_ms() );
 
 			return AgentTurn::failed( $agent->id, 'provider_error', $e->getMessage(), $run_id );
+		} finally {
+			remove_action( 'storecrew_retrieval_performed', $provenance );
 		}
 	}
 

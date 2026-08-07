@@ -102,15 +102,16 @@ D1 confirms FR-LIC-02, D7 confirms FR-SUPPORT-08.
 | 5 | [REST API Specification](05-api-specification.md) | ✅ Draft complete |
 | 7 | [Plugin Folder Structure](07-folder-structure.md) | ✅ Draft complete — covers **both** plugin trees |
 
-**Gate 2:** 🔴 **Review run 2026-08-07 — approval blocked.** Four independent
-verification passes (docs vs code, live DB, live route table) plus a full
-suite run (566/566) found the documents structurally accurate but surfaced
-**four code defects behind documented guarantees** (retrieval provenance
-never recorded; raw customer email persisted in tool arguments; `/chat/boot`
-cache-safety unenforced; routing call bypasses `SpendGuard`), doc sections
-describing unbuilt retention/GDPR features in the present tense, and a
-superseded retrieval design in 04 § 6. Findings and dispositions:
-[reviews/gate-2-review.md](reviews/gate-2-review.md).
+**Gate 2:** 🟡 **Review run 2026-08-07 — remediated, awaiting approval.**
+Four independent verification passes (docs vs code, live DB, live route
+table) found the documents structurally accurate but surfaced **four code
+defects behind documented guarantees**. All four are fixed and probe-tested
+(suites grew 566 → 583 assertions, all green): retrieval provenance now
+reaches the run record, tool arguments are redacted before storage, every
+`/chat/*` response is marked `no-store`, and the routing classifier is
+spend-guarded. The doc-stale findings are absorbed into 03/04/05/07, and
+04 § 11 now marks retention/GDPR as planned rather than present-tense.
+Findings and outcomes: [reviews/gate-2-review.md](reviews/gate-2-review.md).
 Deliverables 03/05/07 document the **built and verified** system rather than a
 proposal; each records where implementation experience amended the original
 intent (e.g. the measured retrieval findings in 03 § 6, the two spikes A3/A4
