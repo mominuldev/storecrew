@@ -3,7 +3,10 @@
 **The AI Employee Platform for WooCommerce.**
 A commercial WordPress plugin by **Decent Themes**.
 
-> **No implementation begins until all 14 deliverables are reviewed and approved.**
+> **All fifteen deliverables are approved at v1.0** (all five gates,
+> 2026-08-07). The gate that governs work now is 14 § M1's exit-criteria
+> list; a change that alters documented behaviour edits the document in the
+> same change-set.
 
 ---
 
@@ -170,22 +173,37 @@ outcomes: [reviews/gate-4-review.md](reviews/gate-4-review.md).
 ### Gate 5 — Engineering Readiness
 | # | Document | Status |
 |---|---|---|
-| 12 | [Security Architecture](12-security-architecture.md) | ✅ Draft complete — threat-model-ordered, probe-referenced |
-| 13 | [Scalability Plan](13-scalability-plan.md) | ✅ Draft complete — measured numbers, named cliffs |
-| 14 | [Development Milestone Plan](14-milestone-plan.md) | ✅ Draft complete — exit-criteria-gated, no dates |
+| 12 | [Security Architecture](12-security-architecture.md) | ✅ Approved (v1.0) — threat-model-ordered, probe-referenced |
+| 13 | [Scalability Plan](13-scalability-plan.md) | ✅ Approved (v1.0) — measured numbers, named cliffs |
+| 14 | [Development Milestone Plan](14-milestone-plan.md) | ✅ Approved (v1.0) — exit-criteria-gated, no dates |
 
-**Gate 5:** 🟡 All drafts complete — awaiting review (after Gate 4).
+**Gate 5:** ✅ **Approved 2026-08-07** (reviewed and remediated the same
+day). The first gate since 1 where the code survived its documents: every
+probe 12 cites was traced to the suite that fires it, 13's figures to the
+recall harness's recorded runs, and 14 to the Gate 2–4 tickets it carries.
+Three wording defects, no code defects — 13 described transcript retention
+as built when only audit pruning runs (the substrate-as-capability shape
+again), 12 § 9's "paths exist" was readable as "retention is enforced" in
+the one document compliance answers get copied from, and 12 § 2's
+"disjoint allow-lists" lapsed when Gate 3 deliberately shared the handoff
+tool. All fixed; findings:
+[reviews/gate-5-review.md](reviews/gate-5-review.md).
 
 ---
 
-## All fifteen deliverables are drafted (2026-08-07)
+## All fifteen deliverables are approved (2026-08-07)
 
 The set was completed *after* most of the system was built, and the documents
 say so where it matters: 03–09, 06, 11–13 describe verified reality and record
 where implementation amended intent; 10 designs ahead of code and opens by
-saying so; 02 § 9 carries the ten decisions (D1–D10), ratified at Gate 1 on
-2026-08-07. Review proceeds in gate order; a decision at an earlier gate that
-changes a later document is applied as an edit with requirement IDs preserved.
+saying so; 02 § 9 carries the ten decisions (D1–D10), ratified at Gate 1.
+Every gate was reviewed against the code rather than by reading — the review
+records live in [reviews/](reviews/), including what each review found, what
+was fixed, and what moved into 14 § M1 with an exit criterion. The pattern
+every gate confirmed, worth carrying forward: the recurring defect class is
+**built-but-unconsumed** (something shipped that nothing reads), and the
+recurring documentation defect is **substrate reported as capability**. A
+future change should be checked against both shapes before it is called done.
 
 ---
 

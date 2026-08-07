@@ -6,7 +6,8 @@
 
 This plan starts from where the code actually is, which is far past where a
 Gate 5 plan usually starts: the platform, agents, knowledge base, REST API,
-admin console, and storefront chat all exist, are suite-verified (615
+admin console, and storefront chat all exist, are suite-verified (616 PHP +
+33 browser
 assertions after the Gate 2 and Gate 3 remediations), and have carried a live
 five-turn conversation against a real model. The plan is therefore mostly a
 **completion and hardening ledger for
@@ -26,14 +27,14 @@ Platform kernel + extension API + registration window · schema + migrations
 + repositories · five providers + policy/pricing/spend/secrets · knowledge
 pipeline with measured retrieval (FR-KB-09 first pass: recall@3 0.96) ·
 agent framework + security boundary + identity · admin SPA (six screens,
-browser-verified) · storefront chat surface (live-verified) · nine suites +
-DB-free harness · docs 01–15 drafted.
+browser-verified) · storefront chat surface (live-verified) · nine PHP suites, the checked-in browser suites,
+and the DB-free harness · docs 01–15 drafted.
 
 ---
 
 ## M1 — Phase 1 complete ("nothing left that embarrasses a merchant")
 
-The gap list, from CLAUDE.md, 03 § 13, and the Gate 2 and Gate 3 reviews
+The gap list, from CLAUDE.md, 03 § 13, and the Gate 2–5 reviews
 (`docs/reviews/`), each with its exit criterion:
 
 | Item | Exit criterion |

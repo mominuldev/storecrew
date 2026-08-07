@@ -43,7 +43,10 @@ injection; every defence removes what a successful one could do.
    (08 § 1); the composed prompt instructs that tool content is data.
 2. The agent's `tool_ids` allow-list bounds reach *before* the security
    boundary — Support persuaded to create a coupon fails at the agent, not
-   the executor. Disjoint allow-lists per agent. *(Probes: sales cannot
+   the executor. The **sensitive tool sets are disjoint** — Sales holds no
+   order tool, Support no catalogue search; the one deliberate overlap is
+   `agent.handoff`, which transfers a conversation and grants nothing.
+   *(Probes: sales cannot
    look up orders / write notes.)*
 3. `ToolExecutor` authorises from `ToolContext` — built from the
    conversation row and WordPress session, **never from model output or tool
@@ -160,11 +163,15 @@ costKnown false with no rates.)*
   calls; no telemetry without consent (FR-DIST-11); no webfonts.
 - **IPs are never stored raw** — salted SHA-256 in audit and rate-limit
   state; recognition without identification.
-- **Conversation data is the merchant's**: retention pruning and GDPR
-  erasure paths exist at the repository layer
-  (`delete_for_conversation`); the session token is stored only as a
-  digest; identity verification stores *which order was proven*, never the
-  email offered.
+- **Conversation data is the merchant's.** What is enforced today: the
+  audit log prunes past its retention window from the hourly sweep, and the
+  repository layer holds the deletion primitives
+  (`delete_for_conversation` et al.). What is **not yet** enforced, and
+  must not be claimed in a compliance answer until 14 § M1 closes it:
+  age-based retention windows for transcripts and run records, and the
+  WordPress personal-data exporter/eraser integration. The session token
+  is stored only as a digest; identity verification stores *which order
+  was proven*, never the email offered.
 - Provider processing is disclosed to the merchant: their key, their DPA
   with the provider; the architecture's job is that nothing flows there
   except what a turn requires.

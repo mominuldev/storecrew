@@ -36,18 +36,19 @@ Documents come before code. `docs/README.md` is the index and tracks gate
 status. Requirement IDs (`FR-KB-08`, `R-TECH-03`, …) are **permanent** — code
 and commits reference them, so never renumber.
 
-**All fifteen deliverables are drafted** (2026-08-07). Most document the
-built system and record where implementation amended intent; 10 (SaaS
-Subscription) is the one design ahead of code. **Gates 1, 2 and 3 are
-approved** (all 2026-08-07): Gate 1 ratified all ten decisions (D1–D10) as
-recommended (02 § 9, resolutions inline in 01 § 13 and 15 § 9); Gate 2 was
-reviewed against code, live DB, and live routes, remediated (four code
-defects fixed, probe-tested — see `docs/reviews/gate-2-review.md`), and
-approved with its open tickets moved to 14 § M1; Gate 3 was reviewed against
-`src/`, remediated (nine code findings plus four missing regression guards —
-`docs/reviews/gate-3-review.md`), re-verified fix by fix at approval, and
-approved with its three dormant surfaces moved to 14 § M1 and § M4. **Gate 4
-is next** (06, 11, 10), then Gate 5. A code change that alters documented
+**All fifteen deliverables are approved at v1.0 — all five gates,
+2026-08-07.** Each gate was reviewed *against the code*, remediated, and
+ratified; the findings, fixes, and decisions live in `docs/reviews/`
+(gate-2 through gate-5). The governing list now is **14 § M1's exit
+criteria** — retention pruning, GDPR hooks, streaming, SKU tool, failover,
+guardrail overrides, static-analysis configs, and the rest — which is the
+single path between here and beta. Two defect shapes every gate re-found;
+check new work against both before calling it done:
+**built-but-unconsumed** (shipped, read by nothing — the capability
+manifest, the feature catalog, `METRIC_CONVERSATION`) and **substrate
+reported as capability** (per-run counting described as conversation
+metering; repository delete methods described as retention). A code change
+that alters documented
 behaviour edits the document in the same change-set.
 
 Deliverable 15 is numbered out of sequence deliberately — it was added after
