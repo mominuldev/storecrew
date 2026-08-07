@@ -18,7 +18,7 @@ export function Crew() {
       <PageHeader title="Crew" sub="Your AI employees, and the conversations they have been handling." />
 
       <Section title="Who is on">
-        <CrewBar boot={boot} health={health.data} />
+        <CrewBar boot={boot} health={health.data} wide />
       </Section>
 
       <Section title="Recent conversations">

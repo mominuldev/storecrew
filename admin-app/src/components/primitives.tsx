@@ -34,8 +34,8 @@ export function PageHeader({ title, sub, action }: { title: string; sub: string;
   return (
     <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
-        <p className="mt-1 text-[13px]" style={{ color: 'var(--text-dim)' }}>
+        <h1 className="text-[28px] font-bold tracking-tight">{title}</h1>
+        <p className="mt-1.5 text-[14px]" style={{ color: 'var(--text-dim)' }}>
           {sub}
         </p>
       </div>
@@ -56,9 +56,10 @@ export function Section({ title, action, children }: { title: string; action?: R
   );
 }
 
-type Tone = 'signal' | 'crew' | 'alert' | 'neutral';
+type Tone = 'accent' | 'signal' | 'crew' | 'alert' | 'neutral';
 
 const TONE = {
+  accent: { bg: 'var(--tint-accent)', fg: 'var(--fg-accent)' },
   signal: { bg: 'var(--tint-signal)', fg: 'var(--fg-signal)' },
   crew: { bg: 'var(--tint-crew)', fg: 'var(--fg-crew)' },
   alert: { bg: 'var(--tint-alert)', fg: 'var(--fg-alert)' },
@@ -102,10 +103,10 @@ type ButtonProps = {
 
 export function Button({ children, onClick, variant = 'quiet', icon, disabled, type = 'button' }: ButtonProps) {
   const base =
-    'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed';
+    'inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed';
 
   const styles = {
-    primary: 'bg-signal-500 font-semibold text-ink-950 shadow-sm hover:bg-signal-400 active:translate-y-px',
+    primary: 'bg-accent-500 font-semibold text-white shadow-sm hover:bg-accent-600 active:translate-y-px',
     quiet: 'border hover:border-[var(--line-strong)] hover:bg-[var(--surface-2)]',
     danger: 'text-alert-500 hover:bg-[var(--tint-alert)]',
   }[variant];
@@ -124,12 +125,15 @@ export function Button({ children, onClick, variant = 'quiet', icon, disabled, t
   );
 }
 
-/** A number with its unit, in mono. Numbers are the second-most important
- *  thing on this screen after status, so they get their own treatment. */
+/** A display number with its unit. Big friendly sans, per the reference;
+ *  mono stays reserved for micro-labels and statuses. */
 export function Stat({ value, unit, tone }: { value: string | number; unit?: string; tone?: string }) {
   return (
-    <div className="flex items-baseline gap-1.5">
-      <span className="scr-num text-[26px] font-semibold" style={tone ? { color: tone } : undefined}>
+    <div className="flex items-baseline gap-2">
+      <span
+        className="text-[30px] font-bold tracking-tight tabular-nums"
+        style={tone ? { color: tone } : undefined}
+      >
         {value}
       </span>
       {unit ? <span className="scr-label">{unit}</span> : null}

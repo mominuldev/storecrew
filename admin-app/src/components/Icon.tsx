@@ -43,6 +43,8 @@ const PATHS: Record<string, string> = {
   store:
     'M3 9 4.5 4h15L21 9 M4 9h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z M9 21v-6h6v6 M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0',
   clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 6v6l4 2',
+  bell: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0',
+  arrowUpRight: 'M7 17 17 7 M7 7h10v10',
 };
 
 export type IconName = keyof typeof PATHS;

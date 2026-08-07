@@ -33,22 +33,19 @@
 /*
  * StoreCrew admin — design tokens.
  *
- * The product is a crew of AI employees, so the console is built as a shift
- * board rather than an analytics dashboard: status is the primary information,
- * numbers are secondary, and the vocabulary throughout is on duty / off shift /
- * needs you.
- *
- * Signal amber is the primary accent because it is the colour of workwear and
- * signage — the visual language of "someone is on shift". It is also a
- * deliberate move away from the blue-violet every other admin dashboard reaches
- * for, which would have made this look like the plugin it is rather than the
- * product it is trying to be.
+ * The console reads as a light, friendly SaaS dashboard (2026-08 redesign,
+ * modelled on a merchant-approved reference): a cool blue-grey canvas with
+ * white floating panels at generous radius, one royal-blue action colour, and
+ * three pastel tiles for the headline numbers. Status keeps its own semantic
+ * colours — green for working, amber for needs-setup, brick for needs-a-human
+ * — because a status that changes colour with a retheme is a status nobody
+ * trusts.
  *
  * No webfonts. A plugin that pulls fonts from a CDN leaks every admin page view
- * to a third party and breaks on an offline install, so personality comes from
- * treatment instead: monospace for every number, status, and micro-label, with
- * wide tracking; system sans for prose. An operations console should read like
- * it is reporting instruments.
+ * to a third party and breaks on an offline install. Personality comes from
+ * scale and weight instead: large friendly sans headings and display numbers,
+ * with monospace reserved for micro-labels and statuses — the instrumentation
+ * voice.
  */
 
 @theme {
@@ -69,8 +66,13 @@
   --color-paper-200: #f2f2f0;
   --color-paper-300: #e4e4e1;
 
-  /* Signal amber — "on duty". Used sparingly; the one gradient in the product
-     is the brand mark, so amber stays a status colour everywhere else. */
+  /* Royal blue — the one action colour. Buttons, active nav, focus. */
+  --color-accent-600: #1d4ed8;
+  --color-accent-500: #2563eb;
+  --color-accent-400: #5b8af5;
+  --color-accent-300: #adc6fb;
+
+  /* Signal amber — "needs setup". A status colour, never an action. */
   --color-signal-600: #b87317;
   --color-signal-500: #d98a1f;
   --color-signal-400: #e8a33d;
@@ -86,7 +88,7 @@
   --color-alert-500: #b4462f;
   --color-alert-400: #cf6a52;
 
-  --radius-card: 12px;
+  --radius-card: 16px;
 }
 
 /*
@@ -100,33 +102,47 @@
 
 :root {
   color-scheme: light;
-  --bg: var(--color-paper-100);
-  --surface: var(--color-paper-50);
-  --surface-2: var(--color-paper-200);
-  --field: var(--color-paper-50);
-  --line: var(--color-paper-300);
-  --line-strong: #d3d3ce;
-  --text: var(--color-ink-900);
-  --text-dim: #5c6672;
-  --rail: var(--color-paper-50);
+  --bg: #eaedf3;
+  --surface: #ffffff;
+  --surface-2: #f4f5f8;
+  --field: #f4f5f8;
+  --line: #e8eaef;
+  --line-strong: #d8dbe2;
+  --text: #16181d;
+  --text-dim: #7b8194;
+  --rail: #ffffff;
 
   /* Washes for pills, avatars, and icon chips — status at a whisper. */
+  --tint-accent: rgba(37, 99, 235, 0.1);
   --tint-signal: rgba(217, 138, 31, 0.13);
   --tint-crew: rgba(46, 125, 107, 0.12);
   --tint-alert: rgba(180, 70, 47, 0.1);
   --tint-neutral: rgba(92, 102, 114, 0.1);
 
+  --fg-accent: var(--color-accent-600);
   --fg-signal: var(--color-signal-600);
   --fg-crew: var(--color-crew-600);
   --fg-alert: var(--color-alert-600);
 
-  --shadow-card: 0 1px 2px rgba(16, 20, 26, 0.05);
-  --shadow-lift: 0 8px 20px rgba(16, 20, 26, 0.09);
+  /* The pastel tiles — the reference's headline-number treatment. */
+  --tile-peach: #f6e3c8;
+  --tile-blue: #ccdbf7;
+  --tile-gray: #e4e5ea;
+  --tile-fg: #16181d;
+  --tile-dim: rgba(22, 24, 29, 0.6);
+
+  /* The near-black callout chip. */
+  --chip-bg: #16181d;
+  --chip-fg: #f5f6f8;
+  --chip-dim: rgba(245, 246, 248, 0.6);
+
+  --shadow-card: 0 1px 2px rgba(22, 24, 29, 0.04);
+  --shadow-lift: 0 10px 24px rgba(22, 24, 29, 0.08);
 
   /* Tracks wp-admin's fixed toolbar so the rail can sit flush under it. */
   --scr-topbar: 32px;
 
-  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235c6672' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237b8194' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 :root.dark {
@@ -141,14 +157,27 @@
   --text-dim: #8b95a3;
   --rail: var(--color-ink-900);
 
+  --tint-accent: rgba(91, 138, 245, 0.16);
   --tint-signal: rgba(232, 163, 61, 0.15);
   --tint-crew: rgba(74, 160, 140, 0.16);
   --tint-alert: rgba(207, 106, 82, 0.16);
   --tint-neutral: rgba(139, 149, 163, 0.12);
 
+  --fg-accent: var(--color-accent-300);
   --fg-signal: var(--color-signal-300);
   --fg-crew: var(--color-crew-400);
   --fg-alert: var(--color-alert-400);
+
+  /* The pastels keep their hue but drop to the ink register. */
+  --tile-peach: #292013;
+  --tile-blue: #17203a;
+  --tile-gray: #1b2027;
+  --tile-fg: #e7eaee;
+  --tile-dim: rgba(231, 234, 238, 0.6);
+
+  --chip-bg: #1c232d;
+  --chip-fg: #e7eaee;
+  --chip-dim: rgba(231, 234, 238, 0.6);
 
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-lift: 0 10px 24px rgba(0, 0, 0, 0.45);
@@ -251,8 +280,8 @@
 }
 
 #storecrew-root .scr-input:focus {
-  border-color: var(--color-signal-400);
-  box-shadow: 0 0 0 3px var(--tint-signal);
+  border-color: var(--color-accent-400);
+  box-shadow: 0 0 0 3px var(--tint-accent);
 }
 
 #storecrew-root .scr-select {
@@ -269,15 +298,15 @@
 }
 
 #storecrew-root .scr-select:focus {
-  border-color: var(--color-signal-400);
-  box-shadow: 0 0 0 3px var(--tint-signal);
+  border-color: var(--color-accent-400);
+  box-shadow: 0 0 0 3px var(--tint-accent);
 }
 
 /* The reset strips native checkbox chrome, which leaves an unchecked box
    invisible. Restore the native control and tint it with the accent. */
 #storecrew-root :where(input[type='checkbox'], input[type='radio']) {
   appearance: auto;
-  accent-color: var(--color-signal-500);
+  accent-color: var(--color-accent-500);
   width: 15px;
   height: 15px;
 }
@@ -287,7 +316,7 @@
    browsers apply :focus-visible to them even on mouse focus, which would
    stack both treatments. */
 #storecrew-root :focus-visible:not(input):not(select):not(textarea) {
-  outline: 2px solid var(--color-signal-500);
+  outline: 2px solid var(--color-accent-500);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -380,12 +409,43 @@
   .scr-mark {
     display: grid;
     place-items: center;
-    width: 30px;
-    height: 30px;
-    border-radius: 9px;
-    background: linear-gradient(135deg, var(--color-signal-300), var(--color-signal-500));
-    color: var(--color-ink-950);
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    background: linear-gradient(135deg, var(--color-accent-400), var(--color-accent-600));
+    color: #ffffff;
     flex-shrink: 0;
+  }
+
+  /* A pastel headline tile: title and hint up top, a display number at the
+     bottom, and a dark round arrow when the tile goes somewhere. */
+  .scr-tile {
+    display: flex;
+    flex-direction: column;
+    border-radius: 22px;
+    padding: 22px;
+    min-height: 168px;
+    background: var(--tile, var(--surface-2));
+    color: var(--tile-fg);
+    transition:
+      box-shadow 0.15s ease,
+      transform 0.15s ease;
+  }
+
+  a .scr-tile:hover,
+  a.scr-tile:hover {
+    box-shadow: var(--shadow-lift);
+    transform: translateY(-2px);
+  }
+
+  .scr-tile-go {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+    background: var(--chip-bg);
+    color: var(--chip-fg);
   }
 
 

@@ -4,10 +4,9 @@ import type { Bootstrap, Health } from '../lib/types';
 /**
  * The signature element: a shift board.
  *
- * Each agent is a card on the roster — a monogram, a name, and a status pill,
- * with the state repeated on a left edge-bar so a column of cards still reads
- * by colour down the margin. The merchant's first question every morning is
- * "is the crew working", and this answers it before they read a single number.
+ * Each agent is a card on the roster — a monogram, a name, and a status pill.
+ * The merchant's first question every morning is "is the crew working", and
+ * this answers it before they read a single number.
  */
 
 /**
@@ -24,7 +23,20 @@ const monogram = (label: string): string => {
   return (words.length > 1 ? `${words[0][0]}${words[1][0]}` : label.slice(0, 2)).toUpperCase();
 };
 
-export function CrewBar({ boot, health }: { boot: Bootstrap; health?: Health }) {
+/** The board's headline, for anywhere that quotes it: who is on, out of how
+ *  many. Same rules as the cards below — entitled *and* able to work. */
+export function crewSummary(boot: Bootstrap, health?: Health): { onDuty: number; total: number } {
+  const indexReady = (health?.index.embedded ?? 0) > 0;
+  const agents = boot.catalog.filter((f) => f.slug.startsWith('agent.'));
+
+  const onDuty = agents.filter(
+    (agent) => boot.features[agent.slug] === true && (INDEX_FREE.has(agent.slug) || indexReady),
+  ).length;
+
+  return { onDuty, total: agents.length };
+}
+
+export function CrewBar({ boot, health, wide }: { boot: Bootstrap; health?: Health; wide?: boolean }) {
   const indexReady = (health?.index.embedded ?? 0) > 0;
 
   // The board renders from the capability manifest (G4-D1): every feature in
@@ -33,8 +45,10 @@ export function CrewBar({ boot, health }: { boot: Bootstrap; health?: Health }) 
   // descriptions. The free plugin no longer owns a word of premium's copy.
   const agents = boot.catalog.filter((f) => f.slug.startsWith('agent.'));
 
+  // The board shares a column with the Overview's rail, where four across
+  // truncates every name; only a full-width host asks for four.
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className={`grid gap-3 sm:grid-cols-2 ${wide ? 'xl:grid-cols-4' : ''}`}>
       {agents.map((agent) => {
         const entitled = boot.features[agent.slug] === true;
         // On duty means entitled *and* able to do the job. An agent with no
@@ -42,12 +56,6 @@ export function CrewBar({ boot, health }: { boot: Bootstrap; health?: Health }) 
         const onDuty = entitled && (INDEX_FREE.has(agent.slug) || indexReady);
 
         const tone = !entitled ? ('neutral' as const) : onDuty ? ('crew' as const) : ('signal' as const);
-
-        const edge = !entitled
-          ? 'var(--line)'
-          : onDuty
-            ? 'var(--color-crew-500)'
-            : 'var(--color-signal-500)';
 
         const state = !entitled ? 'Not on your plan' : onDuty ? 'On duty' : 'Needs setup';
 
@@ -58,7 +66,7 @@ export function CrewBar({ boot, health }: { boot: Bootstrap; health?: Health }) 
         }[tone];
 
         return (
-          <Card key={agent.slug} edge={edge} className="flex flex-col px-4 py-4">
+          <Card key={agent.slug} className="flex flex-col px-4 py-4">
             <div className="flex items-start gap-3">
               <span className="scr-avatar" style={avatar}>
                 {monogram(agent.label)}

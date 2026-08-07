@@ -13,6 +13,7 @@ declare global {
       nonce: string;
       version: string;
       adminUrl: string;
+      userName?: string;
     };
   }
 }
@@ -75,3 +76,6 @@ export const api = {
 };
 
 export const adminUrl = () => boot().adminUrl;
+
+/** The merchant's first name, for the greeting. Empty when WP has none. */
+export const userName = () => (boot().userName ?? '').trim().split(/\s+/)[0] ?? '';

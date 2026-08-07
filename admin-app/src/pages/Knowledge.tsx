@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { IndexStatus, SearchResult } from '../lib/types';
 import { Icon } from '../components/Icon';
@@ -33,6 +34,21 @@ export function Knowledge() {
     mutationFn: (q: string) => api.post<SearchResult>('/knowledge/search', { query: q, limit: 5 }),
     onSuccess: setResult,
   });
+
+  // The shell's top-bar search lands here as ?q= and runs immediately — one
+  // search box that behaves the same wherever it is typed into.
+  const [params] = useSearchParams();
+  const ranFor = useRef<string | null>(null);
+  const fromBar = params.get('q');
+
+  useEffect(() => {
+    if (fromBar && fromBar !== ranFor.current) {
+      ranFor.current = fromBar;
+      setQuery(fromBar);
+      search.mutate(fromBar);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutate is stable
+  }, [fromBar]);
 
   if (status.isLoading) return <Spinner label="Reading the index" />;
 

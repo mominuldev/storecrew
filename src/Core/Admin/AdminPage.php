@@ -127,6 +127,9 @@ final class AdminPage {
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
 				'version'  => STORECREW_VERSION,
 				'adminUrl' => esc_url_raw( admin_url() ),
+				// The console greets the merchant by name; first name only,
+				// the way a colleague would.
+				'userName' => wp_get_current_user()->display_name,
 			)
 		);
 	}

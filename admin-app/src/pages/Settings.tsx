@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { ChatSettings, Provider, Settings as SettingsData } from '../lib/types';
-import { Button, Card, IconChip, Label, PageHeader, Pill, Problem, Section, Spinner } from '../components/primitives';
+import { Icon } from '../components/Icon';
+import { ProviderMark, providerKeysUrl } from '../components/ProviderMark';
+import { Button, Card, IconChip, Label, PageHeader, Pill, Problem, Spinner } from '../components/primitives';
 
 const TASK_COPY: Record<string, { title: string; hint: string }> = {
   chat: { title: 'Talking to customers', hint: 'The model that writes replies. Worth the best you can afford.' },
@@ -11,9 +14,74 @@ const TASK_COPY: Record<string, { title: string; hint: string }> = {
   summary: { title: 'Summarising', hint: 'Condenses long conversations. A small model is fine.' },
 };
 
+const TABS = [
+  { id: 'connections', label: 'Connections' },
+  { id: 'models', label: 'Models' },
+  { id: 'storefront', label: 'Storefront' },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
+
+/**
+ * The segmented tab bar, the reference's filter-tab treatment. A tab that
+ * needs the merchant's attention carries a dot — the tab bar is the only
+ * thing visible from every pane, so it is where the warning has to live.
+ */
+function Tabs({
+  value,
+  onChange,
+  alerts,
+}: {
+  value: TabId;
+  onChange: (tab: TabId) => void;
+  alerts: Partial<Record<TabId, boolean>>;
+}) {
+  return (
+    <div
+      className="mb-6 inline-flex items-center gap-1 rounded-2xl p-1"
+      style={{ background: 'var(--surface-2)', border: '1px solid var(--line)' }}
+    >
+      {TABS.map((tab) => {
+        const active = tab.id === value;
+
+        return (
+          <button
+            key={tab.id}
+            onClick={() => onChange(tab.id)}
+            aria-current={active ? 'true' : undefined}
+            className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-medium transition-colors"
+            style={{
+              background: active ? 'var(--surface)' : 'transparent',
+              color: active ? 'var(--text)' : 'var(--text-dim)',
+              border: `1px solid ${active ? 'var(--line)' : 'transparent'}`,
+              boxShadow: active ? 'var(--shadow-card)' : 'none',
+            }}
+          >
+            {tab.label}
+            {alerts[tab.id] ? (
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ background: 'var(--color-signal-500)' }}
+                aria-label="Needs attention"
+              />
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Settings() {
   const qc = useQueryClient();
   const [keys, setKeys] = useState<Record<string, string>>({});
+
+  // The active tab lives in the URL, so a refresh — or a link pasted into a
+  // support thread — lands on the same pane.
+  const [params, setParams] = useSearchParams();
+  const rawTab = params.get('tab');
+  const tab: TabId = TABS.some((t) => t.id === rawTab) ? (rawTab as TabId) : 'connections';
+  const setTab = (next: TabId) => setParams({ tab: next }, { replace: true });
 
   const providers = useQuery({ queryKey: ['providers'], queryFn: () => api.get<Provider[]>('/providers') });
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => api.get<SettingsData>('/settings') });
@@ -55,132 +123,148 @@ export function Settings() {
 
   const list = providers.data ?? [];
   const s = settings.data!;
+  const canAnswer = Boolean(s.resolved.chat);
 
   return (
     <>
       <PageHeader title="Settings" sub="Providers, the models each job uses, and the storefront widget." />
 
-      <Section title="Connections">
-        <div className="grid gap-2.5">
-          {list.map((p) => (
-            <Card
-              key={p.id}
-              edge={p.configured ? 'var(--color-crew-500)' : undefined}
-              className="px-5 py-4"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
-                  <span
-                    className="scr-avatar"
-                    style={
-                      p.configured
-                        ? { background: 'var(--tint-crew)', color: 'var(--fg-crew)' }
-                        : { background: 'var(--tint-neutral)', color: 'var(--text-dim)' }
-                    }
-                  >
-                    {p.label.slice(0, 2).toUpperCase()}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-[13px] font-semibold">{p.label}</p>
-                      {p.configured ? <Pill tone="crew">Connected</Pill> : <Pill>Not connected</Pill>}
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-                      {!p.capabilities.embeddings ? <Label>cannot read your store</Label> : <Label>can read your store</Label>}
-                      {!p.capabilities.sampling ? <Label>no temperature control</Label> : null}
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        alerts={{
+          connections: !list.some((p) => p.configured),
+          models: !s.canEmbed,
+          storefront: !canAnswer,
+        }}
+      />
+
+      {'connections' === tab ? (
+        <>
+          <div className="grid gap-2.5">
+            {list.map((p) => (
+              <Card key={p.id} className="px-5 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <ProviderMark id={p.id} label={p.label} />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-[13px] font-semibold">{p.label}</p>
+                        {p.configured ? <Pill tone="crew">Connected</Pill> : <Pill>Not connected</Pill>}
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+                        {!p.capabilities.embeddings ? <Label>cannot read your store</Label> : <Label>can read your store</Label>}
+                        {!p.capabilities.sampling ? <Label>no temperature control</Label> : null}
+                      </div>
                     </div>
                   </div>
+                  {p.configured ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] tabular-nums" style={{ color: 'var(--text-dim)' }}>{p.keyHint}</span>
+                      <Button icon="check" onClick={() => verify.mutate(p.id)} disabled={verify.isPending}>Test</Button>
+                      <Button variant="danger" onClick={() => removeKey.mutate(p.id)}>Remove</Button>
+                    </div>
+                  ) : null}
                 </div>
-                {p.configured ? (
-                  <div className="flex items-center gap-2">
-                    <span className="scr-num text-[12px]" style={{ color: 'var(--text-dim)' }}>{p.keyHint}</span>
-                    <Button icon="check" onClick={() => verify.mutate(p.id)} disabled={verify.isPending}>Test</Button>
-                    <Button variant="danger" onClick={() => removeKey.mutate(p.id)}>Remove</Button>
-                  </div>
-                ) : null}
-              </div>
 
-              {verify.data && verify.variables === p.id ? (
-                <p className="mt-2 text-[12px]" style={{ color: verify.data.ok ? 'var(--fg-crew)' : 'var(--fg-alert)' }}>
-                  {verify.data.ok ? 'Connected.' : verify.data.error}
-                </p>
-              ) : null}
-
-              <form
-                className="mt-3.5 flex gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const key = (keys[p.id] ?? '').trim();
-                  if (key) saveKey.mutate({ id: p.id, key });
-                }}
-              >
-                <input
-                  type="password"
-                  value={keys[p.id] ?? ''}
-                  onChange={(e) => setKeys((k) => ({ ...k, [p.id]: e.target.value }))}
-                  placeholder={p.configured ? 'Replace the key' : 'Paste the API key'}
-                  className="scr-input flex-1"
-                />
-                <Button type="submit" disabled={saveKey.isPending || !(keys[p.id] ?? '').trim()}>Save</Button>
-              </form>
-            </Card>
-          ))}
-        </div>
-        {saveKey.isError ? <div className="mt-3"><Problem message={(saveKey.error as Error).message} /></div> : null}
-      </Section>
-
-      <Section title="Which model does what">
-        {!s.canEmbed ? (
-          <div className="mb-3">
-            <Problem message="Nothing connected can read your store. Add OpenAI or Gemini — Anthropic writes replies but cannot build the search index." />
-          </div>
-        ) : null}
-
-        <div className="grid gap-2">
-          {s.tasks.map((task) => {
-            const current = s.modelPolicy[task] ?? s.resolved[task] ?? null;
-            const wantsEmbedding = 'embedding' === task;
-
-            const options = list.flatMap((p) => {
-              const models = wantsEmbedding ? p.embedModels : p.chatModels;
-              return p.configured ? models.map((m) => ({ provider: p.id, model: m, label: `${p.label} · ${m}` })) : [];
-            });
-
-            return (
-              <Card key={task} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-                <div className="min-w-0">
-                  <p className="text-[13px] font-semibold">{TASK_COPY[task]?.title ?? task}</p>
-                  <p className="mt-0.5 text-[12px]" style={{ color: 'var(--text-dim)' }}>
-                    {TASK_COPY[task]?.hint}
+                {verify.data && verify.variables === p.id ? (
+                  <p className="mt-2 text-[12px]" style={{ color: verify.data.ok ? 'var(--fg-crew)' : 'var(--fg-alert)' }}>
+                    {verify.data.ok ? 'Connected.' : verify.data.error}
                   </p>
-                </div>
-                <select
-                  value={current ? `${current.provider}|${current.model}` : ''}
-                  onChange={(e) => {
-                    const [provider, model] = e.target.value.split('|');
-                    savePolicy.mutate({ ...s.modelPolicy, [task]: { provider, model } });
+                ) : null}
+
+                <form
+                  className="mt-3.5 flex flex-wrap items-center gap-x-3 gap-y-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const key = (keys[p.id] ?? '').trim();
+                    if (key) saveKey.mutate({ id: p.id, key });
                   }}
-                  className="scr-select"
                 >
-                  <option value="">Not set</option>
-                  {options.map((o) => (
-                    <option key={`${o.provider}|${o.model}`} value={`${o.provider}|${o.model}`}>{o.label}</option>
-                  ))}
-                </select>
+                  <input
+                    type="password"
+                    value={keys[p.id] ?? ''}
+                    onChange={(e) => setKeys((k) => ({ ...k, [p.id]: e.target.value }))}
+                    placeholder={p.configured ? 'Replace the key' : 'Paste the API key'}
+                    className="scr-input min-w-0 flex-1"
+                  />
+                  <Button type="submit" disabled={saveKey.isPending || !(keys[p.id] ?? '').trim()}>Save</Button>
+                  {providerKeysUrl(p.id) ? (
+                    <a
+                      href={providerKeysUrl(p.id)!}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex shrink-0 items-center gap-1 text-[12px] whitespace-nowrap hover:underline"
+                      style={{ color: 'var(--text-dim)' }}
+                    >
+                      Get an API key
+                      <Icon name="arrowUpRight" size={12} />
+                    </a>
+                  ) : null}
+                </form>
               </Card>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+          {saveKey.isError ? <div className="mt-3"><Problem message={(saveKey.error as Error).message} /></div> : null}
+        </>
+      ) : null}
 
-        {savePolicy.isError ? <div className="mt-3"><Problem message={(savePolicy.error as Error).message} /></div> : null}
+      {'models' === tab ? (
+        <>
+          {!s.canEmbed ? (
+            <div className="mb-3">
+              <Problem message="Nothing connected can read your store. Add OpenAI or Gemini — Anthropic writes replies but cannot build the search index." />
+            </div>
+          ) : null}
 
-        <p className="mt-3 text-[12px]" style={{ color: 'var(--text-dim)' }}>
-          Cost estimates use published rates last checked {s.pricing.ratesVerified}. Models we have no rate for are
-          counted as unknown rather than free.
-        </p>
-      </Section>
+          <div className="grid gap-2.5">
+            {s.tasks.map((task) => {
+              const current = s.modelPolicy[task] ?? s.resolved[task] ?? null;
+              const wantsEmbedding = 'embedding' === task;
 
-      <Storefront chat={s.chat} canAnswer={Boolean(s.resolved.chat)} save={saveChat.mutate} busy={saveChat.isPending} />
+              const options = list.flatMap((p) => {
+                const models = wantsEmbedding ? p.embedModels : p.chatModels;
+                return p.configured ? models.map((m) => ({ provider: p.id, model: m, label: `${p.label} · ${m}` })) : [];
+              });
+
+              return (
+                <Card key={task} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold">{TASK_COPY[task]?.title ?? task}</p>
+                    <p className="mt-0.5 text-[12px]" style={{ color: 'var(--text-dim)' }}>
+                      {TASK_COPY[task]?.hint}
+                    </p>
+                  </div>
+                  <select
+                    value={current ? `${current.provider}|${current.model}` : ''}
+                    onChange={(e) => {
+                      const [provider, model] = e.target.value.split('|');
+                      savePolicy.mutate({ ...s.modelPolicy, [task]: { provider, model } });
+                    }}
+                    className="scr-select"
+                  >
+                    <option value="">Not set</option>
+                    {options.map((o) => (
+                      <option key={`${o.provider}|${o.model}`} value={`${o.provider}|${o.model}`}>{o.label}</option>
+                    ))}
+                  </select>
+                </Card>
+              );
+            })}
+          </div>
+
+          {savePolicy.isError ? <div className="mt-3"><Problem message={(savePolicy.error as Error).message} /></div> : null}
+
+          <p className="mt-3 text-[12px]" style={{ color: 'var(--text-dim)' }}>
+            Cost estimates use published rates last checked {s.pricing.ratesVerified}. Models we have no rate for are
+            counted as unknown rather than free.
+          </p>
+        </>
+      ) : null}
+
+      {'storefront' === tab ? (
+        <Storefront chat={s.chat} canAnswer={canAnswer} save={saveChat.mutate} busy={saveChat.isPending} />
+      ) : null}
     </>
   );
 }
@@ -207,14 +291,14 @@ function Storefront({
   const [draft, setDraft] = useState(chat);
 
   return (
-    <Section title="On the storefront">
+    <>
       {!canAnswer ? (
         <div className="mb-3">
-          <Problem message="No model is set for talking to customers, so the widget stays off. Choose one above first." />
+          <Problem message="No model is set for talking to customers, so the widget stays off. Choose one on the Models tab first." />
         </div>
       ) : null}
 
-      <Card edge={chat.enabled ? 'var(--color-crew-500)' : undefined} className="px-5 py-4">
+      <Card className="px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <IconChip name="message" tone={chat.enabled ? 'crew' : 'neutral'} />
@@ -312,6 +396,6 @@ function Storefront({
           <code className="scr-num">[storecrew_chat]</code> shortcode or the StoreCrew chat block.
         </p>
       </Card>
-    </Section>
+    </>
   );
 }
