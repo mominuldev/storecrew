@@ -48,17 +48,15 @@ final class Migration002RunCostKnown implements MigrationInterface {
 
 		$table = Tables::name( Tables::AGENT_RUNS );
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- identifier from Tables::name(), not user input; identifiers cannot be prepared.
 		$exists = $wpdb->get_results( "SHOW COLUMNS FROM {$table} LIKE 'cost_known'" );
 
 		if ( array() === $exists ) {
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange
-			$wpdb->query(
-				"ALTER TABLE {$table} ADD COLUMN cost_known tinyint(1) unsigned NOT NULL DEFAULT 1 AFTER cost_micros"
-			);
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- DDL on a Tables::name() identifier.
+			$wpdb->query( "ALTER TABLE {$table} ADD COLUMN cost_known tinyint(1) unsigned NOT NULL DEFAULT 1 AFTER cost_micros" );
 		}
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- identifier from Tables::name(), not user input; identifiers cannot be prepared.
 		$exists = $wpdb->get_results( "SHOW COLUMNS FROM {$table} LIKE 'cost_known'" );
 
 		if ( array() === $exists ) {

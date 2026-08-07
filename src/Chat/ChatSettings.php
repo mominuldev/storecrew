@@ -56,14 +56,14 @@ final class ChatSettings {
 	 */
 	public static function defaults(): array {
 		return array(
-			'enabled'      => false,
-			'autoPlace'    => true,
-			'position'     => self::POSITION_RIGHT,
-			'accent'       => '#111827',
-			'title'        => __( 'Ask the store', 'storecrew' ),
-			'launcher'     => __( 'Chat', 'storecrew' ),
-			'greeting'     => __( 'Hello — ask me anything about our products, your order, or our policies.', 'storecrew' ),
-			'placeholder'  => __( 'Type your message', 'storecrew' ),
+			'enabled'       => false,
+			'autoPlace'     => true,
+			'position'      => self::POSITION_RIGHT,
+			'accent'        => '#111827',
+			'title'         => __( 'Ask the store', 'storecrew' ),
+			'launcher'      => __( 'Chat', 'storecrew' ),
+			'greeting'      => __( 'Hello — ask me anything about our products, your order, or our policies.', 'storecrew' ),
+			'placeholder'   => __( 'Type your message', 'storecrew' ),
 			'offlineNotice' => __( 'Chat is unavailable right now. Please get in touch by email.', 'storecrew' ),
 		);
 	}

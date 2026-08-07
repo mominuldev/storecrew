@@ -150,11 +150,11 @@ final class ChatController extends RestController {
 		$ready = $this->is_ready();
 
 		$payload = array(
-			'enabled'     => (bool) $settings['enabled'] && $this->features->enabled( self::FEATURE ),
-			'ready'       => $ready,
-			'nonce'       => wp_create_nonce( 'wp_rest' ),
-			'maxChars'    => ChatService::MAX_MESSAGE_CHARS,
-			'appearance'  => array(
+			'enabled'      => (bool) $settings['enabled'] && $this->features->enabled( self::FEATURE ),
+			'ready'        => $ready,
+			'nonce'        => wp_create_nonce( 'wp_rest' ),
+			'maxChars'     => ChatService::MAX_MESSAGE_CHARS,
+			'appearance'   => array(
 				'position'    => (string) $settings['position'],
 				'accent'      => (string) $settings['accent'],
 				'title'       => (string) $settings['title'],
@@ -335,7 +335,12 @@ final class ChatController extends RestController {
 
 		$this->chat->close( (int) $conversation->id );
 
-		return $this->ok( array( 'uuid' => (string) $conversation->uuid, 'status' => 'closed' ) );
+		return $this->ok(
+			array(
+				'uuid'   => (string) $conversation->uuid,
+				'status' => 'closed',
+			)
+		);
 	}
 
 	/**

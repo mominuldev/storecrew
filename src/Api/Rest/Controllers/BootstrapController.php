@@ -59,8 +59,8 @@ final class BootstrapController extends RestController {
 				'routes'     => $manifest['routes'],
 				'onboarding' => $this->onboarding_state(),
 				'user'       => array(
-					'canManage'    => current_user_can( Capabilities::MANAGE ),
-					'canViewStats' => current_user_can( Capabilities::VIEW_ANALYTICS ),
+					'canManage'     => current_user_can( Capabilities::MANAGE ),
+					'canViewStats'  => current_user_can( Capabilities::VIEW_ANALYTICS ),
 					'canEditAgents' => current_user_can( Capabilities::MANAGE_AGENTS ),
 				),
 			)

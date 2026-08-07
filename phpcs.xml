@@ -1,0 +1,103 @@
+<?xml version="1.0"?>
+<ruleset name="StoreCrew">
+	<description>StoreCrew AI coding standard — WPCS, tuned to what this codebase enforces on purpose.</description>
+
+	<file>src</file>
+	<file>storecrew.php</file>
+	<file>uninstall.php</file>
+
+	<arg name="extensions" value="php"/>
+	<arg name="parallel" value="8"/>
+	<arg value="sp"/>
+
+	<config name="minimum_wp_version" value="6.6"/>
+	<config name="testVersion" value="8.3-"/>
+
+	<rule ref="WordPress">
+		<!-- PSR-4: one class per file, file named for the class. WPCS's
+		     class-file-name and filename sniffs predate autoloading. -->
+		<exclude name="WordPress.Files.FileName"/>
+
+		<!-- declare(strict_types=1) sits on the opening line by design;
+		     these sniffs fight it and each other. -->
+		<exclude name="Generic.PHP.RequireStrictTypes"/>
+		<exclude name="Squiz.Commenting.FileComment.Missing"/>
+
+		<!-- Short ternaries and modern syntax are used deliberately under
+		     PHP 8.3; the guard files that must not use them are checked by
+		     tools/check-invariants.php, which knows exactly which four files
+		     the 5.6 rule covers - a blanket sniff cannot express that. -->
+		<exclude name="Universal.Operators.DisallowShortTernary"/>
+
+		<!-- Enforced by tools/check-invariants.php with the three documented
+		     carve-outs (07 § principle 1); the blanket sniff cannot express
+		     "only these directories". -->
+		<exclude name="WordPress.DB.DirectDatabaseQuery"/>
+
+		<!-- The codebase caches deliberately (transients where loss is safe)
+		     and documents each choice; the sniff flags every one. -->
+		<exclude name="WordPress.DB.SlowDBQuery"/>
+
+		<!-- Yoda conditions read backwards; strict comparison is enforced
+		     instead. -->
+		<exclude name="WordPress.PHP.YodaConditions"/>
+
+		<!-- The commenting convention here is documented and deliberate:
+		     native PHP 8.3 types carry the WHAT, comments carry the WHY, and
+		     @param tags that restate a typed signature are noise that drifts.
+		     These sniffs predate scalar types and demand the restating. The
+		     convention still requires a docblock wherever a comment says
+		     something a type cannot — array shapes, units, invariants. -->
+		<exclude name="Squiz.Commenting.FunctionComment.Missing"/>
+		<exclude name="Squiz.Commenting.FunctionComment.MissingParamTag"/>
+		<exclude name="Squiz.Commenting.FunctionComment.IncorrectTypeHint"/>
+		<exclude name="Squiz.Commenting.FunctionComment.ParamNameNoMatch"/>
+		<exclude name="Squiz.Commenting.FunctionCommentThrowTag.Missing"/>
+		<exclude name="Squiz.Commenting.VariableComment.Missing"/>
+		<exclude name="Squiz.Commenting.VariableComment.MissingVar"/>
+		<exclude name="Squiz.Commenting.ClassComment.Missing"/>
+		<exclude name="Generic.Commenting.DocComment.MissingShort"/>
+		<exclude name="Generic.Commenting.DocComment.LongNotCapital"/>
+		<exclude name="Squiz.Commenting.InlineComment.InvalidEndChar"/>
+
+		<!-- Exception messages feed logs and run records, never HTML; output
+		     paths escape at the point of output (probed in verify-rest). -->
+		<exclude name="WordPress.Security.EscapeOutput.ExceptionNotEscaped"/>
+
+		<!-- `final class` with `static` returns is a deliberate idiom for
+		     fluent value objects; the sniff's rewrite would change semantics
+		     under future inheritance changes. -->
+		<exclude name="Universal.CodeAnalysis.StaticInFinalClass"/>
+
+		<!-- Multiple assignment and count() in a guarded loop are used in
+		     three measured hot paths; each is commented at the site. -->
+		<exclude name="Squiz.PHP.DisallowMultipleAssignments"/>
+		<exclude name="Squiz.PHP.DisallowSizeFunctionsInLoops"/>
+
+		<!-- `$class`/`$default` as parameter names mirror the PSR-11 and
+		     get_option() signatures they implement. -->
+		<exclude name="Universal.NamingConventions.NoReservedKeywordParameterNames"/>
+	</rule>
+
+	<!-- Envelope encryption stores binary ciphertext as text; base64 here is
+	     encoding, not obfuscation. Scoped to the one class that does it. -->
+	<rule ref="WordPress.PHP.DiscouragedPHPFunctions">
+		<exclude-pattern>src/Security/SecretStore\.php</exclude-pattern>
+		<exclude-pattern>src/Knowledge/Vector\.php</exclude-pattern>
+	</rule>
+
+	<!-- The frozen-registry guard logs in production by design (15 § 3). -->
+	<rule ref="WordPress.PHP.DevelopmentFunctions">
+		<exclude-pattern>src/Api/Registry/Registry\.php</exclude-pattern>
+	</rule>
+
+	<!-- Test files run through eval() (no strict_types) and shim WP functions;
+	     tools are operator scripts. Both follow the spirit, not every sniff. -->
+	<exclude-pattern>tests/*</exclude-pattern>
+	<exclude-pattern>tools/*</exclude-pattern>
+	<exclude-pattern>vendor/*</exclude-pattern>
+	<exclude-pattern>node_modules/*</exclude-pattern>
+	<exclude-pattern>assets/*</exclude-pattern>
+	<exclude-pattern>admin-app/*</exclude-pattern>
+	<exclude-pattern>widget-app/*</exclude-pattern>
+</ruleset>

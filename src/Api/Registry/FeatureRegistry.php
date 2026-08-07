@@ -48,7 +48,7 @@ final class FeatureRegistry extends Registry {
 	 *
 	 * @return static
 	 */
-	public function register( Feature $feature, string $owner = 'storecrew' ): static {
+	public function register( Feature $feature, string $owner = 'storecrew' ): self {
 		return $this->add( $feature->slug, $feature, $owner );
 	}
 

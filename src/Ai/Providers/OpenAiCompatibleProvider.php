@@ -95,7 +95,13 @@ abstract class OpenAiCompatibleProvider implements ChatProviderInterface {
 
 		if ( '' !== $request->system ) {
 			// Unlike Anthropic, the system prompt rides in the messages array.
-			array_unshift( $messages, array( 'role' => 'system', 'content' => $request->system ) );
+			array_unshift(
+				$messages,
+				array(
+					'role'    => 'system',
+					'content' => $request->system,
+				)
+			);
 		}
 
 		$payload = array(
@@ -178,7 +184,10 @@ abstract class OpenAiCompatibleProvider implements ChatProviderInterface {
 				continue;
 			}
 
-			$out[] = array( 'role' => $message->role, 'content' => $message->content );
+			$out[] = array(
+				'role'    => $message->role,
+				'content' => $message->content,
+			);
 		}
 
 		return $out;

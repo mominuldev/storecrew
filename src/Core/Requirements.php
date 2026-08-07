@@ -116,15 +116,15 @@ class Requirements {
 
 		foreach ( $this->failures() as $failure ) {
 			if ( null === $failure['current'] ) {
-				/* translators: 1: dependency name, 2: required version */
 				$lines[] = sprintf(
+					/* translators: 1: dependency name, 2: required version */
 					__( '%1$s %2$s or higher is required, but it is not active.', 'storecrew' ),
 					$failure['label'],
 					$failure['required']
 				);
 			} else {
-				/* translators: 1: dependency name, 2: required version, 3: installed version */
 				$lines[] = sprintf(
+					/* translators: 1: dependency name, 2: required version, 3: installed version */
 					__( '%1$s %2$s or higher is required. This site is running %3$s.', 'storecrew' ),
 					$failure['label'],
 					$failure['required'],

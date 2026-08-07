@@ -145,7 +145,12 @@ final class IndexController extends RestController {
 
 		$this->index_job->cancel( (int) $active->id );
 
-		return $this->ok( array( 'runId' => (int) $active->id, 'cancelled' => true ) );
+		return $this->ok(
+			array(
+				'runId'     => (int) $active->id,
+				'cancelled' => true,
+			)
+		);
 	}
 
 	/**

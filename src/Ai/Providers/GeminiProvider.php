@@ -159,7 +159,10 @@ final class GeminiProvider implements ChatProviderInterface, EmbeddingProviderIn
 					$parts[] = $part;
 				}
 
-				$contents[] = array( 'role' => 'model', 'parts' => $parts );
+				$contents[] = array(
+					'role'  => 'model',
+					'parts' => $parts,
+				);
 
 				continue;
 			}

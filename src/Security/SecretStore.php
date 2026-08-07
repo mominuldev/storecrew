@@ -30,9 +30,9 @@ defined( 'ABSPATH' ) || exit;
  */
 final class SecretStore {
 
-	public const OPTION_DATA_KEY   = 'storecrew_data_key';
-	public const OPTION_SECRETS    = 'storecrew_secrets';
-	public const OPTION_FALLBACK   = 'storecrew_master_fallback';
+	public const OPTION_DATA_KEY = 'storecrew_data_key';
+	public const OPTION_SECRETS  = 'storecrew_secrets';
+	public const OPTION_FALLBACK = 'storecrew_master_fallback';
 
 	/**
 	 * Ciphertext format version. Bumped if the envelope layout changes.

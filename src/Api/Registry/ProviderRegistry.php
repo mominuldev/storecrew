@@ -45,7 +45,7 @@ final class ProviderRegistry extends Registry {
 	 *
 	 * @return static
 	 */
-	public function register( ProviderInterface $provider, string $owner = 'storecrew' ): static {
+	public function register( ProviderInterface $provider, string $owner = 'storecrew' ): self {
 		return $this->add( $provider->id(), $provider, $owner );
 	}
 

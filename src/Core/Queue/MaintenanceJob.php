@@ -82,10 +82,10 @@ final class MaintenanceJob {
 			// A job killed mid-flight leaves status=running with a dead
 			// heartbeat. Reporting that as in-progress is the failure mode
 			// merchants actually hit.
-			'indexRuns'     => $this->runs->reap_stalled(),
-			'agentRuns'     => $this->agent_runs->reap_stalled(),
-			'conversations' => $this->conversations->abandon_stale(),
-			'auditRows'     => $this->prune_audit(),
+			'indexRuns'           => $this->runs->reap_stalled(),
+			'agentRuns'           => $this->agent_runs->reap_stalled(),
+			'conversations'       => $this->conversations->abandon_stale(),
+			'auditRows'           => $this->prune_audit(),
 			// Retention windows (04 § 11). Runs and usage prune by their own
 			// age; conversations cascade to everything they own.
 			'prunedRuns'          => $this->prune_runs(),

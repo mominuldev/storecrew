@@ -99,7 +99,12 @@ final class AnthropicProvider implements ChatProviderInterface {
 				array(
 					'model'      => $this->default_models()[0],
 					'max_tokens' => 1,
-					'messages'   => array( array( 'role' => 'user', 'content' => 'ping' ) ),
+					'messages'   => array(
+						array(
+							'role'    => 'user',
+							'content' => 'ping',
+						),
+					),
 				),
 				self::ID,
 				20
@@ -203,7 +208,10 @@ final class AnthropicProvider implements ChatProviderInterface {
 					$block['is_error'] = true;
 				}
 
-				$out[] = array( 'role' => 'user', 'content' => array( $block ) );
+				$out[] = array(
+					'role'    => 'user',
+					'content' => array( $block ),
+				);
 
 				continue;
 			}
@@ -212,7 +220,10 @@ final class AnthropicProvider implements ChatProviderInterface {
 				$blocks = array();
 
 				if ( '' !== $message->content ) {
-					$blocks[] = array( 'type' => 'text', 'text' => $message->content );
+					$blocks[] = array(
+						'type' => 'text',
+						'text' => $message->content,
+					);
 				}
 
 				foreach ( $message->tool_calls as $call ) {
@@ -224,12 +235,18 @@ final class AnthropicProvider implements ChatProviderInterface {
 					);
 				}
 
-				$out[] = array( 'role' => 'assistant', 'content' => $blocks );
+				$out[] = array(
+					'role'    => 'assistant',
+					'content' => $blocks,
+				);
 
 				continue;
 			}
 
-			$out[] = array( 'role' => $message->role, 'content' => $message->content );
+			$out[] = array(
+				'role'    => $message->role,
+				'content' => $message->content,
+			);
 		}
 
 		return $out;

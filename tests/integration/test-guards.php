@@ -14,6 +14,27 @@ $scenario = $argv[1] ?? '';
 
 switch ( $scenario ) {
 
+	case 'pro-uninstall':
+		// Pro's uninstall removes exactly what Pro created — its licence
+		// options — and nothing the free plugin owns (FR-DIST-06).
+		update_option( 'storecrew_pro_licence_tier', 'pro' );
+		update_option( 'storecrew_pro_licence_key', 'sc_pro_test' );
+		update_option( 'storecrew_pro_licence_status', 'active' );
+		// Decoys: free-plugin state that must survive an add-on's removal.
+		update_option( 'storecrew_model_policy', array( 'chat' => array( 'provider' => 'x' ) ) );
+		update_option( 'storecrew_delete_data_on_uninstall', '0' );
+
+		define( 'WP_UNINSTALL_PLUGIN', 'storecrew-pro/storecrew-pro.php' );
+		require $plugins . '/storecrew-pro/uninstall.php';
+
+		t( 'no fatal', true );
+		t( 'licence tier removed', false === get_option( 'storecrew_pro_licence_tier' ) );
+		t( 'licence key removed', false === get_option( 'storecrew_pro_licence_key' ) );
+		t( 'licence status removed', false === get_option( 'storecrew_pro_licence_status' ) );
+		t( 'PROBE: the free plugin\'s options survive', false !== get_option( 'storecrew_model_policy' ) );
+		t( 'PROBE: the free plugin\'s uninstall opt-in is untouched', '0' === get_option( 'storecrew_delete_data_on_uninstall' ) );
+		break;
+
 	case 'pro-without-free':
 		// Pro active, free absent entirely. Must notice, must not fatal.
 		require $plugins . '/storecrew-pro/storecrew-pro.php';

@@ -28,8 +28,8 @@ defined( 'ABSPATH' ) || exit;
 final readonly class Agent {
 
 	/**
-	 * @param list<string>         $tool_ids   Tools this agent may use.
-	 * @param array<string, mixed> $guardrails Behavioural constraints.
+	 * @param list<string> $tool_ids   Tools this agent may use.
+	 * @param list<string> $guardrails Behavioural constraints.
 	 */
 	public function __construct(
 		public string $id,

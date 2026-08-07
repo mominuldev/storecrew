@@ -32,7 +32,7 @@ run() {
 
 run "boot + handshake + entitlement" test-boot.php
 
-for scenario in pro-without-free free-without-woo free-with-old-woo pro-api-too-new pro-api-too-old; do
+for scenario in pro-without-free free-without-woo free-with-old-woo pro-api-too-new pro-api-too-old pro-uninstall; do
 	run "guard: ${scenario}" test-guards.php "${scenario}"
 done
 

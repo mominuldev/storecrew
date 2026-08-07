@@ -266,6 +266,11 @@ green in any run order.
 # Admin spec needs STORECREW_TEST_USER / STORECREW_TEST_PASS (skips loudly
 # without); STORECREW_TEST_LIVE=1 opts into the one token-spending section.
 npm run test:browser
+
+# Static analysis: phpcs (WPCS, tuned) + phpstan (level 5) + the invariant
+# checker (noGlobalWpdb + carve-outs, noProReferenceInFree, parse-safety —
+# each self-testing via --self-test) + the DB-free harness.
+composer check
 ```
 
 **Suites must not touch what they cannot restore.** Options are

@@ -98,11 +98,11 @@ final class Widget {
 			self::HANDLE,
 			'window.storecrewChat=' . wp_json_encode(
 				array(
-					'root'  => esc_url_raw( rest_url( 'storecrew/v1' ) ),
+					'root' => esc_url_raw( rest_url( 'storecrew/v1' ) ),
 					// Auto-placement is decided here rather than in the script so
 					// a merchant who only wants the block does not get a floating
 					// launcher as well.
-					'auto'  => (bool) $settings['autoPlace'],
+					'auto' => (bool) $settings['autoPlace'],
 				),
 				JSON_UNESCAPED_SLASHES
 			) . ';',

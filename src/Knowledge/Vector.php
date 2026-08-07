@@ -74,7 +74,7 @@ final class Vector {
 			return 0.0;
 		}
 
-		$dot   = 0.0;
+		$dot    = 0.0;
 		$norm_a = 0.0;
 		$norm_b = 0.0;
 

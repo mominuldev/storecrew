@@ -85,7 +85,7 @@ final class ModelPolicy {
 	 * @return array{provider: string, model: string}|null
 	 */
 	public function fallback( string $task ): ?array {
-		$entry = $this->stored()[ $task ]['fallback' ] ?? null;
+		$entry = $this->stored()[ $task ]['fallback'] ?? null;
 
 		if ( ! is_array( $entry ) ) {
 			return null;

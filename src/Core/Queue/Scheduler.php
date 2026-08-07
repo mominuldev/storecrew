@@ -151,7 +151,11 @@ final class Scheduler {
 	 */
 	public function health(): array {
 		if ( ! $this->is_available() || ! function_exists( 'as_get_scheduled_actions' ) ) {
-			return array( 'available' => false, 'pending' => 0, 'oldest' => 0 );
+			return array(
+				'available' => false,
+				'pending'   => 0,
+				'oldest'    => 0,
+			);
 		}
 
 		$pending = as_get_scheduled_actions(

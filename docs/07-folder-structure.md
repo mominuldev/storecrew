@@ -17,14 +17,19 @@ Two principles decide where a file lives:
    `get_charset_collate()`), and — the one outside `Database/` —
    `Knowledge/Extractor/PagesPostTypeIds.php`, which uses `$wpdb->prepare()`
    inside a `posts_where` filter for keyset pagination: it augments a
-   WP_Query, it never queries a plugin table. The rule is convention, checked
-   at review — no static-analysis config enforces it yet.
+   WP_Query, it never queries a plugin table. **The rule is automated**:
+   `tools/check-invariants.php` (run by `composer check`) enforces it with
+   exactly these carve-outs, plus `noProReferenceInFree` and the parse-safety
+   rule below — and self-tests by violating each rule once, per the working
+   agreement.
 2. **Parse-safety is a location property.** Four files must stay
    PHP 5.6-parseable because they load before the version guard runs:
    `storecrew.php`, `uninstall.php`, `src/Core/Requirements.php`, and
-   `storecrew-pro.php`. Everything else targets PHP 8.3. The rule is keyed to
-   these paths and checked by review — a typed property in any of them white-
-   screens a PHP 7.4 site instead of showing the requirements notice.
+   `storecrew-pro.php`. Everything else targets PHP 8.3. A typed property in
+   any of them white-screens a PHP 7.4 site instead of showing the
+   requirements notice — so `check-invariants.php` token-scans the free
+   plugin's three for post-5.6 constructs (comments and strings stripped
+   first; prose legitimately contains `??`).
 
 ---
 

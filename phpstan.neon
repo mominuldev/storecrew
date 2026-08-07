@@ -1,0 +1,31 @@
+includes:
+	- vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+	level: 5
+	paths:
+		- src
+	scanFiles:
+		- vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
+		- vendor/php-stubs/woocommerce-stubs/woocommerce-packages-stubs.php
+	bootstrapFiles:
+		- tools/phpstan-bootstrap.php
+	treatPhpDocTypesAsCertain: false
+	ignoreErrors:
+		# register_rest_route's stub types a single endpoint's args; WordPress
+		# also accepts an array OF endpoint arrays on one path (GET+POST), and
+		# these three controllers use exactly that documented core form.
+		-
+			identifier: argument.type
+			path: src/Api/Rest/Controllers/*
+			count: 3
+		# register_block_type's stub wants api_version as string; core's own
+		# WP_Block_Type::$api_version is an int and every core block passes 3.
+		-
+			identifier: argument.type
+			path: src/Chat/Widget.php
+			count: 1
+		# array_values() after array_filter() is deliberate normalisation: the
+		# analyser proves it redundant only under its own inference; the code
+		# refuses to depend on that proof holding across refactors.
+		- identifier: arrayValues.list

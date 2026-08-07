@@ -42,7 +42,7 @@ final class ExtractorRegistry extends Registry {
 	 *
 	 * @return static
 	 */
-	public function register( ExtractorInterface $extractor, string $owner = 'storecrew' ): static {
+	public function register( ExtractorInterface $extractor, string $owner = 'storecrew' ): self {
 		return $this->add( $extractor->source_type(), $extractor, $owner );
 	}
 

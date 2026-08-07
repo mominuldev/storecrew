@@ -24,11 +24,11 @@ defined( 'ABSPATH' ) || exit;
  */
 final class AgentRunRepository extends Repository {
 
-	public const STATUS_RUNNING  = 'running';
-	public const STATUS_COMPLETE = 'completed';
-	public const STATUS_FAILED   = 'failed';
-	public const STATUS_BUDGET   = 'budget_exceeded';
-	public const STATUS_TIMEOUT  = 'timeout';
+	public const STATUS_RUNNING   = 'running';
+	public const STATUS_COMPLETE  = 'completed';
+	public const STATUS_FAILED    = 'failed';
+	public const STATUS_BUDGET    = 'budget_exceeded';
+	public const STATUS_TIMEOUT   = 'timeout';
 	public const STATUS_CANCELLED = 'cancelled';
 
 	protected function table(): string {

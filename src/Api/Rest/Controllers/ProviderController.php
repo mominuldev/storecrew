@@ -132,7 +132,7 @@ final class ProviderController extends RestController {
 			'provider',
 			0,
 			array( 'provider' => $id ),
-			(string) ( $_SERVER['REMOTE_ADDR'] ?? '' )
+			isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( (string) $_SERVER['REMOTE_ADDR'] ) ) : ''
 		);
 
 		return $this->ok(
@@ -160,10 +160,15 @@ final class ProviderController extends RestController {
 			'provider',
 			0,
 			array( 'provider' => $id ),
-			(string) ( $_SERVER['REMOTE_ADDR'] ?? '' )
+			isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( (string) $_SERVER['REMOTE_ADDR'] ) ) : ''
 		);
 
-		return $this->ok( array( 'id' => $id, 'configured' => false ) );
+		return $this->ok(
+			array(
+				'id'         => $id,
+				'configured' => false,
+			)
+		);
 	}
 
 	/**

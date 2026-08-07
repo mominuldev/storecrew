@@ -63,17 +63,17 @@ final class SettingsController extends RestController {
 
 		return $this->ok(
 			array(
-				'modelPolicy'   => $this->policy->stored(),
-				'resolved'      => $resolved,
-				'spend'         => $this->spend->status(),
-				'pricing'       => array(
+				'modelPolicy' => $this->policy->stored(),
+				'resolved'    => $resolved,
+				'spend'       => $this->spend->status(),
+				'pricing'     => array(
 					// Surfaced so a stale rate table is visible rather than
 					// assumed. Unpriced models report unknown, never zero.
 					'ratesVerified' => Pricing::RATES_VERIFIED,
 				),
-				'canEmbed'      => $this->providers->can_embed(),
-				'tasks'         => ModelPolicy::tasks(),
-				'chat'          => ChatSettings::all(),
+				'canEmbed'    => $this->providers->can_embed(),
+				'tasks'       => ModelPolicy::tasks(),
+				'chat'        => ChatSettings::all(),
 			)
 		);
 	}
@@ -118,7 +118,7 @@ final class SettingsController extends RestController {
 			'settings',
 			0,
 			array( 'keys' => array_keys( $body ) ),
-			(string) ( $_SERVER['REMOTE_ADDR'] ?? '' )
+			isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( (string) $_SERVER['REMOTE_ADDR'] ) ) : ''
 		);
 
 		return $this->get_settings();

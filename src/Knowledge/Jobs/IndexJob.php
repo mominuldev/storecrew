@@ -97,7 +97,10 @@ final class IndexJob {
 
 		if ( false === $type_index ) {
 			$type_index = 0;
-			$cursor     = array( 'type' => $types[0], 'after' => 0 );
+			$cursor     = array(
+				'type'  => $types[0],
+				'after' => 0,
+			);
 		}
 
 		$processed = 0;
@@ -149,7 +152,10 @@ final class IndexJob {
 					do_action( 'storecrew_index_object_failed', $type, $object_id, $e->getMessage() );
 				}
 
-				$cursor = array( 'type' => $type, 'after' => $object_id );
+				$cursor = array(
+					'type'  => $type,
+					'after' => $object_id,
+				);
 			}
 		}
 
@@ -182,12 +188,18 @@ final class IndexJob {
 	 */
 	private function parse_cursor( string $cursor ): array {
 		if ( '' === $cursor || ! str_contains( $cursor, ':' ) ) {
-			return array( 'type' => '', 'after' => 0 );
+			return array(
+				'type'  => '',
+				'after' => 0,
+			);
 		}
 
 		[ $type, $after ] = explode( ':', $cursor, 2 );
 
-		return array( 'type' => $type, 'after' => (int) $after );
+		return array(
+			'type'  => $type,
+			'after' => (int) $after,
+		);
 	}
 
 	/**

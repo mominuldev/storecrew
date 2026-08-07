@@ -24,17 +24,17 @@ final class Tables {
 
 	public const PREFIX = 'scr_';
 
-	public const CONVERSATIONS      = 'conversations';
-	public const MESSAGES           = 'messages';
-	public const AGENT_RUNS         = 'agent_runs';
-	public const TOOL_CALLS         = 'tool_calls';
-	public const KNOWLEDGE_SOURCES  = 'knowledge_sources';
-	public const KNOWLEDGE_CHUNKS   = 'knowledge_chunks';
-	public const USAGE_EVENTS       = 'usage_events';
-	public const USAGE_COUNTERS     = 'usage_counters';
-	public const INDEX_RUNS         = 'index_runs';
-	public const AUDIT_LOG          = 'audit_log';
-	public const AGENT_CONFIGS      = 'agent_configs';
+	public const CONVERSATIONS     = 'conversations';
+	public const MESSAGES          = 'messages';
+	public const AGENT_RUNS        = 'agent_runs';
+	public const TOOL_CALLS        = 'tool_calls';
+	public const KNOWLEDGE_SOURCES = 'knowledge_sources';
+	public const KNOWLEDGE_CHUNKS  = 'knowledge_chunks';
+	public const USAGE_EVENTS      = 'usage_events';
+	public const USAGE_COUNTERS    = 'usage_counters';
+	public const INDEX_RUNS        = 'index_runs';
+	public const AUDIT_LOG         = 'audit_log';
+	public const AGENT_CONFIGS     = 'agent_configs';
 
 	/**
 	 * Fully qualified table name, including the site's table prefix.

@@ -58,7 +58,11 @@ final class Indexer {
 		$extractor = $this->extractors->get( $source_type );
 
 		if ( ! $extractor instanceof ExtractorInterface || ! $extractor->is_available() ) {
-			return array( 'status' => 'unavailable', 'source_id' => 0, 'chunks' => 0 );
+			return array(
+				'status'    => 'unavailable',
+				'source_id' => 0,
+				'chunks'    => 0,
+			);
 		}
 
 		$document = $extractor->extract( $object_id );
@@ -68,7 +72,11 @@ final class Indexer {
 			// it so it cannot keep being retrieved.
 			$this->forget( $source_type, $object_id );
 
-			return array( 'status' => 'removed', 'source_id' => 0, 'chunks' => 0 );
+			return array(
+				'status'    => 'removed',
+				'source_id' => 0,
+				'chunks'    => 0,
+			);
 		}
 
 		$upsert = $this->sources->upsert(
@@ -83,7 +91,11 @@ final class Indexer {
 		// The cost control. An unchanged hash means the text did not move, so
 		// there is nothing to re-embed no matter what else changed on the object.
 		if ( ! $upsert['changed'] ) {
-			return array( 'status' => 'unchanged', 'source_id' => $upsert['id'], 'chunks' => 0 );
+			return array(
+				'status'    => 'unchanged',
+				'source_id' => $upsert['id'],
+				'chunks'    => 0,
+			);
 		}
 
 		$pieces = $this->chunker->chunk( $document->content );
@@ -91,7 +103,11 @@ final class Indexer {
 		if ( array() === $pieces ) {
 			$this->sources->mark_indexed( $upsert['id'], 0 );
 
-			return array( 'status' => 'empty', 'source_id' => $upsert['id'], 'chunks' => 0 );
+			return array(
+				'status'    => 'empty',
+				'source_id' => $upsert['id'],
+				'chunks'    => 0,
+			);
 		}
 
 		$chunk_ids = $this->chunks->replace_for_source( $upsert['id'], $pieces );
@@ -161,7 +177,12 @@ final class Indexer {
 		$pending = $this->chunks->needing_embedding( $batch, $resolved['model'], self::dimensions(), $source_ids );
 
 		if ( array() === $pending ) {
-			return array( 'embedded' => 0, 'failed' => 0, 'blocked' => false, 'reason' => '' );
+			return array(
+				'embedded' => 0,
+				'failed'   => 0,
+				'blocked'  => false,
+				'reason'   => '',
+			);
 		}
 
 		$texts = array();

@@ -46,7 +46,7 @@ final class AdminRouteRegistry extends Registry {
 	 *
 	 * @return static
 	 */
-	public function register( AdminRoute $route, string $owner = 'storecrew' ): static {
+	public function register( AdminRoute $route, string $owner = 'storecrew' ): self {
 		return $this->add( $route->path, $route, $owner );
 	}
 

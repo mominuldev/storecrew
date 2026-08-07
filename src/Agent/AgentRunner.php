@@ -196,8 +196,8 @@ final class AgentRunner {
 				$usage = $usage->add( $response->usage );
 				$budget->record_tokens( $response->usage->total() );
 
-				$estimate = Pricing::estimate( $resolved['provider'], $resolved['model'], $response->usage );
-				$cost    += $estimate['micros'];
+				$estimate   = Pricing::estimate( $resolved['provider'], $resolved['model'], $response->usage );
+				$cost      += $estimate['micros'];
 				$known_cost = $known_cost && $estimate['known'];
 
 				if ( $response->is_refusal() ) {

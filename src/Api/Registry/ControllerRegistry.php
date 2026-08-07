@@ -54,7 +54,7 @@ final class ControllerRegistry extends Registry {
 	 *
 	 * @return static
 	 */
-	public function register( string $id, callable $factory, string $owner = 'storecrew' ): static {
+	public function register( string $id, callable $factory, string $owner = 'storecrew' ): self {
 		return $this->add( $id, $factory, $owner );
 	}
 

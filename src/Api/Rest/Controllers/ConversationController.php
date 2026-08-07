@@ -51,9 +51,18 @@ final class ConversationController extends RestController {
 				'callback'            => array( $this, 'index' ),
 				'permission_callback' => $this->permission( Capabilities::MANAGE ),
 				'args'                => array(
-					'limit'  => array( 'type' => 'integer', 'default' => 25 ),
-					'offset' => array( 'type' => 'integer', 'default' => 0 ),
-					'status' => array( 'type' => 'string', 'default' => '' ),
+					'limit'  => array(
+						'type'    => 'integer',
+						'default' => 25,
+					),
+					'offset' => array(
+						'type'    => 'integer',
+						'default' => 0,
+					),
+					'status' => array(
+						'type'    => 'string',
+						'default' => '',
+					),
 				),
 			)
 		);
@@ -145,13 +154,13 @@ final class ConversationController extends RestController {
 
 			foreach ( $this->calls->for_run( (int) $run->id ) as $call ) {
 				$tool_calls[] = array(
-					'id'        => (int) $call->id,
-					'toolId'    => (string) $call->tool_id,
-					'intent'    => (string) $call->intent,
-					'authMode'  => (string) $call->auth_mode,
-					'status'    => (string) $call->status,
-					'arguments' => json_decode( (string) $call->arguments, true ),
-					'result'    => json_decode( (string) $call->result, true ),
+					'id'         => (int) $call->id,
+					'toolId'     => (string) $call->tool_id,
+					'intent'     => (string) $call->intent,
+					'authMode'   => (string) $call->auth_mode,
+					'status'     => (string) $call->status,
+					'arguments'  => json_decode( (string) $call->arguments, true ),
+					'result'     => json_decode( (string) $call->result, true ),
 					'durationMs' => (int) $call->duration_ms,
 				);
 			}
@@ -228,6 +237,11 @@ final class ConversationController extends RestController {
 			);
 		}
 
-		return $this->ok( array( 'id' => $id, 'decision' => $decision ) );
+		return $this->ok(
+			array(
+				'id'       => $id,
+				'decision' => $decision,
+			)
+		);
 	}
 }

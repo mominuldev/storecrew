@@ -147,7 +147,13 @@ final class HttpClient implements HttpClientInterface {
 		// path for most providers, and without it a transient 503 during
 		// verify() reads to the merchant as "your API key was rejected".
 		while ( true ) {
-			$response = wp_remote_get( $url, array( 'headers' => $headers, 'timeout' => $timeout ) );
+			$response = wp_remote_get(
+				$url,
+				array(
+					'headers' => $headers,
+					'timeout' => $timeout,
+				)
+			);
 
 			$latency = (int) round( ( microtime( true ) - $started ) * 1000 );
 

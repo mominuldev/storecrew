@@ -79,6 +79,7 @@ function get_option( $k, $default = false ) {
 	return array_key_exists( $k, $GLOBALS['scr_options'] ) ? $GLOBALS['scr_options'][ $k ] : $default;
 }
 function update_option( $k, $v ) { $GLOBALS['scr_options'][ $k ] = $v; return true; }
+function delete_option( $k ) { unset( $GLOBALS['scr_options'][ $k ] ); return true; }
 function add_option( $k, $v ) {
 	if ( ! array_key_exists( $k, $GLOBALS['scr_options'] ) ) { $GLOBALS['scr_options'][ $k ] = $v; }
 	return true;

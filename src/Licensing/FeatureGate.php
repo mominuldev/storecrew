@@ -57,6 +57,7 @@ final class FeatureGate {
 		// Unknown feature: deny, and say so loudly in development.
 		if ( ! $feature instanceof Feature ) {
 			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_trigger_error -- deliberate WP_DEBUG-only developer warning; silent denial of a misspelt slug is the failure mode 10 § 2.1 warns about.
 				trigger_error(
 					sprintf(
 						'StoreCrew: checked unregistered feature "%s". Register it via storecrew_register_features.',

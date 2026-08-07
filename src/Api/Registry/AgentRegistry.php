@@ -43,7 +43,7 @@ final class AgentRegistry extends Registry {
 	 *
 	 * @return static
 	 */
-	public function register( Agent $agent, string $owner = 'storecrew' ): static {
+	public function register( Agent $agent, string $owner = 'storecrew' ): self {
 		return $this->add( $agent->id, $agent, $owner );
 	}
 

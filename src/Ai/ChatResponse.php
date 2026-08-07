@@ -22,11 +22,11 @@ defined( 'ABSPATH' ) || exit;
  */
 final readonly class ChatResponse {
 
-	public const STOP_END      = 'end_turn';
-	public const STOP_MAX      = 'max_tokens';
-	public const STOP_TOOL     = 'tool_use';
-	public const STOP_REFUSAL  = 'refusal';
-	public const STOP_UNKNOWN  = 'unknown';
+	public const STOP_END     = 'end_turn';
+	public const STOP_MAX     = 'max_tokens';
+	public const STOP_TOOL    = 'tool_use';
+	public const STOP_REFUSAL = 'refusal';
+	public const STOP_UNKNOWN = 'unknown';
 
 	public function __construct(
 		public string $text,
