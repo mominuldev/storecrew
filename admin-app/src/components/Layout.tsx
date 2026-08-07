@@ -159,7 +159,19 @@ export function Layout({ boot, pending }: { boot: Bootstrap; pending: number }) 
           </div>
 
           <nav className="flex items-center gap-1 lg:flex-col lg:items-stretch">
-            <span className="scr-label hidden lg:mb-2 lg:block lg:px-3">Console</span>
+            {/* A sixth destination, and only while it has something to say.
+                The ≤15-minute time-to-value target is spent mostly on finding
+                the next thing to do, and a merchant who navigates away from
+                the Overview card otherwise has nothing to navigate back to. */}
+            {!boot.onboarding.complete ? (
+              <>
+                <span className="scr-label hidden lg:mb-2 lg:block lg:px-3">Get started</span>
+                <NavItem key="/setup" item={{ to: '/setup', label: 'Finish setup', icon: 'spark', locked: false }} pending={0} />
+                <span className="scr-label hidden lg:mt-6 lg:mb-2 lg:block lg:px-3">Console</span>
+              </>
+            ) : (
+              <span className="scr-label hidden lg:mb-2 lg:block lg:px-3">Console</span>
+            )}
             {main.map((item) => (
               <NavItem key={item.to} item={item} pending={pending} />
             ))}

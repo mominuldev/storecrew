@@ -30,6 +30,7 @@ use StoreCrew\Knowledge\Extractor\PostExtractor;
 use StoreCrew\Knowledge\Extractor\ProductExtractor;
 use StoreCrew\Knowledge\Indexer;
 use StoreCrew\Knowledge\Retriever;
+use StoreCrew\Knowledge\SourceSelection;
 
 $pass = 0;
 $fail = 0;
@@ -49,6 +50,41 @@ $container = StoreCrew\Plugin::instance()->container();
 // Snapshot the live model policy: this suite saves its own and must hand the
 // merchant's back at the end rather than deleting it.
 $saved_policy = get_option( ModelPolicy::OPTION );
+
+// Same for the source selection. The indexer refuses a deselected source, so a
+// merchant who has excluded pages would otherwise turn this suite red — and a
+// suite that writes the option without restoring it would silently re-include
+// what they excluded.
+$saved_sources = get_option( SourceSelection::OPTION, false );
+
+// Restore on the way out *however* the suite leaves — including a fatal.
+// Learned the hard way: a crash between the write and the cleanup block left a
+// configured store carrying this suite's fake embedding provider, and the next
+// run dutifully snapshotted the poison and put it back. The end-of-file block
+// calls this too; whichever runs first wins.
+$restore_options = static function () use ( $saved_policy, $saved_sources ): void {
+	static $done = false;
+
+	if ( $done ) {
+		return;
+	}
+
+	$done = true;
+
+	if ( false === $saved_policy ) {
+		delete_option( ModelPolicy::OPTION );
+	} else {
+		update_option( ModelPolicy::OPTION, $saved_policy, false );
+	}
+
+	if ( false === $saved_sources ) {
+		delete_option( SourceSelection::OPTION );
+	} else {
+		update_option( SourceSelection::OPTION, $saved_sources, true );
+	}
+};
+
+register_shutdown_function( $restore_options );
 
 echo "\n== Chunker ==\n";
 $chunker = new Chunker( target_tokens: 40, max_tokens: 80, overlap_tokens: 8 );
@@ -264,6 +300,9 @@ $extractors = new ExtractorRegistry();
 $extractors->register( new ProductExtractor() );
 $extractors->register( new PostExtractor() );
 
+$selection = new SourceSelection( $extractors );
+$selection->save( array( ProductExtractor::SOURCE_TYPE, PostExtractor::SOURCE_TYPE ) );
+
 /** A deterministic stand-in for a real embedding provider. */
 $fake = new class() implements EmbeddingProviderInterface {
 	public int $calls        = 0;
@@ -319,7 +358,8 @@ $indexer = new Indexer(
 	$sources,
 	$chunks,
 	$usage,
-	$container->get( SpendGuard::class )
+	$container->get( SpendGuard::class ),
+	$selection
 );
 
 $first = $indexer->index_object( PostExtractor::SOURCE_TYPE, (int) $page_id );
@@ -398,7 +438,7 @@ $empty_providers = new ProviderRegistry();
 $empty_policy    = new ModelPolicy( $empty_providers );
 $lonely          = new Indexer(
 	$extractors, $empty_providers, $empty_policy, new Chunker(),
-	$sources, $chunks, $usage, $container->get( SpendGuard::class )
+	$sources, $chunks, $usage, $container->get( SpendGuard::class ), $selection
 );
 $blocked = $lonely->embed_pending( 5, $own_sources );
 $t(
@@ -508,6 +548,40 @@ $t(
 	null === $sources->find_by_key( KnowledgeSourceRepository::key( PostExtractor::SOURCE_TYPE, (int) $page_id ) )
 );
 
+echo "\n== Excluding a source purges it (FR-ADMIN-02 step 2) ==\n";
+
+// A synthetic source type, deliberately. `forget_type` deletes every row of a
+// type, so pointing it at `post` or `product` here would wipe the merchant's
+// real index — which is exactly what a first draft of this probe did, from
+// inside the REST suite, on a configured store.
+$purge_type = 'scr_probe_purge';
+
+$purge_source = $sources->upsert( $purge_type, 91001, 'hash-purge-1', 'Probe purge document', '', '' );
+$sources->mark_indexed(
+	$purge_source['id'],
+	count( $chunks->replace_for_source( $purge_source['id'], $chunker->chunk( 'A probe document that exists only to be excluded.' ) ) )
+);
+
+$posts_before = count( $sources->ids_of_type( PostExtractor::SOURCE_TYPE ) );
+
+$purged = $indexer->forget_type( $purge_type );
+
+$t( 'excluding a source removes its sources', 1 === $purged['sources'], wp_json_encode( $purged ) );
+$t( 'excluding a source removes its chunks', $purged['chunks'] > 0, wp_json_encode( $purged ) );
+$t( 'PROBE: nothing of that type survives', array() === $sources->ids_of_type( $purge_type ) );
+$t(
+	'PROBE: a source type that was not excluded is untouched',
+	$posts_before === count( $sources->ids_of_type( PostExtractor::SOURCE_TYPE ) )
+);
+$t( 'PROBE: excluding a type with nothing indexed is a no-op, not an error', array( 'sources' => 0, 'chunks' => 0 ) === $indexer->forget_type( $purge_type ) );
+
+$selection->save( array( PostExtractor::SOURCE_TYPE ) );
+$t(
+	'PROBE: a deselected source is refused one object at a time, so the live save hook cannot re-add it',
+	'excluded' === $indexer->index_object( ProductExtractor::SOURCE_TYPE, $product_id )['status']
+);
+$selection->save( array( ProductExtractor::SOURCE_TYPE, PostExtractor::SOURCE_TYPE ) );
+
 echo "\n== Cleanup ==\n";
 if ( $product_id > 0 ) {
 	$indexer->forget( ProductExtractor::SOURCE_TYPE, $product_id );
@@ -542,11 +616,16 @@ if ( $reverted > 0 ) {
 	printf( "  NOTE  %d real chunks had been fake-embedded and are back to pending — run Embed pending to restore them.\n", $reverted );
 }
 
-if ( false === $saved_policy ) {
-	delete_option( ModelPolicy::OPTION );
-} else {
-	update_option( ModelPolicy::OPTION, $saved_policy, false );
-}
+$restore_options();
+
+// This suite inserts and deletes FULLTEXT rows, and InnoDB keeps deleted rows
+// in the index — and its term statistics — until an OPTIMIZE. Without this the
+// probe's own vocabulary decays the IDF of the merchant's real corpus, one run
+// at a time, until a lexical search stops ranking the right chunk first.
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+$GLOBALS['wpdb']->query(
+	'OPTIMIZE TABLE ' . StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::KNOWLEDGE_CHUNKS )
+);
 $GLOBALS['wpdb']->delete(
 	StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::USAGE_EVENTS ),
 	array( 'provider' => 'fake' ),

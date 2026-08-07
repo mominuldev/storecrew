@@ -14,6 +14,7 @@ use StoreCrew\Core\Queue\Deadline;
 use StoreCrew\Core\Queue\Scheduler;
 use StoreCrew\Database\Repositories\IndexRunRepository;
 use StoreCrew\Knowledge\Indexer;
+use StoreCrew\Knowledge\SourceSelection;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -43,6 +44,7 @@ final class IndexJob {
 		private readonly Indexer $indexer,
 		private readonly IndexRunRepository $runs,
 		private readonly Scheduler $scheduler,
+		private readonly SourceSelection $selection,
 	) {}
 
 	/**
@@ -64,7 +66,7 @@ final class IndexJob {
 			$this->runs->reap_stalled();
 		}
 
-		$total = array_sum( $this->extractors->counts() );
+		$total = array_sum( $this->selection->counts() );
 
 		$run_id = $this->runs->start( 'full', $total );
 
@@ -85,7 +87,10 @@ final class IndexJob {
 
 		$deadline = new Deadline();
 		$cursor   = $this->parse_cursor( (string) $run->cursor_position );
-		$types    = array_keys( $this->extractors->available() );
+		// Re-read every batch rather than storing the list on the run: a
+		// merchant who deselects a source mid-walk expects the walk to stop
+		// reading it, not to finish the pass it happened to start.
+		$types = $this->selection->enabled();
 
 		if ( array() === $types ) {
 			$this->runs->finish( $run_id, IndexRunRepository::STATUS_COMPLETE );

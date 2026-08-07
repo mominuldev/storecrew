@@ -2,10 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useOutletContext, Link } from 'react-router-dom';
 import { api, userName } from '../lib/api';
 import type { Bootstrap, Health, Approval } from '../lib/types';
-import { CrewBar, crewSummary } from '../components/CrewBar';
+import { CrewBar, crewSummary, useRoster } from '../components/CrewBar';
 import { Gauge } from '../components/Gauge';
 import { Icon } from '../components/Icon';
 import { Card, IconChip, Label, Section, Spinner, Empty, Button } from '../components/primitives';
+import { STEP_BLOCKER } from './Setup';
 
 const money = (micros: number) => `$${(micros / 1_000_000).toFixed(2)}`;
 
@@ -66,6 +67,8 @@ function Tile({
 export function Overview() {
   const boot = useOutletContext<Bootstrap>();
 
+  const roster = useRoster();
+
   const health = useQuery({ queryKey: ['health'], queryFn: () => api.get<Health>('/health'), refetchInterval: 20_000 });
   const approvals = useQuery({ queryKey: ['approvals'], queryFn: () => api.get<Approval[]>('/approvals') });
 
@@ -74,9 +77,10 @@ export function Overview() {
 
   const h = health.data!;
   const waiting = approvals.data ?? [];
-  const crew = crewSummary(boot, h);
+  const crew = crewSummary(boot, h, roster);
   const lockedRoute = boot.routes.find((r) => r.inMenu && r.locked);
   const name = userName();
+  const done = boot.onboarding.steps.filter((s) => s.done).length;
 
   const spendPct = h.spend.capMicros ? Math.min(100, (h.spend.spentMicros / h.spend.capMicros) * 100) : null;
 
@@ -89,21 +93,22 @@ export function Overview() {
         </p>
       </header>
 
-      {!boot.onboarding.complete ? (
+      {/* One sentence naming the single thing blocking the crew, and one
+          button — the wireframe's rule, now pointing at the step that owns it
+          rather than at a settings page the merchant has to search. The stats
+          below still render: a half-set-up store's numbers are real, and are
+          what tell the merchant whether the step they just finished took. */}
+      {!boot.onboarding.complete && '' !== boot.onboarding.current ? (
         <Card className="mb-8 flex flex-wrap items-center gap-4 px-5 py-4">
-          <IconChip name="key" tone="signal" />
+          <IconChip name="spark" tone="signal" />
           <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-semibold">
-              {!boot.onboarding.hasProvider ? 'No AI provider is connected yet.' : 'Nothing can be indexed yet.'}
-            </p>
+            <p className="text-[13px] font-semibold">{STEP_BLOCKER[boot.onboarding.current]}</p>
             <p className="mt-0.5 text-[13px]" style={{ color: 'var(--text-dim)' }}>
-              {!boot.onboarding.hasProvider
-                ? 'Connect a provider and the crew can start answering.'
-                : 'Your connected provider cannot generate embeddings, so the crew has nothing to read. Add OpenAI or Gemini as well.'}
+              {done} of {boot.onboarding.steps.length} setup steps done.
             </p>
           </div>
-          <Link to="/settings">
-            <Button variant="primary">Open settings</Button>
+          <Link to="/setup">
+            <Button variant="primary">Pick up where you left off</Button>
           </Link>
         </Card>
       ) : null}

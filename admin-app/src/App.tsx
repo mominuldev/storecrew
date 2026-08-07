@@ -11,6 +11,7 @@ import { Crew } from './pages/Crew';
 import { Knowledge } from './pages/Knowledge';
 import { Inbox } from './pages/Inbox';
 import { Settings } from './pages/Settings';
+import { Setup } from './pages/Setup';
 import { ConversationDetail } from './pages/ConversationDetail';
 
 /**
@@ -54,6 +55,7 @@ export function App() {
           <Route path="knowledge" element={<Knowledge />} />
           <Route path="inbox" element={<Inbox />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="setup" element={<Setup />} />
           <Route path="conversation/:uuid" element={<ConversationDetail />} />
 
           {/* Routes contributed by add-ons. The server decides both that a

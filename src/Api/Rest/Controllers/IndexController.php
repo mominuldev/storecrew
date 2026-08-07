@@ -17,6 +17,7 @@ use StoreCrew\Database\Repositories\IndexRunRepository;
 use StoreCrew\Knowledge\Indexer;
 use StoreCrew\Knowledge\Jobs\EmbedJob;
 use StoreCrew\Knowledge\Jobs\IndexJob;
+use StoreCrew\Knowledge\SourceSelection;
 use StoreCrew\Licensing\FeatureGate;
 
 defined( 'ABSPATH' ) || exit;
@@ -39,6 +40,7 @@ final class IndexController extends RestController {
 		private readonly IndexRunRepository $runs,
 		private readonly ExtractorRegistry $extractors,
 		private readonly Scheduler $scheduler,
+		private readonly SourceSelection $selection,
 	) {
 		parent::__construct( $features );
 	}
@@ -58,6 +60,15 @@ final class IndexController extends RestController {
 			array(
 				'methods'             => 'GET',
 				'callback'            => array( $this, 'estimate' ),
+				'permission_callback' => $this->permission( Capabilities::MANAGE ),
+			)
+		);
+
+		$this->route(
+			'/index/sources',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'save_sources' ),
 				'permission_callback' => $this->permission( Capabilities::MANAGE ),
 			)
 		);
@@ -103,9 +114,56 @@ final class IndexController extends RestController {
 			array(
 				'health'     => $this->indexer->health(),
 				'sources'    => $this->extractors->counts(),
+				// What is available, what the merchant chose, and whether they
+				// have chosen at all — the second onboarding step's whole state
+				// (FR-ADMIN-02).
+				'selection'  => array(
+					'chosen'    => $this->selection->chosen(),
+					'available' => $this->selection->describe(),
+				),
 				'queue'      => $this->scheduler->health(),
 				'active'     => null === $active ? null : $this->present_run( $active ),
 				'recentRuns' => $recent,
+			)
+		);
+	}
+
+	/**
+	 * Record which sources the crew may read.
+	 *
+	 * Deselecting purges what was already indexed, in the same request. The
+	 * alternative — store the flag, leave the rows — means the agent keeps
+	 * quoting content the merchant has just excluded, with the console showing
+	 * the exclusion as done. The response says how much was removed rather than
+	 * doing it quietly.
+	 */
+	public function save_sources( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		$body = $request->get_json_params();
+
+		if ( ! is_array( $body ) || ! isset( $body['sources'] ) || ! is_array( $body['sources'] ) ) {
+			return $this->error( 'invalid_body', __( 'Expected a "sources" array.', 'storecrew' ) );
+		}
+
+		$result = $this->selection->save( array_map( 'strval', $body['sources'] ) );
+
+		$removed_sources = 0;
+		$removed_chunks  = 0;
+
+		foreach ( $result['removed'] as $type ) {
+			$purged = $this->indexer->forget_type( $type );
+
+			$removed_sources += $purged['sources'];
+			$removed_chunks  += $purged['chunks'];
+		}
+
+		return $this->ok(
+			array(
+				'selected' => $result['selected'],
+				'removed'  => $result['removed'],
+				'purged'   => array(
+					'sources' => $removed_sources,
+					'chunks'  => $removed_chunks,
+				),
 			)
 		);
 	}

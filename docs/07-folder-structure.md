@@ -68,7 +68,7 @@ src/
     Registry/                  Registry base + 7 freezable registries
     Rest/
       RestController.php       Envelope, deny-by-default permission()
-      Controllers/             8 controllers — registered as factories
+      Controllers/             9 controllers — registered as factories
   Database/
     Tables.php                 The only place table names are built
     Migrator.php               Forward-only, locked, admin_init

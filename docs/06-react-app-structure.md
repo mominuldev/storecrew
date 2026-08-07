@@ -51,7 +51,8 @@ components/     Layout (nav, theme toggle, approval badge), CrewBar,
 lib/            api.ts (fetch + nonce + envelope unwrap, typed ApiError)
                 store.ts (theme; add-on screen registry)
                 types.ts (hand-written mirror of the REST payloads)
-pages/          Overview, Crew, Knowledge, Inbox, ConversationDetail, Settings
+pages/          Overview, Crew, Knowledge, Inbox, ConversationDetail, Settings,
+                Setup (the FR-ADMIN-02 flow — 11 § 3.7)
 styles/app.css  Tokens, wp-admin armour (§ 2.4)
 ```
 
@@ -63,14 +64,17 @@ styles/app.css  Tokens, wp-admin armour (§ 2.4)
   server knows is fetched, cached, and invalidated by mutation, never
   mirrored into a store.
 - **Types are a hand-written mirror** of the controllers, not generated: the
-  API is 21 routes; a generator is a build dependency heavier than the file
+  API is 24 routes; a generator is a build dependency heavier than the file
   it would produce. The mirror lives in one file so drift is one diff.
 
 ### 2.2 Bootstrap contract
 
 `AdminPage` prints one localized object (`storecrewBoot`: REST root, nonce,
-version, adminUrl) and one mount div. Everything else — features, routes,
-onboarding state — comes from `GET /bootstrap`. The nonce is attached to
+version, adminUrl, siteUrl, userName) and one mount div. Everything else —
+features, routes, onboarding state — comes from `GET /bootstrap`. `siteUrl` is
+`home_url()` rather than something derived from `adminUrl`, which is wrong on
+every subdirectory install; the setup flow's last step sends the merchant to
+look at their own storefront. The nonce is attached to
 every request; without it a logged-in cookie is *not* REST authentication,
 which is what stops a third-party page driving the API with the merchant's
 session.
@@ -98,6 +102,13 @@ reviewer does not re-find them: `AdminRoute.icon` is unconsumed because the
 nav is text-only by the design language's own rule, and the catalog gained
 no new fields — `description` is the role line and registry order the
 ordering, until a contributed agent actually needs placement control.
+
+`CrewBar` reads the merchant's own roster (`GET /agents`) alongside the
+manifest, because entitlement and *standing* are different facts: an agent
+stood down in the setup flow must not keep reading "on duty". An agent absent
+from that roster is treated as on — the same default the orchestrator takes
+for an agent with no configuration row, so a still-loading roster never
+flickers the whole crew to "stood down".
 
 ### 2.4 Surviving wp-admin (the hard-won part)
 
@@ -184,7 +195,7 @@ conversation but not a transcript.
 ## 4. Verification
 
 Both apps were verified in real browsers on **2026-08-07**, not only by unit
-logic: the SPA via Playwright across all six screens, both themes, mobile,
+logic: the SPA via Playwright across all seven screens, both themes, mobile,
 and a settings write round-trip; the widget via Playwright (23 assertions:
 keyboard path, focus, a11y semantics, Markdown, reload persistence,
 dark/mobile) and live against a real provider (five-turn conversation). The

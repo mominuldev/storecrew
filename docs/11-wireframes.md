@@ -63,8 +63,9 @@ from one token set, toggled by class, defaulting to the OS preference.
 
 Full-viewport (admin notices removed on this screen only, padding stripped);
 top navigation, not a sidebar — five destinations do not justify one, and the
-board metaphor wants width. (Five in the nav; six screens, because the
-inspector is reached from a row, not from the bar.)
+board metaphor wants width. (Five in the nav; seven screens, because the
+inspector is reached from a row rather than the bar, and Setup — § 3.7 —
+appears in the nav only while it is unfinished.)
 
 **Contributed routes join the bar from the manifest** (G4-D1, built
 2026-08-07): every route with `inMenu`, in declared `order`, after the
@@ -89,9 +90,9 @@ THE CREW
 
 [ Before the crew can start ]          ← onboarding card, only while
   No AI provider is connected yet.       incomplete (FR-ADMIN-02).
-  Connect a provider and the crew        One sentence naming the single
-  can start answering.                   thing blocking the crew, and one
-  [ Open settings ]                      button. The stats still render.
+  2 of 5 setup steps done.               One sentence naming the single
+  [ Pick up where you left off ]         step blocking the crew, and one
+                                         button into § 3.7. Stats still render.
 
 NEEDS YOU (2)                [ Open inbox ]   ← the three oldest pending
 ┌ order.note   {"note":"…"} ┐                   approvals; the section stands
@@ -207,7 +208,64 @@ on-duty switch — disabled with an explanation until a chat model resolves —
 launcher/title/greeting copy, accent with computed-contrast preview, corner,
 float-vs-shortcode placement).
 
-### 3.7 Storefront widget (FR-CHAT-04)
+### 3.7 Setup — the guided path (FR-ADMIN-02)
+
+```
+Set up your crew
+4 of 5 done — pick up where you left off.
+
+┌ ✓ Connect an AI provider              DONE ┐  ← done steps collapse to a
+│   Your own key. You pay the provider …     │    line; the edge-bar goes crew
+└────────────────────────────────────────────┘    green
+
+┌ 2  Choose what the crew reads              ┐  ← the current step is open,
+│    ─────────────────────────────────────   │    its control inline
+│    ☑ Products        48 to read            │
+│    ☑ Pages and posts 18 to read            │
+│    [ Save what the crew reads ]            │
+└────────────────────────────────────────────┘
+
+┌ ✓ Let the crew read your store        DONE ┐
+┌ ✓ Say who is on duty                  DONE ┐
+┌ ✓ Put the crew on your storefront     DONE ┐
+```
+
+**One screen, not a tour of five others.** The PRD's time-to-value target is
+fifteen minutes on a fresh install, and most of that budget goes on *finding*
+the next control — so each step's real control is inline: the provider key
+field with its signup deep-link, the source checkboxes, the index run with its
+pre-flight cost, the roster switches, the widget switch. A merchant never has
+to work out which settings tab a sentence was talking about.
+
+Three rules this screen is built on:
+
+- **No step records its own progress.** Every `done` is derived from the thing
+  itself (05 § `/bootstrap`). A stored "step 3 complete" flag is how a console
+  ends up congratulating a merchant whose crew cannot answer a question.
+- **The costly step says so before it runs.** Step 3 leads with the estimate —
+  object count, passage count, and either a figure or an honest "we have no
+  published rate for the model you chose", never a confident zero (R-COST-01).
+  It also completes on the *merchant's* part being done rather than on the
+  queue draining, since embedding scales with the catalogue and the
+  fifteen-minute target is about their time — with the remainder stated in
+  words on the step, not quietly dropped to buy the tick.
+- **The destructive control warns in advance and reports afterwards.**
+  Unticking a source removes what has already been read from it; the step says
+  so before the save and names the number of passages removed after it.
+
+**A fresh install arrives here on its own.** First activation — and only the
+first, so toggling the plugin to clear a cache does not throw a configured
+merchant back to step one — redirects the next admin request into this screen.
+The header drops "pick up where you left off" at zero steps done, because
+nobody has left anything yet.
+
+A sixth rail destination, **Finish setup**, appears only while the flow is
+incomplete — the Overview card is otherwise the single way back, and a
+merchant who navigates away from it has nothing to navigate back to. The card
+itself now names the blocking *step* and links here, rather than pointing at a
+settings page to be searched.
+
+### 3.8 Storefront widget (FR-CHAT-04)
 
 Wireframe and behaviour in [06 § 3](06-react-app-structure.md); design
 rules: merchant accent with luminance-computed ink, system font stack,

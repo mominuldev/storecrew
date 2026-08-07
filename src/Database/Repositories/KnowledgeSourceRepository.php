@@ -185,6 +185,40 @@ final class KnowledgeSourceRepository extends Repository {
 	}
 
 	/**
+	 * Every source row id of one type.
+	 *
+	 * Returned as ids rather than deleted in place because the chunks have to
+	 * go first — the rows are joined by `source_id`, and dropping the parent
+	 * first orphans every chunk beyond the reach of any query that could find
+	 * them again.
+	 *
+	 * @return list<int>
+	 */
+	public function ids_of_type( string $source_type ): array {
+		$table = $this->table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$ids = $this->db->get_col(
+			$this->db->prepare( "SELECT id FROM {$table} WHERE source_type = %s", $source_type )
+		);
+
+		return array_map( 'intval', $ids );
+	}
+
+	/**
+	 * Remove every source of one type.
+	 */
+	public function delete_type( string $source_type ): int {
+		$deleted = $this->db->delete(
+			$this->table_name(),
+			array( 'source_type' => $source_type ),
+			array( '%s' )
+		);
+
+		return false === $deleted ? 0 : (int) $deleted;
+	}
+
+	/**
 	 * Remove a source by its identity tuple. Used when a product is deleted.
 	 */
 	public function forget( string $source_type, int $object_id, string $external_ref = '' ): bool {

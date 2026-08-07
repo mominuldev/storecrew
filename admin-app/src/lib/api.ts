@@ -13,6 +13,7 @@ declare global {
       nonce: string;
       version: string;
       adminUrl: string;
+      siteUrl?: string;
       userName?: string;
     };
   }
@@ -76,6 +77,9 @@ export const api = {
 };
 
 export const adminUrl = () => boot().adminUrl;
+
+/** The storefront's own address, for the "go and look at it" link. */
+export const siteUrl = () => boot().siteUrl ?? '/';
 
 /** The merchant's first name, for the greeting. Empty when WP has none. */
 export const userName = () => (boot().userName ?? '').trim().split(/\s+/)[0] ?? '';

@@ -41,6 +41,16 @@ $c = StoreCrew\Plugin::instance()->container();
 $saved_policy = get_option( StoreCrew\Ai\ModelPolicy::OPTION );
 $saved_cap    = get_option( StoreCrew\Ai\SpendGuard::OPTION_CAP_MICROS );
 $saved_breach = get_option( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH );
+$saved_sources = get_option( StoreCrew\Knowledge\SourceSelection::OPTION, false );
+
+// The agent probes write real configuration rows. Snapshot whatever the
+// merchant has so standing an agent down here cannot leave it down.
+$agent_configs = $c->get( StoreCrew\Database\Repositories\AgentConfigRepository::class );
+$saved_agents  = array();
+
+foreach ( array( 'sales', 'support' ) as $probe_agent ) {
+	$saved_agents[ $probe_agent ] = $agent_configs->get( $probe_agent );
+}
 
 // The "unconfigured store" probes (canEmbed false, degraded search) mean
 // nothing on a site with a real provider key — they only ever passed here
@@ -84,7 +94,7 @@ $t( 'health route exists', in_array( '/storecrew/v1/health', $routes, true ) );
 echo "\n== Permissions deny by default ==\n";
 wp_set_current_user( 0 );
 
-foreach ( array( '/bootstrap', '/health', '/providers', '/settings', '/index', '/conversations', '/approvals' ) as $path ) {
+foreach ( array( '/bootstrap', '/health', '/providers', '/settings', '/index', '/agents', '/conversations', '/approvals' ) as $path ) {
 	[ $status ] = $call( 'GET', '/storecrew/v1' . $path );
 	$t( "PROBE: anonymous GET {$path} is denied", 401 === $status || 403 === $status, (string) $status );
 }
@@ -128,6 +138,24 @@ $t( 'carries onboarding state', isset( $body['data']['onboarding']['canEmbed'] )
 $t(
 	'PROBE: onboarding reports embedding unavailable with no key configured',
 	false === ( $body['data']['onboarding']['canEmbed'] ?? null )
+);
+
+$onboarding = $body['data']['onboarding'] ?? array();
+$step_ids   = array_column( $onboarding['steps'] ?? array(), 'id' );
+$t(
+	'onboarding carries the five steps in order',
+	array( 'provider', 'sources', 'index', 'agents', 'widget' ) === $step_ids,
+	wp_json_encode( $step_ids )
+);
+$t(
+	'PROBE: with no provider key the blocking step is the provider step',
+	'provider' === ( $onboarding['current'] ?? '' ) && false === ( $onboarding['complete'] ?? null ),
+	wp_json_encode( array( $onboarding['current'] ?? null, $onboarding['complete'] ?? null ) )
+);
+$onboarding_done = array_column( $onboarding['steps'] ?? array(), 'done', 'id' );
+$t(
+	'PROBE: the step named as current is the one reporting itself unfinished',
+	false === ( $onboarding_done[ $onboarding['current'] ?? '' ] ?? null )
 );
 
 [ $status, $body ] = $call( 'GET', '/storecrew/v1/health' );
@@ -254,6 +282,90 @@ $t( 'cancelling returns 200', 200 === $status );
 [ $status ] = $call( 'POST', '/storecrew/v1/index/cancel' );
 $t( 'cancelling nothing is a 409', 409 === $status );
 
+echo "\n== Source selection (FR-ADMIN-02 step 2) ==\n";
+[ $status, $body ] = $call( 'GET', '/storecrew/v1/index' );
+$available = $body['data']['selection']['available'] ?? array();
+$t( 'index status describes the available sources', count( $available ) > 0, wp_json_encode( array_column( $available, 'type' ) ) );
+$t( 'each source carries a label and a count', isset( $available[0]['label'], $available[0]['count'] ) );
+
+[ $status ] = $call( 'POST', '/storecrew/v1/index/sources', array( 'nope' => true ) );
+$t( 'PROBE: a body without a sources array is rejected', 400 === $status, (string) $status );
+
+// Every available type, deliberately: deselecting one purges what has already
+// been read from it, and this suite runs against the merchant's own index.
+// The purge itself is probed in verify-knowledge against a synthetic source
+// type, where the only rows at risk are the ones the probe created.
+$all_types = array_column( $available, 'type' );
+
+[ $status, $body ] = $call( 'POST', '/storecrew/v1/index/sources', array( 'sources' => $all_types ) );
+$t( 'saving a selection returns 200', 200 === $status, (string) $status );
+$t( 'the selection is echoed back', $all_types === ( $body['data']['selected'] ?? null ), wp_json_encode( $body['data']['selected'] ?? null ) );
+$t( 'PROBE: selecting everything removes nothing', array() === ( $body['data']['removed'] ?? null ) && 0 === ( $body['data']['purged']['chunks'] ?? -1 ) );
+
+[ $status, $body ] = $call( 'POST', '/storecrew/v1/index/sources', array( 'sources' => array_merge( $all_types, array( 'invented' ) ) ) );
+$t(
+	'PROBE: a source type nothing can read is dropped rather than stored',
+	$all_types === ( $body['data']['selected'] ?? null ),
+	wp_json_encode( $body['data']['selected'] ?? null )
+);
+
+[ $status, $body ] = $call( 'GET', '/storecrew/v1/index' );
+$t( 'the choice is now on record', true === ( $body['data']['selection']['chosen'] ?? null ) );
+$t(
+	'the estimate is scoped to the selection',
+	array_keys( $call( 'GET', '/storecrew/v1/index/estimate' )[1]['data']['objects'] ?? array() ) === $all_types
+);
+
+echo "\n== Agents (FR-ADMIN-02 step 4) ==\n";
+[ $status, $body ] = $call( 'GET', '/storecrew/v1/agents' );
+$t( 'agents returns 200', 200 === $status, (string) $status );
+$roster = $body['data'] ?? array();
+$t( 'the roster carries the shipped agents', array( 'sales', 'support' ) === array_column( $roster, 'id' ), wp_json_encode( array_column( $roster, 'id' ) ) );
+$t( 'an agent reports its feature and its tools', isset( $roster[0]['feature'], $roster[0]['toolIds'] ) );
+$t(
+	'PROBE: an agent with no configuration row reads as on, matching the orchestrator',
+	true === ( $roster[0]['enabled'] ?? null ) && false === ( $roster[0]['configured'] ?? null )
+);
+
+[ $status ] = $call( 'POST', '/storecrew/v1/agents/support', array( 'nothing' => 1 ) );
+$t( 'PROBE: a body without an enabled flag is rejected', 400 === $status, (string) $status );
+
+[ $status ] = $call( 'POST', '/storecrew/v1/agents/does-not-exist', array( 'enabled' => true ) );
+$t( 'PROBE: an unknown agent is a 404, not a stored row', 404 === $status, (string) $status );
+
+[ $status, $body ] = $call( 'POST', '/storecrew/v1/agents/support', array( 'enabled' => false ) );
+$t( 'standing an agent down returns 200', 200 === $status, (string) $status );
+$t( 'the response reports it as off', false === ( $body['data']['enabled'] ?? null ) );
+
+$t(
+	'PROBE: the orchestrator stops routing to a stood-down agent',
+	! array_key_exists( 'support', $c->get( StoreCrew\Agent\Orchestrator::class )->available_agents() )
+);
+
+$call( 'POST', '/storecrew/v1/agents/sales', array( 'enabled' => false ) );
+[ $status, $body ] = $call( 'GET', '/storecrew/v1/bootstrap' );
+$steps_done = array_column( $body['data']['onboarding']['steps'] ?? array(), 'done', 'id' );
+$t(
+	'PROBE: with nobody on duty the agents step reports itself unfinished',
+	false === ( $steps_done['agents'] ?? null ),
+	wp_json_encode( $steps_done )
+);
+
+$call( 'POST', '/storecrew/v1/agents/sales', array( 'enabled' => true ) );
+$call( 'POST', '/storecrew/v1/agents/support', array( 'enabled' => true ) );
+
+[ $status, $body ] = $call( 'GET', '/storecrew/v1/bootstrap' );
+$steps_done = array_column( $body['data']['onboarding']['steps'] ?? array(), 'done', 'id' );
+$t(
+	'putting the crew back on duty closes the agents step again',
+	true === ( $steps_done['agents'] ?? null ),
+	wp_json_encode( $steps_done )
+);
+$t(
+	'putting it back on duty restores the routing candidate',
+	array_key_exists( 'support', $c->get( StoreCrew\Agent\Orchestrator::class )->available_agents() )
+);
+
 echo "\n== Knowledge search ==\n";
 [ $status, $body ] = $call( 'POST', '/storecrew/v1/knowledge/search', array( 'query' => 'returns policy' ) );
 $t( 'search returns 200', 200 === $status, (string) $status );
@@ -316,7 +428,7 @@ $t( 'PROBE: approving twice is a 409, not a silent success', 409 === $status, (s
 
 echo "\n== Registry ==\n";
 $registry = $c->get( ControllerRegistry::class );
-$t( 'eight controllers registered', 8 === count( $registry->all() ), (string) count( $registry->all() ) );
+$t( 'nine controllers registered', 9 === count( $registry->all() ), (string) count( $registry->all() ) );
 $t( 'the registry is frozen', $registry->is_frozen() );
 $t( 'ownership is tracked', 'storecrew' === $registry->owner( 'health' ) );
 $t(
@@ -384,6 +496,25 @@ $restore = static function ( string $option, $value ): void {
 $restore( StoreCrew\Ai\ModelPolicy::OPTION, $saved_policy );
 $restore( StoreCrew\Ai\SpendGuard::OPTION_CAP_MICROS, $saved_cap );
 $restore( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH, $saved_breach );
+
+if ( false === $saved_sources ) {
+	delete_option( StoreCrew\Knowledge\SourceSelection::OPTION );
+} else {
+	update_option( StoreCrew\Knowledge\SourceSelection::OPTION, $saved_sources, true );
+}
+
+foreach ( $saved_agents as $probe_agent => $before ) {
+	if ( null === $before ) {
+		$agent_configs->delete_for_agent( $probe_agent );
+	} else {
+		$agent_configs->set_enabled( $probe_agent, $before['enabled'] );
+	}
+}
+
+$t(
+	'PROBE: no agent this suite touched is left stood down',
+	array_key_exists( 'support', $c->get( StoreCrew\Agent\Orchestrator::class )->available_agents() )
+);
 $c->get( StoreCrew\Core\Queue\Scheduler::class )->cancel();
 
 $t( 'probe conversation removed', null === $conversations->find_by_uuid( (string) $uuid ) );

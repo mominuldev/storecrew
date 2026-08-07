@@ -20,6 +20,7 @@ use StoreCrew\Ai\Providers\OpenRouterProvider;
 use StoreCrew\Ai\SpendGuard;
 use StoreCrew\Api\ExtensionApi;
 use StoreCrew\Api\Feature;
+use StoreCrew\Api\Rest\Controllers\AgentController;
 use StoreCrew\Api\Rest\Controllers\BootstrapController;
 use StoreCrew\Api\Rest\Controllers\ChatController;
 use StoreCrew\Api\Rest\Controllers\ConversationController;
@@ -54,12 +55,14 @@ use StoreCrew\Knowledge\Jobs\EmbedJob;
 use StoreCrew\Knowledge\Jobs\IndexJob;
 use StoreCrew\Knowledge\Jobs\ReindexJob;
 use StoreCrew\Knowledge\Retriever;
+use StoreCrew\Knowledge\SourceSelection;
 use StoreCrew\Security\SecretStore;
 use StoreCrew\Chat\ChatService;
 use StoreCrew\Chat\EscalationNotifier;
 use StoreCrew\Chat\Widget;
 use StoreCrew\Core\Admin\AdminPage;
 use StoreCrew\Core\Container\Container;
+use StoreCrew\Core\Onboarding;
 use StoreCrew\Core\Privacy\PersonalData;
 use StoreCrew\Core\Queue\MaintenanceJob;
 use StoreCrew\Core\Queue\Scheduler;
@@ -335,6 +338,13 @@ final class Plugin {
 		);
 
 		$this->container->set(
+			SourceSelection::class,
+			static fn ( Container $c ): SourceSelection => new SourceSelection(
+				$c->get( ExtractorRegistry::class )
+			)
+		);
+
+		$this->container->set(
 			Indexer::class,
 			static fn ( Container $c ): Indexer => new Indexer(
 				$c->get( ExtractorRegistry::class ),
@@ -344,7 +354,22 @@ final class Plugin {
 				$c->get( KnowledgeSourceRepository::class ),
 				$c->get( KnowledgeChunkRepository::class ),
 				$c->get( UsageRepository::class ),
-				$c->get( SpendGuard::class )
+				$c->get( SpendGuard::class ),
+				$c->get( SourceSelection::class )
+			)
+		);
+
+		$this->container->set(
+			Onboarding::class,
+			static fn ( Container $c ): Onboarding => new Onboarding(
+				$c->get( ProviderRegistry::class ),
+				$c->get( ModelPolicy::class ),
+				$c->get( SourceSelection::class ),
+				$c->get( Indexer::class ),
+				// Resolved when the state is computed, not when it is wired:
+				// the orchestrator drags in the whole agent stack, and the
+				// bootstrap payload is the only thing that asks for this.
+				static fn (): array => $c->get( Orchestrator::class )->available_agents()
 			)
 		);
 
@@ -369,7 +394,8 @@ final class Plugin {
 				$c->get( ExtractorRegistry::class ),
 				$c->get( Indexer::class ),
 				$c->get( IndexRunRepository::class ),
-				$c->get( Scheduler::class )
+				$c->get( Scheduler::class ),
+				$c->get( SourceSelection::class )
 			)
 		);
 
@@ -668,7 +694,17 @@ final class Plugin {
 			'bootstrap',
 			static fn (): BootstrapController => new BootstrapController(
 				$gate(),
-				$c->get( ProviderRegistry::class )
+				$c->get( Onboarding::class )
+			)
+		);
+
+		$registry->register(
+			'agents',
+			static fn (): AgentController => new AgentController(
+				$gate(),
+				$c->get( AgentRegistry::class ),
+				$c->get( AgentConfigRepository::class ),
+				$c->get( AuditLogRepository::class )
 			)
 		);
 
@@ -714,7 +750,8 @@ final class Plugin {
 				$c->get( EmbedJob::class ),
 				$c->get( IndexRunRepository::class ),
 				$c->get( ExtractorRegistry::class ),
-				$c->get( Scheduler::class )
+				$c->get( Scheduler::class ),
+				$c->get( SourceSelection::class )
 			)
 		);
 

@@ -48,7 +48,7 @@ The gap list, from CLAUDE.md, 03 § 13, and the Gate 2–5 reviews
 | ~~**Failover execution**~~ | ✅ **Done 2026-08-07.** One switch to the configured fallback, continuing from the request state at failure — executed tools never re-run (probed); both attempts on the run record; both-dead fails after one switch; the settings API validates and stores the fallback key it previously stripped |
 | ~~**Merchant guardrail overrides**~~ | ✅ **Done 2026-08-07.** Additive-only, composed after every shipped rule behind a subordinating frame; probed against a hostile "ignore the price rule" override; 01's rescope note and 08 § 8 retired |
 | ~~**Per-agent model policy**~~ | ✅ **Done 2026-08-07.** Wired: an agent's override resolves ahead of the global policy; a broken override (unknown/unconfigured provider) degrades to the global resolution, not to a failed turn; failover stays task-level; both paths probed |
-| **Onboarding flow (FR-ADMIN-02)** | The five-step path (key → sources → index → agents → widget) completes on a fresh install in ≤ 15 min (the PRD's time-to-value target), measured on someone who is not us |
+| **Onboarding flow (FR-ADMIN-02)** — built 2026-08-08: one `/setup` screen carrying all five steps' real controls inline (11 § 3.7); first activation redirects into it, once; step state derived, never stored (`Core\Onboarding`, 05 § `/bootstrap`); source selection is new capability, not new copy — `POST /index/sources`, honoured by the walker *and* the live save hook, purging what falls out of scope; `GET/POST /agents` finally writes the `enabled` column the orchestrator has always read | **Open half of the criterion:** the ≤ 15 min timing itself, measured on a fresh install by **someone who is not us**. Built and probe-tested is not measured — the target is how long a stranger takes to find the next control, and nothing in this repo can observe that. Protocol below; it has not been run |
 | ~~**Escalation notification**~~ | ✅ **Done 2026-08-07.** One email per escalation (the transition, not each failed turn — probed), linking into the inspector; the customer's words are never forwarded by mail; recipient filterable, empty disables |
 | **Adversarial suite v2 (12 § 10)** | Injection corpus (hostile reviews/pages/notes) runs against a live model in CI-able form; every attempt dies at a boundary probe, not at model discretion |
 | **Budget-host validation (R-TECH-03)** | Full index + a day's simulated chat on a $5/mo shared host; capability report matches reality |
@@ -57,6 +57,48 @@ The gap list, from CLAUDE.md, 03 § 13, and the Gate 2–5 reviews
 
 Exit: all above green **and** the full suite + integration harness + both
 browser verifications pass on WP current and current-1, Woo current, PHP 8.3.
+
+### The fifteen-minute measurement, as a protocol
+
+Written down because the criterion is the one M1 row no test can close, and an
+unrepeatable measurement is not a measurement. Runs are only comparable if
+these are held fixed.
+
+**Subject.** Someone who has not seen this product and is not on the team — a
+WooCommerce merchant or an agency contact. **Three subjects minimum.** One
+person is an anecdote, and the failure mode being measured (where does a
+stranger stall?) is exactly the one that varies between people.
+
+**Fixture.** Clean WordPress + WooCommerce with a realistic catalogue, and the
+plugin **never previously activated** on that site — the first-activation
+redirect is part of what is being measured and only fires once
+(`storecrew_setup_redirect`). Record the catalogue size with the result.
+
+**The clock starts** when the subject clicks Activate on the plugins screen.
+**It stops** when the setup flow reads 5 of 5. Note that step 3 completes when
+the crew can answer from *something*, not when the queue drains — embedding
+scales with the catalogue and is not the subject's time to spend.
+
+**Two numbers, both recorded.** Total wall-clock, and wall-clock minus the
+detour into the provider's own site to make an account and generate a key. The
+second is what this row's ≤ 15 min applies to; the first is what the merchant
+actually lives through. If the gap is large the finding belongs to the BYO-key
+cliff (02 § 5.3, D8's hosted-proxy tripwire), not to this UI, and confusing the
+two would send the next sprint to the wrong place.
+
+**The observer records** entry and exit time per step, every question asked
+aloud, every hesitation over ~15 seconds, and every click that was not the next
+step. Those are the result; the elapsed time is only the headline.
+
+**Pass** is ≤ 15 min on the second number with **no observer intervention**.
+Any intervention fails the run, and what the subject was stuck on is the actual
+output — a passing time bought by a hint measures the hint.
+
+Known drags to watch for, so they are not rediscovered as surprises: provider
+signup dominates the total and is outside our control; a store with no
+published policy pages gives step 3 little to read and makes the first answers
+disappointing; and the widget step is invisible until the subject opens the
+storefront, which they will not do unless told.
 
 ## M2 — Private beta
 

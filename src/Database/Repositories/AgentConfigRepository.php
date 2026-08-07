@@ -138,6 +138,35 @@ final class AgentConfigRepository extends Repository {
 	}
 
 	/**
+	 * Put an agent on or off duty, leaving everything else alone.
+	 *
+	 * Deliberately not `save()` with the other fields read back and rewritten:
+	 * that bumps `version`, which `agent_runs.prompt_hash` is reconciled
+	 * against so a merchant can tell whether an answer predates a persona
+	 * change. Standing an agent down does not change a single word of its
+	 * prompt, and recording it as a prompt revision would make that reconciliation
+	 * lie.
+	 */
+	public function set_enabled( string $agent_id, bool $enabled ): bool {
+		if ( null === $this->get( $agent_id ) ) {
+			// No row yet means shipped defaults. Materialise them so the choice
+			// has somewhere to live.
+			return $this->save( $agent_id, $enabled, '' );
+		}
+
+		return false !== $this->db->update(
+			$this->table_name(),
+			array(
+				'enabled'    => $enabled ? 1 : 0,
+				'updated_at' => $this->now(),
+			),
+			array( 'agent_id' => $agent_id ),
+			array( '%d', '%s' ),
+			array( '%s' )
+		);
+	}
+
+	/**
 	 * Every stored configuration.
 	 *
 	 * @return list<object>

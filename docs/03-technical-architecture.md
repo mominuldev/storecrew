@@ -48,7 +48,7 @@ Three commitments shape everything:
 │  Surfaces      Storefront widget (shadow DOM, 5.3 KB gz)   │
 │                Admin SPA (React 19, bundled, no @wordpress)│
 ├────────────────────────────────────────────────────────────┤
-│  REST          storecrew/v1 — 8 controllers, 21 routes     │
+│  REST          storecrew/v1 — 9 controllers, 24 routes     │
 │                deny-by-default; 4 public chat routes        │
 ├────────────────────────────────────────────────────────────┤
 │  Application   ChatService · Orchestrator · AgentRunner    │

@@ -2,7 +2,7 @@
 
 **Product:** StoreCrew AI
 **Status:** Gate 2 approved — verified route-for-route against the live API
-**Version:** 1.0 · Namespace `storecrew/v1` · 21 routes, 8 controllers
+**Version:** 1.0 · Namespace `storecrew/v1` · 24 routes, 9 controllers
 
 Every route below is registered through the controller registry
 (15 § 4.1) and dispatched through the real `WP_REST_Server` by
@@ -32,7 +32,7 @@ The status is 400 either way; only the prefix differs. Clients treat any
 ### 1.2 Authentication and authorisation
 
 - **Deny by default.** `RestController::permission()` refuses unless a
-  StoreCrew capability is held; StoreCrew registers 21 routes, every one
+  StoreCrew capability is held; StoreCrew registers 24 routes, every one
   with an explicit permission callback, and an unauthenticated route is
   declared with the deliberately named `public_access()` so it is visible
   at the call site. A route listing shows a 22nd pattern — the namespace
@@ -70,7 +70,26 @@ what authorises (§ 3).
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/bootstrap` | GET | Everything the SPA needs at first paint: version, API version, feature manifest (free features true, premium false until entitled), admin routes, onboarding state (`canEmbed`, key presence). |
+| `/bootstrap` | GET | Everything the SPA needs at first paint: version, API version, feature manifest (free features true, premium false until entitled), admin routes, onboarding state, user capabilities. |
+
+`onboarding` is the five-step setup path (FR-ADMIN-02) as **derived** state:
+`steps` — `provider`, `sources`, `index`, `agents`, `widget`, in order, each with
+a `done` flag — plus `current` (the first unfinished step, `''` when there is
+none), `complete`, and `canEmbed`. Every flag is computed from the thing itself
+(a chat model resolves, a selection is on record, at least one vector exists, an
+agent is entitled and enabled, the widget is switched on), never from a stored
+"step N complete" marker, which is how a console ends up reporting setup
+finished on a store that cannot answer a question. One computation
+(`Core\Onboarding`) serves this payload and the setup screen. The step *copy*
+lives in the admin app; this side sends facts only.
+
+The `index` step is deliberately **one vector, not a drained queue**. Embedding
+scales with the catalogue, so `pending === 0` made a 5,000-product store read as
+unfinished for an hour over work the merchant cannot hurry — against the
+fifteen-minute exit criterion in 14 § M1, which is about *their* time. The
+remainder stays visible rather than being bought off: `health.pending` is on the
+step card, the Knowledge screen, and the Overview tile, and the step says in
+words that reading continues.
 | `/health` | GET | Environment (PHP/WP/Woo versions, HPOS mode), queue availability, index health (`sources`, `chunks`, `embedded`, `pending`, `model`, `dimensions`, `mismatched` — a stranded vector surfaces as **pending or mismatched**; vectors from another model or width look healthy while scoring 0.0), spend status, encryption key source. |
 
 ### Providers
@@ -93,8 +112,9 @@ what authorises (§ 3).
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/index` | GET | Source counts by status, queue health, active run (with heartbeat-derived liveness), recent runs. |
-| `/index/estimate` | GET | Pre-flight cost estimate (R-COST-01). Reports `costKnown: false` rather than a fabricated zero when rates are unknown. |
+| `/index` | GET | Source counts by status, `selection` (whether the merchant has `chosen` at all, and every `available` source with label, count, and enabled flag), queue health, active run (with heartbeat-derived liveness), recent runs. |
+| `/index/sources` | POST | Record which sources may be read (FR-ADMIN-02 step 2). Body `{sources: [...]}`; a type nothing can read is dropped rather than stored; a body without the array → 400. **Deselecting purges in the same request** — the response carries `removed` and `purged: {sources, chunks}`. Storing the flag and leaving the rows would keep excluded content quotable while the console showed the exclusion as done. |
+| `/index/estimate` | GET | Pre-flight cost estimate (R-COST-01), scoped to the selected sources — an estimate covering content the next run will skip is not an estimate of that run. Reports `costKnown: false` rather than a fabricated zero when rates are unknown. |
 | `/index/start` | POST | Queue a full index run → 202 with `runId`. Refusals in order: queue unavailable → 503 (`storecrew_queue_unavailable`) — checked *first*, because on a broken install it is the failure a merchant actually hits; a live concurrent run → 409. |
 | `/index/cancel` | POST | Cancel the active run → 200; nothing to cancel → 409. |
 | `/index/embed` | POST | Queue embedding of pending/stranded chunks → 202 with `queued: true`. |
@@ -105,6 +125,13 @@ what authorises (§ 3).
 |---|---|---|
 | `/knowledge/search` | POST | Retrieval dry-run for FR-KB-10 ("what would the agent have seen?"): results with scores, the `strategy` used — one of `dense_full`, `hybrid`, `dense_fallback`, `lexical_only`, `empty`, reported because each fails for a different reason and the fix differs — and a `degraded` reason when no embedding provider is live. Empty query → 400. |
 | `/knowledge/sources` | GET | Source status histogram (`statusCounts`) plus how many sources await indexing (`needingIndex`). Chunk counts live on `/health` and `/index`, not here. |
+
+### Agents
+
+| Route | Method | Capability | Purpose |
+|---|---|---|---|
+| `/agents` | GET | manage | The roster: id, label, mission, feature, `toolIds`, `entitled`, `enabled`, `persona`, and whether a configuration row exists at all. An agent with no row reads as **enabled** — the same default the orchestrator takes, so the console cannot disagree with the thing routing turns. |
+| `/agents/{id}` | POST | manage_agents | `{enabled: bool}` — FR-ADMIN-02 step 4. Unknown agent → 404; a body without the flag → 400; enabling an unentitled agent → 403, because the orchestrator re-checks entitlement and the row would otherwise show an agent as on duty that can never answer. Audited. Writes `enabled` **without bumping `version`**: standing an agent down changes no word of its prompt, and `agent_runs.prompt_hash` is reconciled against that version. Persona and per-tool autonomy (FR-ADMIN-05's full depth) stay read-only here. |
 
 ### Conversations & approvals
 

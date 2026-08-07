@@ -54,6 +54,7 @@ $storecrew_options = array(
 	'storecrew_version',
 	'storecrew_activated_at',
 	'storecrew_needs_upgrade',
+	'storecrew_setup_redirect',
 	'storecrew_schema_version',
 	'storecrew_migration_lock',
 	'storecrew_migration_log',

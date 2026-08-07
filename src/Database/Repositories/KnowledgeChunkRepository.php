@@ -261,6 +261,39 @@ final class KnowledgeChunkRepository extends Repository {
 		return false === $deleted ? 0 : (int) $deleted;
 	}
 
+	/**
+	 * Drop the chunks of many sources at once.
+	 *
+	 * One statement rather than a loop: deselecting a source type on a store
+	 * with 5,000 products is 5,000 deletes otherwise, and the request that asked
+	 * for it is a merchant waiting on a button.
+	 *
+	 * InnoDB keeps deleted rows in the FULLTEXT index — and its term statistics
+	 * — until the table is optimised, so the excluded content briefly still
+	 * influences lexical scoring even though it can no longer be returned. That
+	 * is left alone deliberately: rebuilding a merchant's table from inside a
+	 * REST request is the worse trade, and the next index run resettles it.
+	 *
+	 * @param list<int> $source_ids Source row ids.
+	 */
+	public function delete_for_sources( array $source_ids ): int {
+		$ids = array_values( array_filter( array_map( 'intval', $source_ids ) ) );
+
+		if ( array() === $ids ) {
+			return 0;
+		}
+
+		$table        = $this->table_name();
+		$placeholders = implode( ', ', array_fill( 0, count( $ids ), '%d' ) );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$deleted = $this->db->query(
+			$this->db->prepare( "DELETE FROM {$table} WHERE source_id IN ({$placeholders})", ...$ids )
+		);
+
+		return false === $deleted ? 0 : (int) $deleted;
+	}
+
 	public function count(): int {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		return (int) $this->db->get_var( 'SELECT COUNT(*) FROM ' . $this->table_name() );

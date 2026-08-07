@@ -4,8 +4,32 @@ export type Bootstrap = {
   features: Record<string, boolean>;
   catalog: { slug: string; label: string; tier: string; description: string }[];
   routes: { path: string; label: string; feature: string | null; icon: string; order: number; inMenu: boolean; locked: boolean }[];
-  onboarding: { hasProvider: boolean; canEmbed: boolean; configuredProviders: string[]; complete: boolean };
+  onboarding: Onboarding;
   user: { canManage: boolean; canViewStats: boolean; canEditAgents: boolean };
+};
+
+/** The five setup steps (FR-ADMIN-02). The server sends which are done and
+ *  which is blocking; every word shown about them lives in Setup.tsx. */
+export type StepId = 'provider' | 'sources' | 'index' | 'agents' | 'widget';
+
+export type Onboarding = {
+  steps: { id: StepId; done: boolean }[];
+  /** The first unfinished step, or '' when there is none. */
+  current: StepId | '';
+  complete: boolean;
+  canEmbed: boolean;
+};
+
+export type Agent = {
+  id: string;
+  label: string;
+  mission: string;
+  feature: string;
+  toolIds: string[];
+  entitled: boolean;
+  enabled: boolean;
+  persona: string;
+  configured: boolean;
 };
 
 export type Health = {
@@ -50,12 +74,23 @@ export type ChatSettings = {
   offlineNotice: string;
 };
 
+export type SourceOption = { type: string; label: string; count: number; enabled: boolean };
+
 export type IndexStatus = {
   health: Health['index'];
   sources: Record<string, number>;
+  selection: { chosen: boolean; available: SourceOption[] };
   queue: Health['queue'];
   active: null | { id: number; status: string; total: number; processed: number; failed: number; alive: boolean };
   recentRuns: { id: number; type: string; status: string; total: number; processed: number; failed: number; alive: boolean; startedAt: string; finishedAt: string | null; lastError: string | null }[];
+};
+
+export type IndexEstimate = {
+  objects: Record<string, number>;
+  total: number;
+  estimatedChunks: number;
+  costKnown: boolean;
+  costMicros: number;
 };
 
 export type SearchResult = {

@@ -14,6 +14,69 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**Onboarding flow (FR-ADMIN-02)** — 2026-08-08
+
+- A `/setup` screen carrying the five-step path (key → sources → index →
+  agents → widget) with every step's real control **inline**. The PRD's
+  fifteen-minute time-to-value target is mostly spent finding the next
+  control, so the flow is one screen rather than a tour of five others.
+- **Step state is derived, never stored** (`Core\Onboarding`, served on
+  `/bootstrap`): a provider resolves, a selection is on record, vectors exist
+  with none pending, an agent is entitled and enabled, the widget is on. A
+  stored "step N complete" marker is how a console congratulates a merchant
+  whose crew cannot answer a question. One computation feeds both the payload
+  and the screen; the copy lives only in the admin app.
+- **Source selection is new capability, not new copy** — `POST
+  /index/sources`, honoured by the walker, the pre-flight estimate, *and* the
+  live `save_post` path, so a page published after an exclusion cannot walk
+  back in one object at a time. Deselecting **purges** in the same request and
+  reports how much it removed; storing the flag and leaving the rows would
+  keep excluded content quotable while the console showed the exclusion as
+  done.
+- **Agent activation** — `GET`/`POST /agents` finally writes the
+  `agent_configs.enabled` column the orchestrator has always read. Enabling an
+  unentitled agent is a 403, not a row that never takes effect. `enabled` is
+  written without bumping `version`, because standing an agent down changes no
+  word of a prompt and `agent_runs.prompt_hash` is reconciled against that
+  version. `CrewBar` gained a "Stood down" state so the switch is visibly
+  connected to the board.
+- `/index/estimate` is now consumed — the costly step leads with the object
+  count, the passage count, and either a figure or an honest "we have no
+  published rate for the model you chose" (R-COST-01).
+- The Overview card names the blocking *step* and links into the flow; a
+  **Finish setup** rail entry appears only while the flow is unfinished.
+- **First activation opens the flow.** `Activator` sets a one-shot flag only
+  when the plugin has never been activated here; `AdminPage` consumes it on
+  `admin_init` (priority 20, after the migrator) and redirects. The flag is
+  spent before anything is decided, so a request that cannot redirect — bulk
+  activation, network activation, wrong capability — still spends it: a
+  redirect that can retry is a redirect that can loop. Verified in a browser
+  firing from `plugins.php` and not firing on the next load.
+- The `index` step completes on **one vector, not a drained queue**. Embedding
+  scales with the catalogue, so `pending === 0` reported a 5,000-product store
+  unfinished for an hour over work the merchant cannot hurry — against the
+  fifteen-minute exit criterion, which is about their time. The remainder is
+  stated in words on the step rather than dropped to buy the tick.
+- 29 new PHP probes and 4 browser probes; nine suites green in both orders
+  (736 assertions), admin console green across seven screens in both themes.
+
+### Fixed
+
+- `verify-knowledge` restores the model policy it borrows via
+  `register_shutdown_function`. A fatal between the write and the cleanup block
+  left a configured store carrying the suite's fake embedding provider, and the
+  next run snapshotted the poison and put it back — snapshot-and-restore does
+  not help if the restore is the thing that gets skipped.
+- The source-selection probe no longer runs against the merchant's own index.
+  A first draft deselected `product` from inside `verify-rest` and deleted 47
+  real chunks; the purge is now probed in `verify-knowledge` against a
+  synthetic source type, and `verify-knowledge` optimises the FULLTEXT table on
+  the way out like `verify-repositories` already did.
+
+---
+
+### Added
+
 **Timed incremental delivery, verified live (FR-CHAT-02)** — 2026-08-08
 
 - `tools/probe-streaming-delivery.php` — the standing measurement for the

@@ -1,5 +1,7 @@
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../lib/api';
 import { Card, Pill } from './primitives';
-import type { Bootstrap, Health } from '../lib/types';
+import type { Agent, Bootstrap, Health } from '../lib/types';
 
 /**
  * The signature element: a shift board.
@@ -8,6 +10,18 @@ import type { Bootstrap, Health } from '../lib/types';
  * The merchant's first question every morning is "is the crew working", and
  * this answers it before they read a single number.
  */
+
+/**
+ * Which agents the merchant has actually put on, keyed by the feature slug the
+ * catalog uses. An agent missing from the roster is read as on — the same
+ * default the orchestrator takes for an agent with no configuration row, so a
+ * loading roster never flickers the whole crew to "stood down".
+ */
+export function useRoster(): Map<string, boolean> {
+  const agents = useQuery({ queryKey: ['agents'], queryFn: () => api.get<Agent[]>('/agents') });
+
+  return new Map((agents.data ?? []).map((a) => [a.feature, a.enabled]));
+}
 
 /**
  * Agents that read the store's knowledge base cannot be on duty without one.
@@ -25,12 +39,19 @@ const monogram = (label: string): string => {
 
 /** The board's headline, for anywhere that quotes it: who is on, out of how
  *  many. Same rules as the cards below — entitled *and* able to work. */
-export function crewSummary(boot: Bootstrap, health?: Health): { onDuty: number; total: number } {
+export function crewSummary(
+  boot: Bootstrap,
+  health?: Health,
+  roster?: Map<string, boolean>,
+): { onDuty: number; total: number } {
   const indexReady = (health?.index.embedded ?? 0) > 0;
   const agents = boot.catalog.filter((f) => f.slug.startsWith('agent.'));
 
   const onDuty = agents.filter(
-    (agent) => boot.features[agent.slug] === true && (INDEX_FREE.has(agent.slug) || indexReady),
+    (agent) =>
+      boot.features[agent.slug] === true &&
+      false !== roster?.get(agent.slug) &&
+      (INDEX_FREE.has(agent.slug) || indexReady),
   ).length;
 
   return { onDuty, total: agents.length };
@@ -38,6 +59,7 @@ export function crewSummary(boot: Bootstrap, health?: Health): { onDuty: number;
 
 export function CrewBar({ boot, health, wide }: { boot: Bootstrap; health?: Health; wide?: boolean }) {
   const indexReady = (health?.index.embedded ?? 0) > 0;
+  const roster = useRoster();
 
   // The board renders from the capability manifest (G4-D1): every feature in
   // the catalog whose slug names an agent, in registry order — free's agents
@@ -51,13 +73,23 @@ export function CrewBar({ boot, health, wide }: { boot: Bootstrap; health?: Heal
     <div className={`grid gap-3 sm:grid-cols-2 ${wide ? 'xl:grid-cols-4' : ''}`}>
       {agents.map((agent) => {
         const entitled = boot.features[agent.slug] === true;
-        // On duty means entitled *and* able to do the job. An agent with no
-        // knowledge base is not working, however green its licence is.
-        const onDuty = entitled && (INDEX_FREE.has(agent.slug) || indexReady);
+        // Stood down by the merchant, not by the plan — a distinct state, and
+        // one the board has to show or the setup step's switch appears to do
+        // nothing (FR-ADMIN-02).
+        const standing = false !== roster.get(agent.slug);
+        // On duty means entitled, put on, *and* able to do the job. An agent
+        // with no knowledge base is not working, however green its licence is.
+        const onDuty = entitled && standing && (INDEX_FREE.has(agent.slug) || indexReady);
 
         const tone = !entitled ? ('neutral' as const) : onDuty ? ('crew' as const) : ('signal' as const);
 
-        const state = !entitled ? 'Not on your plan' : onDuty ? 'On duty' : 'Needs setup';
+        const state = !entitled
+          ? 'Not on your plan'
+          : !standing
+            ? 'Stood down'
+            : onDuty
+              ? 'On duty'
+              : 'Needs setup';
 
         const avatar = {
           crew: { background: 'var(--tint-crew)', color: 'var(--fg-crew)' },

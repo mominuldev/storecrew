@@ -15,6 +15,7 @@
  * @package StoreCrew
  */
 
+use StoreCrew\Core\Activation\Activator;
 use StoreCrew\Core\Admin\AdminPage;
 use StoreCrew\Core\Capabilities\Capabilities;
 
@@ -30,6 +31,33 @@ $t = static function ( string $label, bool $ok, string $detail = '' ) use ( &$pa
 		echo "  FAIL  {$label}" . ( '' !== $detail ? " — {$detail}" : '' ) . "\n";
 	}
 };
+
+// The first-activation probes rewrite the two options that decide whether a
+// merchant is a first-timer. Restore on the way out however this file leaves —
+// a fatal in between would otherwise leave a configured store looking freshly
+// installed, and hijack the merchant's next admin page load.
+$saved_activated = get_option( Activator::OPTION_ACTIVATED_AT, false );
+$saved_redirect  = get_option( Activator::OPTION_SETUP_REDIRECT, false );
+
+$restore_activation = static function () use ( $saved_activated, $saved_redirect ): void {
+	static $done = false;
+
+	if ( $done ) {
+		return;
+	}
+
+	$done = true;
+
+	foreach ( array( Activator::OPTION_ACTIVATED_AT => $saved_activated, Activator::OPTION_SETUP_REDIRECT => $saved_redirect ) as $option => $value ) {
+		if ( false === $value ) {
+			delete_option( $option );
+		} else {
+			update_option( $option, $value );
+		}
+	}
+};
+
+register_shutdown_function( $restore_activation );
 
 echo "\n== Built assets ==\n";
 $js  = STORECREW_DIR . 'assets/admin/app.js';
@@ -131,6 +159,57 @@ foreach ( $endpoints as $route => $screen ) {
 	$t( sprintf( '%s (%s)', $route, $screen ), 200 === $response->get_status(), (string) $response->get_status() );
 }
 
+echo "\n== First activation opens the setup flow (FR-ADMIN-02) ==\n";
+
+$t(
+	'the setup URL is the SPA route, not a settings page',
+	str_ends_with( AdminPage::setup_url(), '#/setup' ),
+	AdminPage::setup_url()
+);
+
+// A first-ever activation: neither option exists.
+delete_option( Activator::OPTION_ACTIVATED_AT );
+delete_option( Activator::OPTION_SETUP_REDIRECT );
+
+Activator::activate();
+
+$t( 'first activation records when it happened', (int) get_option( Activator::OPTION_ACTIVATED_AT ) > 0 );
+$t( 'first activation asks for the setup redirect', '1' === (string) get_option( Activator::OPTION_SETUP_REDIRECT ) );
+
+// Re-activating is not a first activation. Someone toggling the plugin to
+// clear a cache has already been through setup.
+delete_option( Activator::OPTION_SETUP_REDIRECT );
+
+Activator::activate();
+
+$t(
+	'PROBE: re-activation does not throw a configured merchant back to step one',
+	false === get_option( Activator::OPTION_SETUP_REDIRECT )
+);
+
+// The guard, exercised: WP-CLI is not an admin request, so nothing redirects
+// here however the flag is set — which is also why this file can call the
+// consumer at all without ending its own run.
+update_option( Activator::OPTION_SETUP_REDIRECT, '1' );
+
+$t( 'PROBE: a non-admin request never redirects', ! $page->may_redirect() );
+
+$page->maybe_redirect_to_setup();
+
+$t(
+	'PROBE: the flag is spent even when the redirect cannot happen',
+	false === get_option( Activator::OPTION_SETUP_REDIRECT ),
+	'a redirect that can retry is a redirect that can loop'
+);
+
+$restore_activation();
+
+$t(
+	'cleanup restored the real activation state',
+	$saved_activated === get_option( Activator::OPTION_ACTIVATED_AT, false )
+		&& false === get_option( Activator::OPTION_SETUP_REDIRECT, false )
+);
+
 echo "\n== The bootstrap contract the app is typed against ==\n";
 $boot = $server->dispatch( new WP_REST_Request( 'GET', '/storecrew/v1/bootstrap' ) )->get_data()['data'];
 
@@ -139,6 +218,18 @@ foreach ( array( 'version', 'apiVersion', 'features', 'catalog', 'routes', 'onbo
 }
 
 $t( 'onboarding reports whether anything can be indexed', array_key_exists( 'canEmbed', $boot['onboarding'] ) );
+
+// The fifteen-minute exit criterion (14 § M1) is about the merchant's time,
+// and embedding is a queue whose length is the catalogue's, not theirs. The
+// index step therefore tracks what they can control.
+$onboarding_steps = array_column( $boot['onboarding']['steps'], 'done', 'id' );
+$live_health      = StoreCrew\Plugin::instance()->container()->get( StoreCrew\Knowledge\Indexer::class )->health();
+
+$t(
+	'PROBE: the index step tracks "the crew can answer", not "the queue is empty"',
+	( $live_health['embedded'] > 0 ) === ( true === $onboarding_steps['index'] ),
+	wp_json_encode( array( 'embedded' => $live_health['embedded'], 'pending' => $live_health['pending'], 'step' => $onboarding_steps['index'] ) )
+);
 $t( 'routes carry a locked flag for gating', ! $boot['routes'] || array_key_exists( 'locked', $boot['routes'][0] ) );
 
 echo "\n" . str_repeat( '-', 60 ) . "\n";

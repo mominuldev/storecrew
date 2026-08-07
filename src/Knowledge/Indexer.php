@@ -44,6 +44,7 @@ final class Indexer {
 		private readonly KnowledgeChunkRepository $chunks,
 		private readonly UsageRepository $usage,
 		private readonly SpendGuard $spend,
+		private readonly SourceSelection $selection,
 	) {}
 
 	/**
@@ -60,6 +61,18 @@ final class Indexer {
 		if ( ! $extractor instanceof ExtractorInterface || ! $extractor->is_available() ) {
 			return array(
 				'status'    => 'unavailable',
+				'source_id' => 0,
+				'chunks'    => 0,
+			);
+		}
+
+		// The merchant excluded this source. Checked here rather than only in
+		// the walker because the live save_post path arrives through
+		// ReindexJob: without this, a page published after the exclusion walks
+		// straight back into the index one object at a time.
+		if ( ! $this->selection->is_enabled( $source_type ) ) {
+			return array(
+				'status'    => 'excluded',
 				'source_id' => 0,
 				'chunks'    => 0,
 			);
@@ -282,6 +295,34 @@ final class Indexer {
 	}
 
 	/**
+	 * Remove every trace of one source type from the index.
+	 *
+	 * Called when a merchant deselects a source. Leaving the rows would keep
+	 * the excluded content retrievable — the agent would keep quoting the blog
+	 * the merchant just took out of scope, with nothing on any screen to
+	 * explain why.
+	 *
+	 * @return array{sources: int, chunks: int}
+	 */
+	public function forget_type( string $source_type ): array {
+		$ids = $this->sources->ids_of_type( $source_type );
+
+		if ( array() === $ids ) {
+			return array(
+				'sources' => 0,
+				'chunks'  => 0,
+			);
+		}
+
+		$chunks = $this->chunks->delete_for_sources( $ids );
+
+		return array(
+			'sources' => $this->sources->delete_type( $source_type ),
+			'chunks'  => $chunks,
+		);
+	}
+
+	/**
 	 * What indexing would cost before it starts.
 	 *
 	 * R-COST-01 rates a surprise provider bill as high impact. A merchant with
@@ -292,7 +333,9 @@ final class Indexer {
 	 * @return array{objects: array<string, int>, total: int, estimatedChunks: int, costKnown: bool, costMicros: int}
 	 */
 	public function estimate(): array {
-		$counts = $this->extractors->counts();
+		// Selected sources only. An estimate covering content the next run will
+		// skip is not an estimate of that run.
+		$counts = $this->selection->counts();
 		$total  = array_sum( $counts );
 
 		// Three chunks per object is a planning figure, not a measurement.

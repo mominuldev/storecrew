@@ -17,6 +17,7 @@ const SCREENS = [
   ['#/knowledge', 'Knowledge'],
   ['#/inbox', 'Inbox'],
   ['#/settings', 'Settings'],
+  ['#/setup', 'Setup'],
 ];
 
 const browser = await chromium.launch();
@@ -68,6 +69,39 @@ for (const [hash, name] of SCREENS) {
 
   t(`${name} text is not wp-admin's default in ${darkApplied ? 'dark' : 'light'} mode`, colour !== 'rgb(60, 67, 74)', colour);
 }
+
+// The setup flow (FR-ADMIN-02). Each step is a disclosure button, and its
+// control only exists once opened — a step whose panel never expands is a step
+// a merchant cannot complete, and nothing in PHP can see that.
+await page.goto(`${SITE}/wp-admin/admin.php?page=storecrew#/setup`, { waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+
+const stepHeaders = page.locator('#storecrew-root button[aria-expanded]');
+t('the setup flow shows all five steps', (await stepHeaders.count()) === 5, String(await stepHeaders.count()));
+
+const setupText = (await page.locator('#storecrew-root').textContent()) ?? '';
+t(
+  'the setup flow names the five steps in order',
+  ['Connect an AI provider', 'Choose what the crew reads', 'Let the crew read your store', 'Say who is on duty', 'Put the crew on your storefront']
+    .every((title) => setupText.includes(title)),
+  setupText.slice(0, 160),
+);
+
+// Open the first step and check its control actually appeared. The panel is
+// conditionally rendered, so a broken step is an empty card, not an error.
+await stepHeaders.first().click();
+await page.waitForTimeout(500);
+t(
+  'opening a step reveals its control',
+  (await page.locator('#storecrew-root input[type="password"]').count()) > 0,
+);
+
+// The cost expectation is the BYO-key mitigation (02 § 5.3) and has to be on
+// the key step itself, not buried in settings.
+t(
+  'the key step sets the cost expectation',
+  /spend a few dollars a month/i.test((await page.locator('#storecrew-root').textContent()) ?? ''),
+);
 
 // Approval arguments must never render as raw JSON (11 § 3.4, G4-D2).
 await page.goto(`${SITE}/wp-admin/admin.php?page=storecrew#/inbox`, { waitUntil: 'networkidle' });

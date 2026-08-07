@@ -9,9 +9,9 @@ declare( strict_types=1 );
 
 namespace StoreCrew\Api\Rest\Controllers;
 
-use StoreCrew\Api\Registry\ProviderRegistry;
 use StoreCrew\Api\Rest\RestController;
 use StoreCrew\Core\Capabilities\Capabilities;
+use StoreCrew\Core\Onboarding;
 use StoreCrew\Licensing\FeatureGate;
 
 defined( 'ABSPATH' ) || exit;
@@ -31,7 +31,7 @@ final class BootstrapController extends RestController {
 
 	public function __construct(
 		FeatureGate $features,
-		private readonly ProviderRegistry $providers,
+		private readonly Onboarding $onboarding,
 	) {
 		parent::__construct( $features );
 	}
@@ -57,40 +57,13 @@ final class BootstrapController extends RestController {
 				'features'   => $manifest['features'],
 				'catalog'    => $manifest['catalog'],
 				'routes'     => $manifest['routes'],
-				'onboarding' => $this->onboarding_state(),
+				'onboarding' => $this->onboarding->state(),
 				'user'       => array(
 					'canManage'     => current_user_can( Capabilities::MANAGE ),
 					'canViewStats'  => current_user_can( Capabilities::VIEW_ANALYTICS ),
 					'canEditAgents' => current_user_can( Capabilities::MANAGE_AGENTS ),
 				),
 			)
-		);
-	}
-
-	/**
-	 * What still needs doing before the product works.
-	 *
-	 * Surfaced as structured state rather than prose so the SPA can route a new
-	 * merchant to the specific step that is blocking them. The
-	 * `canEmbed` flag is the one that catches people out: an Anthropic-only
-	 * install has working chat and cannot index anything, and discovering that
-	 * when indexing silently produces nothing is a bad first hour.
-	 *
-	 * @return array{
-	 *     hasProvider: bool,
-	 *     canEmbed: bool,
-	 *     configuredProviders: list<string>,
-	 *     complete: bool
-	 * }
-	 */
-	private function onboarding_state(): array {
-		$configured = array_keys( $this->providers->configured() );
-
-		return array(
-			'hasProvider'         => array() !== $configured,
-			'canEmbed'            => $this->providers->can_embed(),
-			'configuredProviders' => array_map( 'strval', $configured ),
-			'complete'            => array() !== $configured && $this->providers->can_embed(),
 		);
 	}
 }

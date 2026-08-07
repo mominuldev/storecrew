@@ -190,6 +190,7 @@ src/
   Plugin.php               Kernel: container, registration window, hooks
   Core/
     Requirements.php       Version guard             (PHP 5.6-parseable)
+    Onboarding.php         The five setup steps, all derived
     Container/             Hand-written PSR-11, no autowiring
     Capabilities/          storecrew_manage, _view_analytics, _manage_agents, _converse
     Activation/            Activator / Deactivator
@@ -199,7 +200,7 @@ src/
     Feature.php            Gateable feature + tier
     AdminRoute.php         SPA route declaration
     Registry/              Freezable registries
-    Rest/                  RestController base + 8 controllers, storecrew/v1
+    Rest/                  RestController base + 9 controllers, storecrew/v1
   Database/
     Tables.php             The only place table names are built
     Migrator.php           Forward-only, locked, admin_init
@@ -211,7 +212,7 @@ src/
     ModelPolicy, Pricing, SpendGuard, Capabilities, value objects
   Knowledge/
     Extractor/             Product, Post, keyset pagination trait
-    Chunker, Indexer, Retriever, Vector
+    Chunker, Indexer, Retriever, Vector, SourceSelection
     Jobs/                  IndexJob, EmbedJob, ReindexJob
   Agent/
     Agent, AgentRunner, AgentTurn, Orchestrator, TurnBudget, SharedContext
@@ -258,7 +259,7 @@ because it runs with no database at all.
 
 ## Testing
 
-Nine PHP suites (616 assertions) plus two browser suites (33 assertions),
+Nine PHP suites (736 assertions) plus two browser suites (40 assertions),
 green in any run order.
 
 ```bash
@@ -340,6 +341,8 @@ ciphertext, ragged embedding vectors, and the migration lock.
 | `verify-repositories` poisoned FULLTEXT stats for its own future runs | InnoDB keeps deleted rows in the FULLTEXT index — and its term statistics — until OPTIMIZE. Each run left three ghost docs full of the probe's own search terms; IDF decayed until the lexical probe stopped ranking its chunk first, dozens of runs after the cause. Cleanup now OPTIMIZEs the table. Any suite that inserts-and-deletes FULLTEXT rows needs the same. |
 | `verify-providers` cleanup deleted the merchant's **real** provider keys | The forget-list included `provider.gemini.key` etc. with no snapshot — every run silently unconfigured a configured store. Invisible on a keyless dev site; the secrets edition of the wipe-the-model-policy bug. Cleanup now snapshots `storecrew_secrets` **and** `storecrew_data_key` (rotation replaces the key the ciphertexts need) and restores both. |
 | "Unconfigured store" probes assumed the state instead of constructing it | verify-rest's canEmbed/degraded probes and verify-jobs' blocked-embedding probe only ever passed because another suite had just wiped the keys — and on a configured store, the jobs probe ran the embed job against the merchant's **live key**, a billable call from inside a test. Probes that need an unconfigured store now hide the keys for their duration and restore. |
+| A test probe deselected a source type against the merchant's live index | `POST /index/sources` purges what falls out of scope — correct behaviour, catastrophic as a probe. Selecting `['post']` inside `verify-rest` deleted 47 real product chunks on a configured store; the suite restored the *option* and never noticed the rows were gone. The purge is now probed in `verify-knowledge` against a **synthetic source type**, where the only rows at risk are the ones the probe created. Any probe of a destructive endpoint needs its own fixture, not the merchant's data. |
+| A fatal mid-suite left the merchant carrying the suite's fake model policy | `verify-knowledge` writes the live policy at the top and restores it at the bottom; a fatal in between (a constructor signature change) skipped the restore, and the *next* run snapshotted the poison and put it back. Snapshot-and-restore is not enough on its own — the restore is registered with `register_shutdown_function` now, so it survives the fatal that makes it necessary. |
 | Boot minted its nonce as user 0, killing the widget for every signed-in visitor | The boot request carries the login cookie but no nonce, so core demotes it to anonymous *before* the handler runs; the user-0 nonce is then refused (`403 rest_cookie_invalid_nonce`, before any callback) on every POST, which arrives with the same cookie and verifies as the signed-in user. Absent nonce degrades to guest; **wrong** nonce refuses. Invisible to curl, the PHP suites, and a fresh browser — all anonymous. boot now mints the nonce for the user `wp_validate_auth_cookie` proves. |
 
 ---
@@ -411,9 +414,27 @@ ciphertext, ragged embedding vectors, and the migration lock.
   store's provider assignments every run — invisible until a site had actually
   been configured. The pattern is in each suite's head; keep it for any new
   option a test writes.
-- The admin app has been verified in a real browser (Playwright: all six
+- The admin app has been verified in a real browser (Playwright: all seven
   screens, both themes, mobile, and a settings write round-trip). It has still
   never been seen with a *populated* inbox against live traffic.
+- **The onboarding flow is built** (FR-ADMIN-02, 2026-08-08): one `/setup`
+  screen, five steps, every control inline; **first activation redirects into
+  it once** (`storecrew_setup_redirect`, set only when `storecrew_activated_at`
+  was absent, consumed before anything is decided so it cannot loop —
+  browser-verified firing from `plugins.php` and *not* firing on the next load);
+  step state derived from the thing itself in `Core\Onboarding` and served on
+  `/bootstrap`. The `index` step completes on **one vector, not a drained
+  queue** — embedding scales with the catalogue and the 15-minute criterion is
+  about the merchant's time; the remainder stays on screen in words. Two capabilities were
+  missing under it and are now real — **source selection** (`POST
+  /index/sources`; the walker, the estimate, and the live save hook all honour
+  it, and deselecting purges rather than leaving excluded content quotable) and
+  **agent activation** (`GET`/`POST /agents`, finally writing the
+  `agent_configs.enabled` column the orchestrator has always read; `CrewBar`
+  shows "Stood down" so the switch is visibly connected). **Remaining:** the
+  exit criterion is a *measurement* — the five-step path completing in ≤ 15 min
+  on a fresh install, timed on someone who is not us. Nothing in this repo can
+  observe that.
 - Model IDs and pricing are point-in-time (verified 2026-06-24) and will drift.
 - **The four Gate 2 code defects are fixed and probe-tested** (2026-08-07,
   `docs/reviews/gate-2-review.md`): retrieval provenance now travels by the

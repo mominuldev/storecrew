@@ -9,6 +9,7 @@ declare( strict_types=1 );
 
 namespace StoreCrew\Core\Admin;
 
+use StoreCrew\Core\Activation\Activator;
 use StoreCrew\Core\Capabilities\Capabilities;
 
 defined( 'ABSPATH' ) || exit;
@@ -39,6 +40,77 @@ final class AdminPage {
 	public function register(): void {
 		add_action( 'admin_menu', array( $this, 'add_menu' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue' ) );
+
+		// Priority 20: the migrator is on this hook at the default 10, and the
+		// screen we are about to send them to reads tables it creates.
+		add_action( 'admin_init', array( $this, 'maybe_redirect_to_setup' ), 20 );
+	}
+
+	/**
+	 * Where the guided setup flow lives.
+	 *
+	 * The fragment is the SPA's own router (06 § 2.1). It never reaches the
+	 * server, which is exactly why it survives a refresh with no rewrite rule.
+	 */
+	public static function setup_url(): string {
+		return admin_url( 'admin.php?page=' . self::SLUG ) . '#/setup';
+	}
+
+	/**
+	 * Send a freshly activated install into the setup flow, once.
+	 *
+	 * The flag is consumed before anything is decided, so a request that cannot
+	 * redirect — wrong user, bulk activation, an `exit` that never happens —
+	 * still spends it. A redirect that can retry is a redirect that can trap a
+	 * merchant in a loop, and a plugin that hijacks navigation twice is worse
+	 * than one that misses its moment once.
+	 */
+	public function maybe_redirect_to_setup(): void {
+		if ( ! get_option( Activator::OPTION_SETUP_REDIRECT ) ) {
+			return;
+		}
+
+		delete_option( Activator::OPTION_SETUP_REDIRECT );
+
+		if ( ! $this->may_redirect() ) {
+			return;
+		}
+
+		wp_safe_redirect( self::setup_url() );
+
+		exit;
+	}
+
+	/**
+	 * Whether this request is one a merchant would want redirected.
+	 *
+	 * Separated from the redirect so the guards can be probed — the redirect
+	 * itself ends the request and cannot be.
+	 */
+	public function may_redirect(): bool {
+		// Activating ten plugins at once ends on a screen reporting all ten.
+		// Stealing that screen loses the other nine's notices, and WordPress
+		// says so by setting this parameter.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( isset( $_GET['activate-multi'] ) ) {
+			return false;
+		}
+
+		if ( ! is_admin() || wp_doing_ajax() || is_network_admin() ) {
+			return false;
+		}
+
+		// Network activation lands every site's administrator here at once, and
+		// none of them activated anything.
+		if ( is_multisite()
+			&& function_exists( 'is_plugin_active_for_network' )
+			&& is_plugin_active_for_network( STORECREW_BASENAME ) ) {
+			return false;
+		}
+
+		// Someone without the capability cannot use the destination, and would
+		// arrive at a permission error instead of a welcome.
+		return current_user_can( Capabilities::MANAGE );
 	}
 
 	public function add_menu(): void {
@@ -127,6 +199,12 @@ final class AdminPage {
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
 				'version'  => STORECREW_VERSION,
 				'adminUrl' => esc_url_raw( admin_url() ),
+				// The setup flow's last step ends by sending the merchant to
+				// look at their own storefront. Derived here rather than
+				// guessed from the admin URL, which is wrong on every
+				// subdirectory install and every site with WP in its own
+				// folder.
+				'siteUrl'  => esc_url_raw( home_url( '/' ) ),
 				// The console greets the merchant by name; first name only,
 				// the way a colleague would.
 				'userName' => wp_get_current_user()->display_name,

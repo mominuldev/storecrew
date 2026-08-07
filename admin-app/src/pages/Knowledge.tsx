@@ -30,6 +30,16 @@ export function Knowledge() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['index'] }),
   });
 
+  const sources = useMutation({
+    mutationFn: (selected: string[]) =>
+      api.post<{ purged: { sources: number; chunks: number } }>('/index/sources', { sources: selected }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['index'] });
+      // The setup flow's second step reads as done off the back of this.
+      qc.invalidateQueries({ queryKey: ['bootstrap'] });
+    },
+  });
+
   const search = useMutation({
     mutationFn: (q: string) => api.post<SearchResult>('/knowledge/search', { query: q, limit: 5 }),
     onSuccess: setResult,
@@ -80,6 +90,45 @@ export function Knowledge() {
             <Stat value={s.sources.post ?? 0} unit="policies and guides" />
           </StatCard>
         </div>
+
+        {/* What the crew is allowed to read, on the screen that answers "why
+            did it not know that?". The setup flow makes the first choice; this
+            is where it is revisited, because a merchant asking that question is
+            already looking here. */}
+        <Card className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3.5">
+          <Label>Reading</Label>
+          {s.selection.available.map((source) => (
+            <label key={source.type} className="flex cursor-pointer items-center gap-2 text-[13px]">
+              <input
+                type="checkbox"
+                checked={source.enabled}
+                disabled={sources.isPending}
+                onChange={(e) =>
+                  sources.mutate(
+                    s.selection.available
+                      .filter((o) => (o.type === source.type ? e.target.checked : o.enabled))
+                      .map((o) => o.type),
+                  )
+                }
+              />
+              {source.label}
+              <span className="tabular-nums" style={{ color: 'var(--text-dim)' }}>
+                {source.count}
+              </span>
+            </label>
+          ))}
+          <span className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+            Unticking a source removes what has already been read from it.
+          </span>
+        </Card>
+
+        {sources.isError ? <div className="mt-3"><Problem message={(sources.error as Error).message} /></div> : null}
+
+        {sources.data && sources.data.purged.chunks > 0 ? (
+          <p className="mt-2 text-[12px]" style={{ color: 'var(--text-dim)' }}>
+            Removed {sources.data.purged.chunks} passages that are no longer in scope.
+          </p>
+        ) : null}
 
         {active ? (
           <Card edge={active.alive ? 'var(--color-signal-500)' : 'var(--color-alert-500)'} className="mt-3 px-4 py-3.5">
