@@ -487,9 +487,96 @@ $marketing_bundle = (string) file_get_contents( $marketing_bundle_path );
 t( 'the bundle registers a routed screen, not a Settings tab', str_contains( $marketing_bundle, "registerScreen('/marketing'" ) );
 t( 'PROBE: the built shell actually exposes registerScreen', str_contains( $shell_bundle, 'registerScreen' ) );
 
-// Model prose reaches this screen. The widget's rule applies unchanged: that
-// text was written by something that has been reading customer reviews.
-t( 'PROBE: the console never assigns innerHTML', ! str_contains( $marketing_bundle, 'innerHTML' ) );
+echo "\n== The Analytics agent: the second console, and the figures it may not invent ==\n";
+
+use StoreCrew\Pro\Agent\AnalyticsAgent;
+
+t( 'Pro registered metrics.report', $tools->has( 'metrics.report' ) && 'storecrew-pro' === $tools->owner( 'metrics.report' ) );
+t( 'Pro registered product.performance', $tools->has( 'product.performance' ) && 'storecrew-pro' === $tools->owner( 'product.performance' ) );
+
+$metrics     = $tools->get( 'metrics.report' );
+$performance = $tools->get( 'product.performance' );
+
+t( 'the analytics tool factories build real tools', $metrics instanceof ToolInterface && $performance instanceof ToolInterface );
+
+// Reading the store's numbers and changing the store's data are different
+// permissions. If these ever demanded storecrew_manage instead, a merchant
+// could not employ someone to read reports without also handing them the till.
+t( 'PROBE: metrics.report demands storecrew_view_analytics, not storecrew_manage', 'storecrew_view_analytics' === $metrics->required_capability() );
+t( 'PROBE: product.performance demands storecrew_view_analytics', 'storecrew_view_analytics' === $performance->required_capability() );
+t( 'PROBE: metrics.report is a read, so it never queues for approval', ToolInterface::INTENT_READ === $metrics->intent() );
+t( 'PROBE: product.performance is a read too', ToolInterface::INTENT_READ === $performance->intent() );
+
+// FR-ANALYTICS-02 is a MUST: the surface is constrained, and the way it is
+// constrained is that `range` is an enum. Free text would be a query surface by
+// another name, so the schema is probed rather than trusted.
+$metrics_schema = $metrics->definition()->input_schema;
+$metrics_props  = (array) ( $metrics_schema['properties'] ?? array() );
+
+t( 'PROBE: range is an enum, not free text', isset( $metrics_props['range']['enum'] ) && array() !== (array) $metrics_props['range']['enum'] );
+t( 'PROBE: and it is the only parameter, so nothing else can be composed', array( 'range' ) === array_keys( $metrics_props ) );
+
+// A range the model invented must be refused, not coerced into a default. The
+// coercing version is how a merchant gets last month's figures labelled as this
+// month's and never finds out.
+$query        = new StoreCrew\Pro\Analytics\MetricsQuery();
+$injected     = $query->report( "2024-01-01' OR 1=1" );
+$bad_ranking  = $query->top_products( 'last_30_days', 'net_revenue; DROP TABLE', 5 );
+
+t( 'PROBE: a range outside the enum is refused, not defaulted', isset( $injected['error'] ) );
+t( 'PROBE: and so is a ranking column outside its enum', isset( $bad_ranking['error'] ) );
+
+$analytics = $agents->get( AnalyticsAgent::ID );
+
+t( 'Pro registered the analytics agent', $analytics instanceof Agent && 'storecrew-pro' === $agents->owner( AnalyticsAgent::ID ) );
+t( 'gated on agent.analytics', $analytics instanceof Agent && 'agent.analytics' === $analytics->feature );
+t( 'and it too talks to the merchant, not the storefront', $analytics instanceof Agent && Agent::AUDIENCE_ADMIN === $analytics->audience );
+
+$analytics_missing = array_values( array_diff( $analytics->tool_ids, $tools->ids() ) );
+t( 'PROBE: every tool it names actually exists', array() === $analytics_missing, implode( ', ', $analytics_missing ) );
+
+t( 'PROBE: routing cannot see the analytics agent either', ! array_key_exists( AnalyticsAgent::ID, $storefront ) );
+t( 'the console can, by asking for the admin audience', array_key_exists( AnalyticsAgent::ID, $admin ) );
+
+t( '/analytics is a sidebar route', $routes->has( '/analytics' ) );
+t( 'the analytics controller is registered', $controllers->has( 'analytics' ) && 'storecrew-pro' === $controllers->owner( 'analytics' ) );
+
+$analytics_bundle_path = $plugins . '/storecrew-pro/assets/admin/analytics.js';
+$analytics_enqueued    = $GLOBALS['scr_scripts']['storecrew-pro-analytics'] ?? null;
+$console_enqueued      = $GLOBALS['scr_scripts']['storecrew-pro-console'] ?? null;
+
+t( 'its bundle is enqueued when the shell announces itself', null !== $analytics_enqueued );
+t( 'the file it points at exists', is_file( $analytics_bundle_path ) );
+t(
+	'its strings arrive translated from PHP, not from an i18n runtime',
+	isset( $GLOBALS['scr_localized']['storecrew-pro-analytics']['storecrewProAnalytics']['strings']['send'] )
+);
+
+$analytics_bundle = (string) file_get_contents( $analytics_bundle_path );
+t( 'the bundle registers its own route, visibly', str_contains( $analytics_bundle, "registerScreen('/analytics'" ) );
+
+// The console is shared between the two screens rather than copied. If a third
+// screen ever pastes it back in, these probes are what notice.
+$console_bundle_path = $plugins . '/storecrew-pro/assets/admin/console.js';
+
+t( 'the shared console is enqueued', null !== $console_enqueued );
+t(
+	'PROBE: both screens depend on it, so createMount exists before they run',
+	null !== $analytics_enqueued && null !== $marketing_enqueued
+		&& in_array( 'storecrew-pro-console', $analytics_enqueued['deps'], true )
+		&& in_array( 'storecrew-pro-console', $marketing_enqueued['deps'], true )
+);
+t( 'the shared console file exists', is_file( $console_bundle_path ) );
+
+$console_bundle = (string) file_get_contents( $console_bundle_path );
+
+// Model prose reaches these screens. The widget's rule applies unchanged: that
+// text was written by something that has been reading customer reviews. The
+// assertion follows the prose — it lives in the shared console now, and
+// checking only the thin route files would be a probe that cannot fail.
+t( 'PROBE: the shared console never assigns innerHTML', ! str_contains( $console_bundle, 'innerHTML' ) );
+t( 'PROBE: and it does render model text as textContent', str_contains( $console_bundle, 'textContent' ) );
+t( 'PROBE: neither route file re-implements the transcript', ! str_contains( $marketing_bundle, 'innerHTML' ) && ! str_contains( $analytics_bundle, 'innerHTML' ) );
 
 echo "\n== The licence-gated updater (FR-DIST-08) ==\n";
 

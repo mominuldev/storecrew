@@ -288,9 +288,28 @@ tools' approval defaults:
    (FR-MKT-05; FR-MKT-06 is a MUST before any send, and the consent basis
    currently defaults to unknown behind `storecrew_pro_marketing_consent`
    because Woo core records none).
-3. **Analytics agent** (FR-ANALYTICS): constrained query surface — never
-   free-form SQL (FR-ANALYTICS-02); every figure traceable
-   (FR-ANALYTICS-06).
+3. **Analytics agent** (FR-ANALYTICS) — **FR-ANALYTICS-01/02/04/06 built
+   2026-08-08**: `metrics.report` and `product.performance` read
+   WooCommerce's own `Reports\*\Query` classes, so the Analytics tables are
+   sourced without Pro ever holding a `$wpdb` handle. The constrained
+   surface (FR-ANALYTICS-02, a MUST) is enums for `range` and `rank_by`
+   with a clamped `limit` — a value outside them is refused rather than
+   coerced to a default, because the coercing version is how a merchant
+   reads last month's figures believing they are this month's. Every figure
+   carries the data store it came from and the arithmetic behind it when
+   derived (FR-ANALYTICS-06), and both tools require
+   `storecrew_view_analytics` rather than `storecrew_manage`. Notably it
+   needed **no extension-API changes**: the surfaces the Marketing agent
+   forced into existence were already the general ones. Conversion rate is
+   reported unavailable rather than estimated — Woo records no sessions,
+   and `storecrew_pro_analytics_sessions` is where a real source plugs in.
+   Building it surfaced that Woo's lookup tables are filled by a *scheduled
+   import*, so a store can report "0 items sold" against a month of real
+   revenue; that combination is now detected and reported as unmeasured
+   rather than zero. **Remaining:** `-03` (revenue attributed to StoreCrew
+   conversations) needs a linkage that does not exist yet —
+   `verified_order_id` is identity verification, not attribution — plus a
+   stated methodology; and `-05` (inventory forecasting) is MAY-priority.
 4. **ESP adapters** (FR-MKT-04) behind one interface; ship with two
    (Mailchimp + FluentCRM — one hosted, one in-WordPress), the rest by
    demand.
