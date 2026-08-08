@@ -15,7 +15,7 @@
 
 import { ApiFailure, ChatApi } from './api';
 import { renderMessage } from './render';
-import type { Appearance, ChatMessage } from './types';
+import type { Appearance, ChatMessage, WidgetStrings } from './types';
 
 type Mode = 'floating' | 'inline';
 
@@ -43,6 +43,7 @@ export class ChatWidget {
     private readonly maxChars: number,
     private readonly mode: Mode,
     private readonly id: string,
+    private readonly strings: WidgetStrings,
   ) {
     this.panel = this.buildPanel();
     this.log = this.panel.querySelector('.scr-log') as HTMLElement;
@@ -164,7 +165,7 @@ export class ChatWidget {
       const close = document.createElement('button');
       close.type = 'button';
       close.className = 'scr-close';
-      close.setAttribute('aria-label', 'Close chat');
+      close.setAttribute('aria-label', this.strings.close);
       close.textContent = '×';
       head.appendChild(close);
     }
@@ -174,7 +175,7 @@ export class ChatWidget {
     log.setAttribute('role', 'log');
     log.setAttribute('aria-live', 'polite');
     log.setAttribute('aria-relevant', 'additions text');
-    log.setAttribute('aria-label', 'Conversation');
+    log.setAttribute('aria-label', this.strings.conversation);
 
     const form = document.createElement('form');
     form.className = 'scr-form';
@@ -189,7 +190,7 @@ export class ChatWidget {
     const submit = document.createElement('button');
     submit.type = 'submit';
     submit.className = 'scr-send';
-    submit.setAttribute('aria-label', 'Send message');
+    submit.setAttribute('aria-label', this.strings.send);
     submit.textContent = '↑';
 
     form.appendChild(input);
@@ -369,15 +370,15 @@ export class ChatWidget {
     if (error.code === 'storecrew_rate_limited') {
       const seconds = Math.max(1, error.retryAfter);
 
-      return `You are sending messages faster than I can answer. Please wait about ${seconds} seconds.`;
+      return this.strings.rateLimited.replace('%d', String(seconds));
     }
 
     if (error.code === 'storecrew_conversation_closed') {
-      return 'This conversation has ended. Reload the page to start a new one.';
+      return this.strings.closed;
     }
 
     if (error.code === 'storecrew_message_too_long') {
-      return `Please keep messages under ${this.maxChars} characters.`;
+      return this.strings.tooLong.replace('%d', String(this.maxChars));
     }
 
     return this.appearance.offline;
@@ -393,7 +394,7 @@ export class ChatWidget {
     const bubble = document.createElement('div');
     bubble.className = 'scr-msg';
     bubble.dataset.role = 'assistant';
-    bubble.setAttribute('aria-label', 'Working on it');
+    bubble.setAttribute('aria-label', this.strings.working);
 
     const dots = document.createElement('span');
     dots.className = 'scr-typing';

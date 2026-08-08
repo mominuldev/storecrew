@@ -171,6 +171,27 @@ final class ChatController extends RestController {
 				'placeholder' => (string) $settings['placeholder'],
 				'offline'     => (string) $settings['offlineNotice'],
 			),
+			// Text direction for the widget's shadow root. Inherited direction
+			// would usually suffice, but a theme that omits `dir` on an RTL
+			// locale would leave the widget flowing the wrong way; this makes it
+			// follow the WordPress locale regardless. Cache-safe: it is a
+			// property of the (per-URL) locale, identical for every visitor.
+			'rtl'          => is_rtl(),
+			// The widget's own chrome — the strings the merchant does not write.
+			// Translated here (the widget bundles no i18n runtime; it uses no
+			// @wordpress/* packages by design) and delivered on the uncached
+			// boot response. %d is substituted client-side.
+			'strings'      => array(
+				'send'         => __( 'Send message', 'storecrew' ),
+				'close'        => __( 'Close chat', 'storecrew' ),
+				'conversation' => __( 'Conversation', 'storecrew' ),
+				'working'      => __( 'Working on it', 'storecrew' ),
+				/* translators: %d is a number of seconds. */
+				'rateLimited'  => __( 'You are sending messages faster than I can answer. Please wait about %d seconds.', 'storecrew' ),
+				'closed'       => __( 'This conversation has ended. Reload the page to start a new one.', 'storecrew' ),
+				/* translators: %d is a maximum number of characters. */
+				'tooLong'      => __( 'Please keep messages under %d characters.', 'storecrew' ),
+			),
 			'conversation' => null,
 		);
 

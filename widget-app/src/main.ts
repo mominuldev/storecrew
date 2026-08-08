@@ -29,7 +29,7 @@ declare global {
  * theme on WordPress.org is a fight with no end, and the boundary also stops
  * the widget's own styles leaking onto the merchant's page.
  */
-function mount(container: HTMLElement, appearance: Appearance): ShadowRoot {
+function mount(container: HTMLElement, appearance: Appearance, rtl: boolean): ShadowRoot {
   const shadow = container.attachShadow({ mode: 'open' });
   const sheet = document.createElement('style');
   sheet.textContent = styles;
@@ -37,6 +37,10 @@ function mount(container: HTMLElement, appearance: Appearance): ShadowRoot {
 
   const host = shadow.host as HTMLElement;
   host.setAttribute('data-storecrew', 'chat');
+  // Direction from the WordPress locale rather than inherited from the theme —
+  // the widget's logical CSS then mirrors correctly even on an RTL site whose
+  // theme forgot to set `dir`. The shadow content inherits this.
+  host.setAttribute('dir', rtl ? 'rtl' : 'ltr');
   host.style.setProperty('--scr-accent', appearance.accent);
   host.style.setProperty('--scr-accent-ink', readableInk(appearance.accent));
 
@@ -97,12 +101,13 @@ async function start(): Promise<void> {
   inline.forEach((container, index) => {
     widgets.push(
       new ChatWidget(
-        mount(container, boot.appearance),
+        mount(container, boot.appearance, boot.rtl),
         api,
         boot.appearance,
         boot.maxChars,
         'inline',
         `scr-panel-inline-${index}`,
+        boot.strings,
       ),
     );
   });
@@ -116,12 +121,13 @@ async function start(): Promise<void> {
 
     widgets.push(
       new ChatWidget(
-        mount(host, boot.appearance),
+        mount(host, boot.appearance, boot.rtl),
         api,
         boot.appearance,
         boot.maxChars,
         'floating',
         'scr-panel-floating',
+        boot.strings,
       ),
     );
   }

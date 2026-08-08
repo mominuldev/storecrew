@@ -28,12 +28,28 @@ export interface ChatMessage {
   at?: string;
 }
 
+/**
+ * The widget's own chrome, translated server-side (the widget bundles no i18n
+ * runtime). `%d` in a template is substituted client-side.
+ */
+export interface WidgetStrings {
+  send: string;
+  close: string;
+  conversation: string;
+  working: string;
+  rateLimited: string;
+  closed: string;
+  tooLong: string;
+}
+
 export interface BootPayload {
   enabled: boolean;
   ready: boolean;
   nonce: string;
   maxChars: number;
   appearance: Appearance;
+  rtl: boolean;
+  strings: WidgetStrings;
   conversation: { uuid: string; messages: ChatMessage[] } | null;
 }
 

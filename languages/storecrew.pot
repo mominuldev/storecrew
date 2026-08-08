@@ -1,0 +1,452 @@
+# Copyright (C) 2026 Decent Themes
+# This file is distributed under the GPL-2.0-or-later.
+msgid ""
+msgstr ""
+"Project-Id-Version: StoreCrew AI 0.1.0\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/storecrew\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"POT-Creation-Date: 2026-08-07T22:48:18+00:00\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"X-Generator: WP-CLI 2.12.0\n"
+"X-Domain: storecrew\n"
+
+#. Plugin Name of the plugin
+#: storecrew.php
+#: src/Core/Admin/AdminPage.php:118
+msgid "StoreCrew AI"
+msgstr ""
+
+#. Plugin URI of the plugin
+#: storecrew.php
+msgid "https://decentthemes.com/storecrew"
+msgstr ""
+
+#. Description of the plugin
+#: storecrew.php
+msgid "The AI employee platform for WooCommerce. A crew of AI agents that sell, support, and act on your store."
+msgstr ""
+
+#. Author of the plugin
+#: storecrew.php
+msgid "Decent Themes"
+msgstr ""
+
+#. Author URI of the plugin
+#: storecrew.php
+msgid "https://decentthemes.com"
+msgstr ""
+
+#: src/Agent/CoreAgents.php:40
+msgid "Sales"
+msgstr ""
+
+#: src/Agent/CoreAgents.php:59
+msgid "Support"
+msgstr ""
+
+#: src/Ai/Providers/AnthropicProvider.php:92
+#: src/Ai/Providers/GeminiProvider.php:87
+#: src/Ai/Providers/OpenAiCompatibleProvider.php:79
+msgid "No API key configured."
+msgstr ""
+
+#: src/Ai/Providers/AnthropicProvider.php:117
+#: src/Ai/Providers/GeminiProvider.php:96
+#: src/Ai/Providers/OpenAiCompatibleProvider.php:87
+msgid "The API key was rejected."
+msgstr ""
+
+#: src/Api/Rest/Controllers/AgentController.php:88
+msgid "That agent does not exist."
+msgstr ""
+
+#: src/Api/Rest/Controllers/AgentController.php:94
+msgid "Expected an \"enabled\" flag."
+msgstr ""
+
+#: src/Api/Rest/Controllers/AgentController.php:106
+msgid "That agent is not available on your plan."
+msgstr ""
+
+#: src/Api/Rest/Controllers/ChatController.php:185
+msgid "Send message"
+msgstr ""
+
+#: src/Api/Rest/Controllers/ChatController.php:186
+msgid "Close chat"
+msgstr ""
+
+#: src/Api/Rest/Controllers/ChatController.php:187
+msgid "Conversation"
+msgstr ""
+
+#: src/Api/Rest/Controllers/ChatController.php:188
+msgid "Working on it"
+msgstr ""
+
+#. translators: %d is a number of seconds.
+#: src/Api/Rest/Controllers/ChatController.php:190
+#, php-format
+msgid "You are sending messages faster than I can answer. Please wait about %d seconds."
+msgstr ""
+
+#: src/Api/Rest/Controllers/ChatController.php:191
+msgid "This conversation has ended. Reload the page to start a new one."
+msgstr ""
+
+#. translators: %d is a maximum number of characters.
+#: src/Api/Rest/Controllers/ChatController.php:193
+#, php-format
+msgid "Please keep messages under %d characters."
+msgstr ""
+
+#: src/Api/Rest/Controllers/ChatController.php:267
+msgid "Chat is unavailable right now."
+msgstr ""
+
+#: src/Api/Rest/Controllers/ChatController.php:321
+msgid "This conversation has ended. Start a new one to carry on."
+msgstr ""
+
+#: src/Api/Rest/Controllers/ChatController.php:329
+msgid "Type a message first."
+msgstr ""
+
+#. translators: %d: maximum number of characters
+#: src/Api/Rest/Controllers/ChatController.php:337
+#, php-format
+msgid "Messages are limited to %d characters."
+msgstr ""
+
+#: src/Api/Rest/Controllers/ChatController.php:357
+msgid "You are sending messages faster than I can answer. Please wait a moment."
+msgstr ""
+
+#: src/Api/Rest/Controllers/ChatController.php:468
+msgid "That conversation is not available."
+msgstr ""
+
+#: src/Api/Rest/Controllers/ChatController.php:494
+msgid "Chat is not available on this store."
+msgstr ""
+
+#: src/Api/Rest/Controllers/ChatController.php:498
+msgid "Chat is not available right now."
+msgstr ""
+
+#: src/Api/Rest/Controllers/ConversationController.php:132
+msgid "Conversation not found."
+msgstr ""
+
+#: src/Api/Rest/Controllers/ConversationController.php:235
+msgid "That action is no longer awaiting approval."
+msgstr ""
+
+#: src/Api/Rest/Controllers/IndexController.php:144
+msgid "Expected a \"sources\" array."
+msgstr ""
+
+#: src/Api/Rest/Controllers/IndexController.php:179
+msgid "Background processing is unavailable. WooCommerce provides the queue StoreCrew uses."
+msgstr ""
+
+#: src/Api/Rest/Controllers/IndexController.php:189
+msgid "An index run is already in progress."
+msgstr ""
+
+#: src/Api/Rest/Controllers/IndexController.php:201
+msgid "No index run is in progress."
+msgstr ""
+
+#: src/Api/Rest/Controllers/ProviderController.php:118
+#: src/Api/Rest/Controllers/ProviderController.php:151
+#: src/Api/Rest/Controllers/ProviderController.php:187
+msgid "Unknown provider."
+msgstr ""
+
+#: src/Api/Rest/Controllers/SettingsController.php:85
+msgid "Expected a JSON object."
+msgstr ""
+
+#: src/Api/Rest/Controllers/SettingsController.php:104
+msgid "Unknown spend-cap behaviour."
+msgstr ""
+
+#. translators: %s: task name
+#: src/Api/Rest/Controllers/SettingsController.php:148
+#, php-format
+msgid "Unknown task \"%s\"."
+msgstr ""
+
+#. translators: %s: provider id
+#: src/Api/Rest/Controllers/SettingsController.php:168
+#: src/Api/Rest/Controllers/SettingsController.php:213
+#, php-format
+msgid "Unknown provider \"%s\"."
+msgstr ""
+
+#. translators: %s: provider label
+#: src/Api/Rest/Controllers/SettingsController.php:177
+#, php-format
+msgid "%s cannot generate embeddings."
+msgstr ""
+
+#. translators: %s: provider label
+#: src/Api/Rest/Controllers/SettingsController.php:188
+#, php-format
+msgid "%s cannot hold a conversation."
+msgstr ""
+
+#. translators: %s: provider label
+#: src/Api/Rest/Controllers/SettingsController.php:224
+#, php-format
+msgid "%s cannot serve as the fallback for this task."
+msgstr ""
+
+#: src/Api/Rest/RestController.php:64
+msgid "You do not have permission to do that."
+msgstr ""
+
+#: src/Api/Rest/RestController.php:72
+msgid "That feature is not available on your plan."
+msgstr ""
+
+#: src/Chat/ChatSettings.php:63
+msgid "Ask the store"
+msgstr ""
+
+#: src/Chat/ChatSettings.php:64
+msgid "Chat"
+msgstr ""
+
+#: src/Chat/ChatSettings.php:65
+msgid "Hello — ask me anything about our products, your order, or our policies."
+msgstr ""
+
+#: src/Chat/ChatSettings.php:66
+msgid "Type your message"
+msgstr ""
+
+#: src/Chat/ChatSettings.php:67
+msgid "Chat is unavailable right now. Please get in touch by email."
+msgstr ""
+
+#. translators: %s: site name
+#: src/Chat/EscalationNotifier.php:69
+#, php-format
+msgid "[%s] A customer conversation needs you"
+msgstr ""
+
+#: src/Chat/EscalationNotifier.php:74
+msgid "The agent declined to handle the request."
+msgstr ""
+
+#: src/Chat/EscalationNotifier.php:75
+msgid "The agent hit its limit before finishing."
+msgstr ""
+
+#: src/Chat/EscalationNotifier.php:76
+msgid "Something failed while answering."
+msgstr ""
+
+#: src/Chat/EscalationNotifier.php:82
+msgid "A customer conversation has been handed to you."
+msgstr ""
+
+#. translators: %s: reason sentence
+#: src/Chat/EscalationNotifier.php:84
+#, php-format
+msgid "Why: %s"
+msgstr ""
+
+#. translators: %s: yes/no
+#: src/Chat/EscalationNotifier.php:87
+#, php-format
+msgid "Customer identified: %s"
+msgstr ""
+
+#: src/Chat/EscalationNotifier.php:88
+msgid "yes"
+msgstr ""
+
+#: src/Chat/EscalationNotifier.php:88
+msgid "no"
+msgstr ""
+
+#. translators: %d: number of messages
+#: src/Chat/EscalationNotifier.php:90
+#, php-format
+msgid "Messages so far: %d"
+msgstr ""
+
+#: src/Chat/EscalationNotifier.php:92
+msgid "Open the conversation:"
+msgstr ""
+
+#: src/Chat/EscalationNotifier.php:95
+msgid "The customer can keep typing while they wait — replies you make from the store count."
+msgstr ""
+
+#: src/Chat/Widget.php:135
+#: assets/blocks/chat-block.js:40
+msgid "StoreCrew chat"
+msgstr ""
+
+#: src/Chat/Widget.php:138
+msgid "An inline chat panel answered by your StoreCrew agents."
+msgstr ""
+
+#: src/Core/Admin/AdminPage.php:119
+msgid "StoreCrew"
+msgstr ""
+
+#: src/Core/Admin/AdminPage.php:161
+msgid "The StoreCrew admin application has not been built. Run \"npm install && npm run build\" in the plugin directory."
+msgstr ""
+
+#: src/Core/Privacy/PersonalData.php:57
+#: src/Core/Privacy/PersonalData.php:73
+msgid "StoreCrew AI conversations"
+msgstr ""
+
+#: src/Core/Privacy/PersonalData.php:114
+msgid "You"
+msgstr ""
+
+#: src/Core/Privacy/PersonalData.php:114
+msgid "Store"
+msgstr ""
+
+#: src/Core/Privacy/PersonalData.php:121
+msgid "Store chat conversations"
+msgstr ""
+
+#: src/Core/Privacy/PersonalData.php:125
+msgid "Started"
+msgstr ""
+
+#: src/Core/Privacy/PersonalData.php:129
+msgid "Status"
+msgstr ""
+
+#: src/Core/Privacy/PersonalData.php:133
+msgid "Order discussed"
+msgstr ""
+
+#: src/Core/Privacy/PersonalData.php:136
+msgid "None"
+msgstr ""
+
+#: src/Core/Privacy/PersonalData.php:139
+msgid "Transcript"
+msgstr ""
+
+#: src/Core/Privacy/PersonalData.php:191
+msgid "Conversation records were anonymised: message content erased, and the account, verified order, and session references removed. Aggregate counters retain no personal data."
+msgstr ""
+
+#: src/Core/Requirements.php:114
+msgid "StoreCrew AI cannot run in this environment:"
+msgstr ""
+
+#. translators: 1: dependency name, 2: required version
+#: src/Core/Requirements.php:121
+#, php-format
+msgid "%1$s %2$s or higher is required, but it is not active."
+msgstr ""
+
+#. translators: 1: dependency name, 2: required version, 3: installed version
+#: src/Core/Requirements.php:128
+#, php-format
+msgid "%1$s %2$s or higher is required. This site is running %3$s."
+msgstr ""
+
+#: src/Knowledge/Extractor/PostExtractor.php:42
+msgid "Pages and posts"
+msgstr ""
+
+#: src/Knowledge/Extractor/ProductExtractor.php:48
+msgid "Products"
+msgstr ""
+
+#: src/Knowledge/Indexer.php:164
+msgid "The monthly spend limit has been reached."
+msgstr ""
+
+#: src/Knowledge/Indexer.php:175
+msgid "No provider capable of embeddings is configured."
+msgstr ""
+
+#: src/Knowledge/Indexer.php:186
+msgid "The configured embedding provider cannot embed."
+msgstr ""
+
+#: src/Knowledge/Indexer.php:236
+msgid "The embedding provider returned an unexpected number or shape of vectors."
+msgstr ""
+
+#: src/Knowledge/Retriever.php:71
+msgid "No embedding provider is configured, so search is keyword-only."
+msgstr ""
+
+#. translators: 1: migration version, 2: error message
+#: src/Plugin.php:238
+#, php-format
+msgid "StoreCrew AI could not apply database migration %1$d: %2$s"
+msgstr ""
+
+#: src/Plugin.php:573
+msgid "Sales agent"
+msgstr ""
+
+#: src/Plugin.php:575
+msgid "Finds products, answers pre-purchase questions, and suggests alternatives."
+msgstr ""
+
+#: src/Plugin.php:582
+msgid "Support agent"
+msgstr ""
+
+#: src/Plugin.php:584
+msgid "Resolves order, delivery, and returns enquiries."
+msgstr ""
+
+#: src/Plugin.php:591
+msgid "Knowledge base"
+msgstr ""
+
+#: src/Plugin.php:593
+msgid "Indexes products, pages, and policies for grounded answers."
+msgstr ""
+
+#: src/Plugin.php:600
+msgid "Storefront chat"
+msgstr ""
+
+#: src/Plugin.php:602
+msgid "The customer-facing chat widget."
+msgstr ""
+
+#: src/Security/SecretStore.php:229
+msgid "Keys are encrypted using this site's WordPress salts. Changing the salts requires re-wrapping the data key."
+msgstr ""
+
+#: src/Security/SecretStore.php:239
+msgid "No encryption key or WordPress salts were found, so a key is stored in the database alongside the secrets it protects. Define STORECREW_ENCRYPTION_KEY in wp-config.php."
+msgstr ""
+
+#: storecrew.php:119
+msgid "StoreCrew AI is missing its dependencies. Run \"composer install\" in the plugin directory."
+msgstr ""
+
+#: storecrew.php:154
+msgid "StoreCrew AI cannot be activated"
+msgstr ""
+
+#: assets/blocks/chat-block.js:45
+msgid "The chat panel appears here on the published page."
+msgstr ""

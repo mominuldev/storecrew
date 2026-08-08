@@ -177,7 +177,10 @@ textarea {
   justify-content: center;
   width: 44px;
   height: 44px;
-  margin: -8px -8px -8px 0;
+  /* Logical so the button hugs the panel's inline-end edge in both directions;
+     a physical `margin-left: 0` would leave a gap on the wrong side in RTL. */
+  margin: -8px;
+  margin-inline-start: 0;
   border: 0;
   border-radius: 10px;
   background: transparent;

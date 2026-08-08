@@ -69,6 +69,45 @@ if (!enabled) {
     await page.waitForTimeout(200);
     t('Escape closes and returns focus', (await launcher.getAttribute('aria-expanded')) === 'false');
 
+    // RTL smoke test (i18n). The widget's CSS is logical throughout, and mount()
+    // sets `dir` from the WordPress locale. This forces dir=rtl the way an RTL
+    // locale would and checks the layout actually mirrors — measuring the close
+    // button's margins, which flip only if the logical margin resolves per
+    // direction, and confirming no horizontal overflow is introduced.
+    await launcher.click();
+    await page.waitForTimeout(200);
+
+    const rtl = await page.evaluate(() => {
+      const host = document.querySelector('[data-storecrew="chat"]');
+      const shadow = host?.shadowRoot;
+      const close = shadow?.querySelector('.scr-close');
+      const read = () => {
+        const cs = getComputedStyle(close);
+        return { left: cs.marginLeft, right: cs.marginRight };
+      };
+
+      host.setAttribute('dir', 'ltr');
+      const ltr = read();
+      const logDir = getComputedStyle(shadow.querySelector('.scr-log')).direction;
+
+      host.setAttribute('dir', 'rtl');
+      const rtlMargins = read();
+      const rtlDir = getComputedStyle(shadow.querySelector('.scr-log')).direction;
+      const overflow = document.documentElement.scrollWidth > window.innerWidth + 1;
+
+      return { ltr, rtl: rtlMargins, logDirLtr: logDir, logDirRtl: rtlDir, overflow };
+    });
+
+    t('dir propagates into the shadow log', rtl.logDirLtr === 'ltr' && rtl.logDirRtl === 'rtl', JSON.stringify(rtl));
+    // The close button hugs the panel's inline-end edge: the -8px pull is on the
+    // right in LTR and mirrors to the left in RTL. If it read the same in both,
+    // the margin was physical and RTL would leave a gap on the wrong side.
+    t('the close button margin mirrors in RTL', rtl.ltr.right === '-8px' && rtl.ltr.left === '0px' && rtl.rtl.left === '-8px' && rtl.rtl.right === '0px', JSON.stringify(rtl));
+    t('RTL introduces no horizontal overflow', !rtl.overflow);
+
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(150);
+
     // Dark mode + mobile: the cascade/viewport class of bug.
     const dark = await browser.newContext({
       colorScheme: 'dark',

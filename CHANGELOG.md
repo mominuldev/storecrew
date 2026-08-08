@@ -14,6 +14,34 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**Internationalisation pass — customer-facing and server surfaces (i18n)** — 2026-08-08
+
+- All user-facing PHP strings are wrapped in `__()`/`esc_html__()` under the
+  `storecrew` text domain (already largely in place; audited and completed),
+  and `languages/storecrew.pot` is generated (99 strings) so translators have a
+  catalogue. The text domain loads on `init`.
+- The **storefront widget** is now translatable despite bundling no i18n runtime
+  (it uses no `@wordpress/*` packages by design, rule 8): its own chrome — the
+  aria-labels and the rate-limited / conversation-closed / message-too-long
+  messages the merchant does not write — is translated server-side and delivered
+  in a `strings` block on the uncached `/chat/boot` response. `%d` is substituted
+  client-side. The merchant-configured appearance strings were already `__()`'d
+  defaults.
+- The widget is **RTL-safe**: `mount()` sets `dir` from `is_rtl()` on the shadow
+  host, and the CSS is logical throughout (the one physical `margin` on the close
+  button was made logical). A browser smoke test (`widget.spec.mjs`) forces
+  `dir=rtl` and asserts the layout mirrors — the close button's margin flips
+  side and no horizontal overflow is introduced.
+
+### Notes
+
+- Two i18n boundaries are deliberate. The **admin SPA stays English** for now —
+  translating a React app that avoids `@wordpress/i18n` needs a bespoke
+  server-provided string catalog, deferred as non-blocking for beta. And
+  **model-facing strings** (tool descriptions, `ToolResult::error()` messages)
+  stay English by design: the model reads them and replies in the *conversation's*
+  language, so translating them to the merchant's locale would be wrong.
+
 **Budget-host validation instrument + R-TECH-02 buffered-parse probe (R-TECH-03)** — 2026-08-08
 
 - `tools/probe-budget-host.php`: a self-judging instrument for the one M1 row a

@@ -260,7 +260,7 @@ because it runs with no database at all.
 ## Testing
 
 Ten PHP suites (760 assertions) plus three suites under `tests/browser`
-(53 assertions), green in any run order.
+(56 assertions), green in any run order.
 
 ```bash
 # Browser: cascade fights and cookie/cache behaviour — invisible to PHP.
@@ -380,6 +380,19 @@ ciphertext, ragged embedding vectors, and the migration lock.
 
 ## Known gaps
 
+- **i18n is done for the customer-facing and server surfaces** (2026-08-08):
+  user-facing PHP strings are `__()`-wrapped under `storecrew`, `languages/storecrew.pot`
+  is generated, and the widget's own chrome (aria-labels, error messages) is
+  translated server-side and delivered on the uncached `/chat/boot` response —
+  the widget bundles no i18n runtime because it uses no `@wordpress/*` (rule 8).
+  Two boundaries are deliberate, not oversights. **The admin SPA stays English**:
+  translating it needs a server string catalog the no-`@wordpress/i18n` decision
+  forces, deferred as non-blocking for beta. And **model-facing strings stay
+  English** — tool descriptions and `ToolResult::error()` messages are read by
+  the model, which answers in the *conversation's* language; wrapping them would
+  push the merchant's locale into a conversation that may be in another language.
+  The widget is RTL-safe (logical CSS + `dir` from `is_rtl()`), probed in
+  `widget.spec.mjs`.
 - **FR-KB-09 has been measured** — see `tools/measure-recall.php`. recall@3 is
   0.96 on a 62-chunk corpus with dense weight 1.0. Two findings carried into the
   design: the lexical arm *hurts* ranking (0.80 vs 1.00), and the two-stage
