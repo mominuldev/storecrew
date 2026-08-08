@@ -7,7 +7,9 @@
 define( 'ABSPATH', '/tmp/fake-wp/' );
 
 $GLOBALS['scr_hooks']   = array();
-$GLOBALS['scr_options'] = array();
+$GLOBALS['scr_options']    = array();
+$GLOBALS['scr_users']      = array();
+$GLOBALS['scr_transients'] = array();
 $GLOBALS['scr_notices'] = array();
 
 function add_action( $tag, $cb, $prio = 10, $args = 1 ) {
@@ -132,6 +134,34 @@ function wp_json_encode( $v, $flags = 0, $depth = 512 ) { return json_encode( $v
 // use. Its whole job is smoothing over cross-version inconsistency, so
 // delegating is the accurate emulation rather than a stub.
 function wp_parse_url( $url, $component = -1 ) { return parse_url( $url, $component ); }
+
+// Users, as far as anything here needs them: an id and an address. Populated by
+// a suite via $GLOBALS['scr_users'], because this harness has no database and
+// the code under test only ever asks for the email.
+function get_userdata( $id ) {
+	$row = $GLOBALS['scr_users'][ (int) $id ] ?? null;
+
+	return null === $row ? false : (object) $row;
+}
+
+// Transients, in memory. Expiry is ignored: no probe here is testing that WP
+// expires things, and a shim that pretended to would only ever be testing the
+// shim.
+function get_transient( $k ) { return $GLOBALS['scr_transients'][ $k ] ?? false; }
+function set_transient( $k, $v, $ttl = 0 ) { $GLOBALS['scr_transients'][ $k ] = $v; return true; }
+function delete_transient( $k ) { unset( $GLOBALS['scr_transients'][ $k ] ); return true; }
+
+// The HTTP API, wired to refuse. Every outbound call in this codebase goes
+// through an injectable transport precisely so probes can supply fixtures, and
+// anything reaching this instead has escaped that seam — a suite that can make
+// a real request is one that can hang on somebody else's outage, or quietly
+// depend on a live account. Refusing here turns that into a visible failure at
+// the point of the mistake.
+function wp_remote_request( $url, $args = array() ) { return new WP_Error( 'http_disabled', 'Outbound HTTP is disabled in the integration harness: ' . $url ); }
+function wp_remote_get( $url, $args = array() ) { return wp_remote_request( $url, $args ); }
+function wp_remote_post( $url, $args = array() ) { return wp_remote_request( $url, $args ); }
+function wp_remote_retrieve_body( $r ) { return is_array( $r ) ? ( $r['body'] ?? '' ) : ''; }
+function wp_remote_retrieve_response_code( $r ) { return is_array( $r ) ? ( $r['response']['code'] ?? 0 ) : 0; }
 
 define( 'DAY_IN_SECONDS', 86400 );
 define( 'WEEK_IN_SECONDS', 604800 );

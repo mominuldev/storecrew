@@ -22,6 +22,7 @@ use StoreCrew\Ai\Providers\OpenRouterProvider;
 use StoreCrew\Ai\SpendGuard;
 use StoreCrew\Api\ExtensionApi;
 use StoreCrew\Api\Feature;
+use StoreCrew\Api\Secrets;
 use StoreCrew\Api\Rest\Controllers\AgentController;
 use StoreCrew\Api\Rest\Controllers\BootstrapController;
 use StoreCrew\Api\Rest\Controllers\ChatController;
@@ -480,6 +481,17 @@ final class Plugin {
 		$this->container->set(
 			SecretStore::class,
 			static fn (): SecretStore => new SecretStore()
+		);
+
+		// The published half of the same object (Api\Secrets, four methods), so
+		// an add-on storing a third-party credential never has to invent its own
+		// encryption — and never has to name a class the boundary rule forbids.
+		// Resolved through the container rather than constructed again: it
+		// memoises, and two stores over one option would be two caches of the
+		// same data key.
+		$this->container->set(
+			Secrets::class,
+			fn (): Secrets => $this->container->get( SecretStore::class )
 		);
 
 		$this->container->set(

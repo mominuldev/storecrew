@@ -310,9 +310,23 @@ tools' approval defaults:
    conversations) needs a linkage that does not exist yet —
    `verified_order_id` is identity verification, not attribution — plus a
    stated methodology; and `-05` (inventory forecasting) is MAY-priority.
-4. **ESP adapters** (FR-MKT-04) behind one interface; ship with two
-   (Mailchimp + FluentCRM — one hosted, one in-WordPress), the rest by
-   demand.
+4. **ESP adapters** (FR-MKT-04) — **built 2026-08-08**: one `EspAdapter`
+   interface with Mailchimp (hosted) and FluentCRM (in-WordPress) behind
+   it, the rest by demand. The real deliverable is FR-MKT-06: an ESP is the
+   first component that actually knows a shopper's subscription status, so
+   connecting one is what turns every segment's "consent unknown" into a
+   real reachable audience. Unknown stays the default in every failure path
+   — no provider, unreachable service, absent from the answer, dependency
+   deactivated. Consent is resolved in bulk
+   (`storecrew_pro_marketing_consent_bulk`) because a per-customer contract
+   over a network guarantees somebody loops it; the original single filter
+   still wins when a more specific source answers. No adapter may return an
+   email address, and `sync_segment()` filters to consented members inside
+   the adapter rather than trusting its caller. Needed the third API
+   widening — `Api\Secrets`, four methods, because the boundary rule
+   refused to let Pro name `Security\SecretStore`. **Remaining:** a
+   `segment.sync` agent tool (a write, so it needs the approval path), and
+   neither adapter has been exercised against a live account.
 5. **Workflow engine v1** (FR-WF, MAY-priority: only if beta demand
    confirms) — node API stays premium-internal (D6).
 6. Exchange workflow completion (FR-SUPPORT-06) and refund-preparation

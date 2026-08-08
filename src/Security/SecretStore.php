@@ -9,6 +9,8 @@ declare( strict_types=1 );
 
 namespace StoreCrew\Security;
 
+use StoreCrew\Api\Secrets;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -26,9 +28,13 @@ defined( 'ABSPATH' ) || exit;
  * source is reported rather than hidden — a merchant on the fallback deserves
  * to know their keys are only as safe as their database.
  *
+ * The four methods add-ons need are published separately as {@see Secrets};
+ * the rotation and master-key surface below is the platform's own and is
+ * deliberately not part of that contract.
+ *
  * @see docs/01-prd.md FR-AI-03
  */
-final class SecretStore {
+final class SecretStore implements Secrets {
 
 	public const OPTION_DATA_KEY = 'storecrew_data_key';
 	public const OPTION_SECRETS  = 'storecrew_secrets';

@@ -671,4 +671,160 @@ try {
 }
 t( 'PROBE: unknown service throws NotFound', $notfound );
 
+echo "\n== Email integrations: one interface, and consent that finally has a source ==\n";
+
+use StoreCrew\Api\Secrets;
+use StoreCrew\Pro\Integrations\ConsentSource;
+use StoreCrew\Pro\Integrations\EspAdapter;
+use StoreCrew\Pro\Integrations\EspRegistry;
+use StoreCrew\Pro\Integrations\FluentCrm\FluentCrmAdapter;
+use StoreCrew\Pro\Integrations\Mailchimp\MailchimpAdapter;
+
+// The widening this change-set needed. Pro had nowhere safe to keep a Mailchimp
+// key; the boundary rule refused to let it name Security\SecretStore, so the
+// free plugin published four methods instead of a whole key-management class.
+$secrets = $api->container()->get( Secrets::class );
+
+t( 'the published Secrets surface resolves', $secrets instanceof Secrets );
+t( 'PROBE: and it is the same object the platform uses', $secrets === $api->container()->get( \StoreCrew\Security\SecretStore::class ) );
+
+$secrets->put( 'storecrew_pro.probe', 'shh' );
+t( 'a secret round-trips', 'shh' === $secrets->get( 'storecrew_pro.probe' ) );
+$secrets->forget( 'storecrew_pro.probe' );
+t( 'and forgetting it works', null === $secrets->get( 'storecrew_pro.probe' ) );
+
+// A Mailchimp that answers from fixtures. No paid account, no network, and the
+// adapter cannot tell the difference — which is the point of the seam.
+$scr_mc_calls = array();
+$scr_mc = static function ( array $subscribed, int $status = 200 ) use ( &$scr_mc_calls ): callable {
+	return static function ( string $method, string $url, ?array $options ) use ( $subscribed, $status, &$scr_mc_calls ): array {
+		$scr_mc_calls[] = $method . ' ' . $url;
+
+		if ( str_contains( $url, '/members' ) ) {
+			return array(
+				'status' => $status,
+				'body'   => array( 'members' => array_map( static fn ( $e ) => array( 'email_address' => $e ), $subscribed ) ),
+			);
+		}
+
+		if ( str_contains( $url, '/lists' ) ) {
+			return array( 'status' => $status, 'body' => array( 'lists' => array( array( 'id' => 'aud1', 'name' => 'Newsletter', 'stats' => array( 'member_count' => 2 ) ) ) ) );
+		}
+
+		return array( 'status' => $status, 'body' => array( 'account_name' => 'Probe Store' ) );
+	};
+};
+
+$mc = new MailchimpAdapter( $secrets, $scr_mc( array( 'yes@example.test' ) ) );
+
+t( 'mailchimp is always available (it is hosted)', $mc->is_available() );
+t( 'but not connected until a key is stored', ! $mc->is_connected() );
+
+// A key without a datacenter suffix is refused before any request is made.
+$scr_mc_calls = array();
+$bad = $mc->connect( array( 'api_key' => 'no-datacenter-here' ) );
+t( 'PROBE: a malformed key is refused', true !== ( $bad['ok'] ?? false ) );
+t( 'PROBE: and refused locally, without calling Mailchimp', array() === $scr_mc_calls );
+
+$good = $mc->connect( array( 'api_key' => 'abc123-us21' ) );
+t( 'a valid key connects', true === ( $good['ok'] ?? false ) && 'Probe Store' === ( $good['account'] ?? '' ) );
+t( 'and is now stored', $mc->is_connected() );
+
+// Consent. Two customers, one subscribed at the ESP, one not.
+$scr_yes = 9001;
+$scr_no  = 9002;
+
+$GLOBALS['scr_users'][ $scr_yes ] = array( 'ID' => $scr_yes, 'user_email' => 'yes@example.test' );
+$GLOBALS['scr_users'][ $scr_no ]  = array( 'ID' => $scr_no, 'user_email' => 'no@example.test' );
+
+update_option( EspRegistry::OPTION_AUDIENCE, 'aud1' );
+
+$consent = $mc->consent_for( array( $scr_yes, $scr_no ) );
+
+t( 'the subscribed customer has a consent basis', true === ( $consent[ $scr_yes ] ?? null ) );
+t( 'PROBE: the unsubscribed one does not', false === ( $consent[ $scr_no ] ?? null ) );
+
+// The whole reason consent is asked in bulk: one audience read, not one call
+// per customer. A per-customer contract guarantees somebody loops it.
+$scr_mc_calls = array();
+$mc->consent_for( array( $scr_yes, $scr_no ) );
+$scr_member_reads = count( array_filter( $scr_mc_calls, static fn ( $c ) => str_contains( $c, '/members' ) ) );
+t( 'PROBE: two customers cost one audience read, not two lookups', 1 === $scr_member_reads );
+
+// An unreachable service must never read as consent.
+$dead = new MailchimpAdapter( $secrets, $scr_mc( array( 'yes@example.test' ), 500 ) );
+$dead_answer = $dead->consent_for( array( $scr_yes ) );
+t( 'PROBE: an unreachable ESP grants nobody consent', true !== ( $dead_answer[ $scr_yes ] ?? false ) );
+
+// sync_segment filters at the adapter, not at its caller — the last point
+// before data leaves the store.
+$sync = $mc->sync_segment( 'Win-back', array( $scr_yes, $scr_no ), 'aud1' );
+t( 'sync pushes only the consented member', 1 === ( $sync['synced'] ?? -1 ) );
+t( 'PROBE: and reports the one it refused to send', 1 === ( $sync['skipped'] ?? -1 ) );
+t( 'the tag is recognisable as ours', str_starts_with( (string) ( $sync['tag'] ?? '' ), 'StoreCrew: ' ) );
+
+// FluentCRM is not installed here, and must say so rather than half-work.
+$fc = new FluentCrmAdapter( $secrets );
+t( 'PROBE: an absent in-WordPress ESP reports unavailable', ! $fc->is_available() );
+t( 'PROBE: with a reason a merchant can act on', str_contains( $fc->unavailable_reason(), 'FluentCRM' ) );
+t( 'PROBE: and grants no consent while unavailable', array() === $fc->consent_for( array( $scr_yes ) ) );
+
+// The registry: one active provider, re-checked on every read.
+$registry = new EspRegistry();
+$registry->register( MailchimpAdapter::ID, static fn (): EspAdapter => $mc );
+$registry->register( FluentCrmAdapter::ID, static fn (): EspAdapter => $fc );
+
+t( 'nothing is active until the merchant chooses', null === $registry->active() );
+
+$registry->activate( MailchimpAdapter::ID );
+t( 'the chosen provider becomes active', $registry->active() instanceof MailchimpAdapter );
+
+$registry->activate( FluentCrmAdapter::ID );
+t( 'PROBE: a provider whose dependency vanished reads as no provider', null === $registry->active() );
+
+$registry->activate( MailchimpAdapter::ID );
+
+// The payoff: SegmentQuery's consent numbers stop being "all unknown".
+//
+// Hooked at 5 rather than through register()'s 10, because the *real* plugin
+// already registered a ConsentSource over the real registry when it booted —
+// and activate() above wrote the shared option, so that one sees Mailchimp
+// active too. Its adapter has the live WP transport, which the shim refuses, so
+// it would answer "nobody consented" and this probe would be measuring the
+// harness. Running first also exercises the pass-through path below.
+$source = new ConsentSource( $registry );
+add_filter( 'storecrew_pro_marketing_consent_bulk', array( $source, 'resolve' ), 5, 2 );
+
+ConsentSource::forget();
+$bulk = apply_filters( 'storecrew_pro_marketing_consent_bulk', null, array( $scr_yes, $scr_no ) );
+
+t( 'the consent source answers the bulk filter', is_array( $bulk ) );
+t( 'consented customer comes back true', true === ( $bulk[ $scr_yes ] ?? null ) );
+t( 'PROBE: and the other comes back false, not absent', false === ( $bulk[ $scr_no ] ?? null ) );
+
+// A more specific source must win — a dedicated consent plugin beats a general
+// ESP read, and filter order is how a merchant says so.
+add_filter( 'storecrew_pro_marketing_consent_bulk', static fn () => array( 'sentinel' => true ), 1 );
+$scr_earlier = apply_filters( 'storecrew_pro_marketing_consent_bulk', null, array( $scr_yes ) );
+t( 'PROBE: an earlier filter is not overwritten', isset( $scr_earlier['sentinel'] ) );
+
+unset( $GLOBALS['scr_users'][ $scr_yes ], $GLOBALS['scr_users'][ $scr_no ] );
+delete_option( EspRegistry::OPTION_ACTIVE );
+delete_option( EspRegistry::OPTION_AUDIENCE );
+$mc->disconnect();
+
+// The tab, through the same two published surfaces as the licence pane.
+$scr_int_tab = $GLOBALS['scr_scripts']['storecrew-pro-integrations'] ?? null;
+t( 'the integrations tab bundle is enqueued', null !== $scr_int_tab );
+t( 'PROBE: depending on the shell handle', null !== $scr_int_tab && in_array( 'storecrew-admin', $scr_int_tab['deps'], true ) );
+t( 'its strings arrive translated from PHP', isset( $GLOBALS['scr_localized']['storecrew-pro-integrations']['storecrewProIntegrations']['strings']['connect'] ) );
+t( 'the integrations controller is registered', $controllers->has( 'integrations' ) && 'storecrew-pro' === $controllers->owner( 'integrations' ) );
+
+$scr_int_bundle = (string) file_get_contents( $plugins . '/storecrew-pro/assets/admin/integrations.js' );
+t( 'it registers a Settings tab, not a route', str_contains( $scr_int_bundle, 'registerSettingsTab' ) && ! str_contains( $scr_int_bundle, 'registerScreen' ) );
+t( 'PROBE: and never assigns innerHTML', ! str_contains( $scr_int_bundle, 'innerHTML' ) );
+
+t( 'cleanup: probe users removed', false === get_userdata( $scr_yes ) );
+t( 'cleanup: the probe key is gone', ! $mc->is_connected() );
+
 scr_summary();
