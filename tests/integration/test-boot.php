@@ -404,6 +404,74 @@ t(
 	isset( $GLOBALS['scr_localized']['storecrew-pro-licence']['storecrewProLicence']['strings']['activate'] )
 );
 
+echo "\n== The licence-gated updater (FR-DIST-08) ==\n";
+
+use StoreCrew\Pro\Licensing\Updater;
+
+// The Update URI header and the filter name are two halves of one
+// mechanism: core derives the filter from the header's hostname, and if
+// they drift apart updates silently stop while everything looks wired.
+$pro_header = (string) file_get_contents( $plugins . '/storecrew-pro/storecrew-pro.php' );
+$has_uri    = 1 === preg_match( '/^\s*\*\s*Update URI:\s*(\S+)\s*$/m', $pro_header, $uri_match );
+
+t( 'the Update URI header exists — WordPress.org is locked out of the slug', $has_uri );
+t(
+	'PROBE: the header hostname and the filter name agree',
+	$has_uri && Updater::HOOK === 'update_plugins_' . parse_url( $uri_match[1], PHP_URL_HOST )
+);
+t( 'the updater is hooked to that filter', has_action( Updater::HOOK ) );
+
+$pro_file = 'storecrew-pro/storecrew-pro.php';
+$headers  = array( 'Version' => STORECREW_PRO_VERSION );
+
+// No key, no request: an unlicensed install has told us nothing and gets
+// asked for nothing.
+$install( null );
+$asked   = 0;
+$counter = new Updater( static function ( $route, $body ) use ( &$asked ) {
+	++$asked;
+
+	return array( 'version' => '9.9.9', 'package' => 'https://updates.example/x.zip' );
+} );
+
+t( 'PROBE: with no key the updater stays silent', false === $counter->check( false, $headers, $pro_file ) );
+t( 'PROBE: and never calls the server', 0 === $asked );
+
+update_option( StoreCrew\Pro\Licensing\LicenceClient::OPTION_KEY, 'sc_pro_fixture' );
+
+$offer = $counter->check( false, $headers, $pro_file );
+t( 'with a key, the server\'s metadata comes back for core to compare', is_array( $offer ) && '9.9.9' === $offer['version'] );
+t( 'carrying the package', 'https://updates.example/x.zip' === ( $offer['package'] ?? '' ) );
+t(
+	'PROBE: another plugin naming the same host passes through untouched',
+	false === $counter->check( false, $headers, 'other-plugin/other-plugin.php' ) && 3 !== $asked
+);
+
+// A lapsed licence sees the update exist but is not handed the package —
+// nothing installed ever stops working, updates just stop arriving.
+$lapsed = new Updater( static fn ( $route, $body ) => array( 'version' => '9.9.9', 'package' => null ) );
+$offer  = $lapsed->check( false, $headers, $pro_file );
+t( 'PROBE: a withheld package arrives empty, not absent', is_array( $offer ) && '' === $offer['package'] );
+
+ob_start();
+$lapsed->renewal_hint( $headers, (object) array( 'package' => '' ) );
+$hint = ob_get_clean();
+t( 'and the update row says why', str_contains( $hint, 'Renew' ) );
+
+ob_start();
+$lapsed->renewal_hint( $headers, (object) array( 'package' => 'https://updates.example/x.zip' ) );
+t( 'PROBE: the hint stays silent when the package is real', '' === ob_get_clean() );
+
+// Failure modes all read as "no update information", never as an error.
+$dead = new Updater( static fn ( $route, $body ) => new WP_Error( 'http_request_failed', 'down' ) );
+t( 'PROBE: a dead update server is silence, not an error', false === $dead->check( false, $headers, $pro_file ) );
+
+$garbled = new Updater( static fn ( $route, $body ) => array( 'nonsense' => true ) );
+t( 'PROBE: a malformed answer is discarded', false === $garbled->check( false, $headers, $pro_file ) );
+
+$sideload = new Updater( static fn ( $route, $body ) => array( 'version' => '9.9.9', 'package' => 'http://evil.example/x.zip' ) );
+t( 'PROBE: a non-https package poisons the whole answer', false === $sideload->check( false, $headers, $pro_file ) );
+
 // Leave the licence spine as the boot wiring had it: no licence at all.
 $install( null );
 

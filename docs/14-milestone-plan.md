@@ -256,10 +256,14 @@ tools' approval defaults:
    third change-set): Pro's `/licence` screen arrives through the extension
    seam — AdminRoute + contributed REST controller + plain-JS bundle on the
    shell's new DOM-mount screen registry (06 § 2.3) — live-verified through
-   the real REST server. What remains is the remote half: the licence
-   server implementing 10 § 6.1's contract, the production keypair
-   (`PUBLIC_KEY` empty = fail-closed `unconfigured`, still ship-blocking),
-   and updates.
+   the real REST server. **The updater's client half is built**
+   (2026-08-08, fourth change-set): the `Update URI` header locks
+   WordPress.org out of the slug and routes checks to `Licensing\Updater`,
+   probe-tested through every failure mode and a live
+   `wp_update_plugins()` cycle. What remains is entirely server-side: the
+   licence + update server implementing 10 § 6.1's contract, and the
+   production keypair (`PUBLIC_KEY` empty = fail-closed `unconfigured`,
+   still ship-blocking).
 2. **Marketing agent** (FR-MKT): segments from Woo data, coupon tool
    (approval-gated — FR-SALES-06/FR-MKT-03), abandoned-cart sequence with
    consent discipline (FR-MKT-06 is a MUST before any send).

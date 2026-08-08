@@ -14,6 +14,15 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**The harness probes the updater's whole failure surface** — 2026-08-08
+
+- Pro's licence-gated updater (see the Pro changelog) is probed here through
+  fixture transports: header-hostname/filter-name agreement (the pair that
+  fails silently if it drifts), no-key silence with the server never called,
+  the withheld-package lapsed path with its renewal sentence, dead-server
+  and malformed-answer silence, and a non-https package poisoning the whole
+  answer. Boot suite: 84 → 98 assertions.
+
 **Add-on screens are a DOM mount, and the shell says when to arrive** — 2026-08-08
 
 - The admin shell's client-side screen registry

@@ -255,6 +255,19 @@ what the client already speaks:
   `unconfigured` rather than a mystery.
 - The client revalidates weekly (WP-Cron `storecrew_pro_licence_revalidate`)
   and stores whatever verifies — including a revocation.
+- `POST /update-check` (the updater, built 2026-08-08) — JSON body
+  `{ "key", "site", "version", "php", "wp" }` → 200 with
+  `{ "version", "package", "url", "requires", "requires_php", "tested" }`.
+  The **server** decides entitlement: an entitled licence gets an https
+  `package` URL; a lapsed one gets `"package": null`, so the site still
+  *sees* that the release exists (with a renewal sentence under the update
+  row) without being handed it — nothing installed ever stops working
+  (§ 1.3). Update metadata is deliberately **not** signed, unlike the
+  snapshot: a snapshot is stored locally and read back as authority, while
+  update metadata lives in WordPress's own update transient, which anyone
+  able to write options can already use to install code — its trust is the
+  TLS transport, same as core's updates. The client discards any answer
+  whose `package` is not https, whole.
 
 ---
 
@@ -288,7 +301,7 @@ could take a paying store down on a network failure — R-COST-01's lesson
 | Cap enforcement at the widget | ✅ **Built, probe-tested**: `/chat/session` refuses new conversations at cap; resume and send never gated; count on the Overview all month | — |
 | Licence server + store webhook | ⬜ Must implement § 6.1, which the built client fixes | 2 |
 | `LicenceClient` (replace the stub), snapshot verification | ✅ **Built, probe-tested against fixture-signed envelopes** (2026-08-08): Ed25519 envelope verification failing closed, grace to the second, site binding, activation/revalidation/deactivation over an injectable transport, weekly cron, grant-from-entitlements-map, quota loosening. The stub is gone. **Still ship-blocking:** `PUBLIC_KEY` is empty until the server exists — fail-closed (`unconfigured`), probed | 2 |
-| Update server + premium updater | ⬜ | 2 |
+| Update server + premium updater | ◐ **Client half built, probe-tested** (2026-08-08): `Update URI` header locks WordPress.org out of the slug and routes checks to `Licensing\Updater`; no key = no request; lapsed = release visible, package withheld, reason shown; non-https package poisons the whole answer. The server implements § 6.1's `/update-check` | 2 |
 | Agency seats, remote release, white-label flag | ⬜ | 3 |
 
 The stub's replacement was the first premium engineering task, and it is
