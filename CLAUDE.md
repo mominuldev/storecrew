@@ -499,6 +499,12 @@ ciphertext, ragged embedding vectors, and the migration lock.
   migrations pending) and it leaked — the delete lived in `Migrator::run()`,
   which only executes when there *is* pending work, so re-activating an
   already-current site left an autoloaded row nothing would ever clear.
+  `storecrew_version` went the same way (Migration004, found while fixing the
+  first): activation was the only writer, so on the ordinary .org/FTP upgrade
+  it reported the version the merchant ran *before* the update. **Activation
+  now records no version at all** — `STORECREW_VERSION` is the running
+  version and cannot go stale, and "what changed since last time" is the
+  migrator's job, keyed on `storecrew_schema_version`.
 - **The Gate 3 findings are remediated** (2026-08-07,
   `docs/reviews/gate-3-review.md`): handoff is wired via the `agent.handoff`
   tool and a run-scoped `storecrew_handoff_requested` listener (one hop per

@@ -25,7 +25,6 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Activator {
 
-	public const OPTION_VERSION        = 'storecrew_version';
 	public const OPTION_ACTIVATED_AT   = 'storecrew_activated_at';
 	public const OPTION_SETUP_REDIRECT = 'storecrew_setup_redirect';
 
@@ -51,13 +50,15 @@ final class Activator {
 			add_option( self::OPTION_SETUP_REDIRECT, '1' );
 		}
 
-		// The migrator reconciles on the next admin request rather than here,
-		// so that a fatal during schema work cannot leave activation half-done
-		// with no way to retry. Nothing is flagged for it: it gates on the
-		// version comparison, which is also the right answer for the merchant
-		// who upgrades over FTP and never reaches this hook at all. A flag set
-		// here would be absent on exactly that path (Migration003).
-		update_option( self::OPTION_VERSION, STORECREW_VERSION );
+		// Nothing is recorded about the upgrade here, and that is the whole
+		// design. The migrator reconciles schema on the next admin request — a
+		// fatal during schema work here would leave activation half-done with no
+		// way to retry — and it gates on the version comparison, which is the
+		// only answer that also holds for the merchant who updates from
+		// WordPress.org or over FTP and never reaches this hook at all. Both
+		// options that used to be written here were absent or stale on exactly
+		// that path, and read by nothing (Migration003, Migration004). The
+		// running version is `STORECREW_VERSION`, which cannot go stale.
 
 		/**
 		 * Fires after StoreCrew activation completes.

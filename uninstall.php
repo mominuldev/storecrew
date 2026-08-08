@@ -51,11 +51,12 @@ foreach ( $storecrew_tables as $storecrew_table ) {
 }
 
 $storecrew_options = array(
-	'storecrew_version',
 	'storecrew_activated_at',
-	// Legacy. Nothing has written this since Migration003 removed it; kept here
-	// for a site uninstalled before an admin request ever ran the migrator.
+	// Legacy, both of them. Nothing has written either since Migration003 and
+	// Migration004 removed them; kept here for a site uninstalled before an
+	// admin request ever ran the migrator.
 	'storecrew_needs_upgrade',
+	'storecrew_version',
 	'storecrew_setup_redirect',
 	'storecrew_schema_version',
 	'storecrew_migration_lock',

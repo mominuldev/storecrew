@@ -18,6 +18,7 @@
 
 use StoreCrew\Database\Migrations\Migration001InitialSchema;
 use StoreCrew\Database\Migrations\Migration003DropUpgradeFlag;
+use StoreCrew\Database\Migrations\Migration004DropVersionOption;
 use StoreCrew\Database\Migrator;
 use StoreCrew\Database\Tables;
 
@@ -180,26 +181,44 @@ $recovered = new Migrator( array( new Migration001InitialSchema() ) );
 $result2   = $recovered->run();
 $t( 'PROBE: lock older than TTL is broken', array( 1 ) === $result2['applied'], wp_json_encode( $result2 ) );
 
-echo "\n== Migration003 removes the unread upgrade flag ==\n";
-// The flag was written by the activator, deleted at the end of Migrator::run(),
-// and read by nothing (Gate 2). Both halves are gone; this proves the removal
-// reaches an install that already stored it, and that a second pass is a no-op
-// rather than a failure — the forward-only contract re-runs after a mid-series
-// fatal, so "already absent" must be success.
-add_option( 'storecrew_needs_upgrade', '1' );
-update_option( Migrator::OPTION_SCHEMA_VERSION, 2, false );
+echo "\n== Migrations 003 and 004 remove the options nothing read ==\n";
+// Both were written by the activator and read by nothing (Gate 2 filed the
+// flag; the version option is the same shape and staler, since activation is
+// the one upgrade path a .org update does not take). Each case proves the
+// removal reaches an install that had already stored the option, and that a
+// second pass is a no-op rather than a failure — the forward-only contract
+// re-runs after a mid-series fatal, so "already absent" must count as success.
+$legacy_removals = array(
+	3 => array( new Migration003DropUpgradeFlag(), 'storecrew_needs_upgrade' ),
+	4 => array( new Migration004DropVersionOption(), 'storecrew_version' ),
+);
 
-$flag_result = ( new Migrator( array( new Migration003DropUpgradeFlag() ) ) )->run();
-$t( 'migration 3 applies', array( 3 ) === $flag_result['applied'], wp_json_encode( $flag_result ) );
-$t( 'storecrew_needs_upgrade is gone', false === get_option( 'storecrew_needs_upgrade', false ) );
+foreach ( $legacy_removals as $legacy_version => $legacy_case ) {
+	list( $legacy_migration, $legacy_option ) = $legacy_case;
 
-update_option( Migrator::OPTION_SCHEMA_VERSION, 2, false );
-$flag_again = ( new Migrator( array( new Migration003DropUpgradeFlag() ) ) )->run();
-$t( 'PROBE: re-running with the option already absent succeeds', null === $flag_again['failed'], $flag_again['error'] );
+	add_option( $legacy_option, '1' );
+	update_option( Migrator::OPTION_SCHEMA_VERSION, $legacy_version - 1, false );
 
-// That the write is gone at its source — otherwise every activation would put
-// back what this migration just removed — is asserted in verify-admin, which
-// already snapshots the options `Activator::activate()` touches.
+	$legacy_result = ( new Migrator( array( $legacy_migration ) ) )->run();
+	$t(
+		"migration {$legacy_version} applies",
+		array( $legacy_version ) === $legacy_result['applied'],
+		wp_json_encode( $legacy_result )
+	);
+	$t( "{$legacy_option} is gone", false === get_option( $legacy_option, false ) );
+
+	update_option( Migrator::OPTION_SCHEMA_VERSION, $legacy_version - 1, false );
+	$legacy_again = ( new Migrator( array( $legacy_migration ) ) )->run();
+	$t(
+		"PROBE: migration {$legacy_version} re-runs cleanly with the option already absent",
+		null === $legacy_again['failed'],
+		$legacy_again['error']
+	);
+}
+
+// That the writes are gone at their source — otherwise every activation would
+// put back what these migrations just removed — is asserted in verify-admin,
+// which already snapshots the options `Activator::activate()` touches.
 
 echo "\n== Cleanup ==\n";
 $restore_schema_version();

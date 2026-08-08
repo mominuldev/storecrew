@@ -176,15 +176,19 @@ Activator::activate();
 $t( 'first activation records when it happened', (int) get_option( Activator::OPTION_ACTIVATED_AT ) > 0 );
 $t( 'first activation asks for the setup redirect', '1' === (string) get_option( Activator::OPTION_SETUP_REDIRECT ) );
 
-// Activation used to set `storecrew_needs_upgrade`, which nothing read (Gate 2)
-// and `Migrator::run()` only cleared when there was pending work — so an
-// already-current site kept an autoloaded row forever. Migration003 removes the
-// rows; this is the half that stops them coming back. Reintroducing the write
-// would also make that migration's own probe pass while the leak continued.
+// Activation used to write two options nothing read (Gate 2). Migrations 003
+// and 004 remove the rows; these are the half that stops them coming back —
+// reintroducing either write would leave those migrations' own probes passing
+// while the option reappeared on every activation.
 $t(
 	'PROBE: activation writes no upgrade flag',
 	false === get_option( 'storecrew_needs_upgrade', false ),
 	'the migrator gates on the version comparison, not on a flag'
+);
+$t(
+	'PROBE: activation writes no version option',
+	false === get_option( 'storecrew_version', false ),
+	'STORECREW_VERSION is the running version and cannot go stale; the option could'
 );
 
 // Re-activating is not a first activation. Someone toggling the plugin to
