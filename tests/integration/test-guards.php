@@ -88,6 +88,38 @@ switch ( $scenario ) {
 		t( 'Pro registered nothing', ! has_action( 'storecrew_api_ready' ) );
 		break;
 
+	case 'pro-i18n':
+		// Pro is never distributed through WordPress.org, so no language pack is
+		// ever served to it — its catalog has to ship in the plugin, and the path
+		// the loader names has to be real. It was not: `load_plugin_textdomain()`
+		// pointed at a `/languages` directory that did not exist, and nothing
+		// noticed, because a missing directory and a locale nobody has translated
+		// yet both return false and both leave the merchant reading English.
+		define( 'STORECREW_API_VERSION', '1.0' );
+		require $plugins . '/storecrew-pro/storecrew-pro.php';
+		do_action( 'plugins_loaded' );
+		do_action( 'init' );
+
+		$loaded = isset( $GLOBALS['scr_textdomains'] ) ? $GLOBALS['scr_textdomains'] : array();
+		t( 'Pro loads a textdomain on init', array() !== $loaded );
+
+		$rel = null;
+		foreach ( $loaded as $call ) {
+			if ( 'storecrew-pro' === $call['domain'] ) {
+				$rel = $call['rel_path'];
+			}
+		}
+
+		// json_encode, not wp_json_encode: the shim is a hook substitute, not a
+		// WordPress, and reaching for a core helper here is how a probe ends up
+		// testing the shim instead of the plugin.
+		t( 'the domain is storecrew-pro', null !== $rel, json_encode( $loaded ) );
+
+		$dir = $plugins . '/' . $rel;
+		t( 'the directory it names exists', is_dir( $dir ), $dir );
+		t( 'and holds the string catalog', file_exists( $dir . '/storecrew-pro.pot' ), $dir );
+		break;
+
 	default:
 		fwrite( STDERR, "Unknown scenario: {$scenario}\n" );
 		exit( 2 );

@@ -115,7 +115,14 @@ function is_admin() { return false; }
 function plugin_dir_path( $f ) { return rtrim( dirname( $f ), '/' ) . '/'; }
 function plugin_dir_url( $f ) { return 'http://example.test/wp-content/plugins/' . basename( dirname( $f ) ) . '/'; }
 function plugin_basename( $f ) { return basename( dirname( $f ) ) . '/' . basename( $f ); }
-function load_plugin_textdomain( $d, $a = false, $p = '' ) { return true; }
+// Records rather than no-ops: the argument that matters is the relative path,
+// and whether it resolves to a directory that exists is not observable any
+// other way. Real WordPress returns false for a missing path exactly as it does
+// for a locale nobody has translated yet.
+function load_plugin_textdomain( $d, $a = false, $p = '' ) {
+	$GLOBALS['scr_textdomains'][] = array( 'domain' => $d, 'rel_path' => $p );
+	return true;
+}
 function register_activation_hook( $f, $cb ) { $GLOBALS['scr_activation'][ $f ] = $cb; }
 function register_deactivation_hook( $f, $cb ) { $GLOBALS['scr_deactivation'][ $f ] = $cb; }
 function get_role( $r ) { return null; }
