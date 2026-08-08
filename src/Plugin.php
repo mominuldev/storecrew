@@ -65,6 +65,7 @@ use StoreCrew\Chat\Widget;
 use StoreCrew\Core\Admin\AdminPage;
 use StoreCrew\Core\Container\Container;
 use StoreCrew\Core\Onboarding;
+use StoreCrew\Core\SetupProgress;
 use StoreCrew\Core\Privacy\PersonalData;
 use StoreCrew\Core\Queue\MaintenanceJob;
 use StoreCrew\Core\Queue\Scheduler;
@@ -372,6 +373,13 @@ final class Plugin {
 				// the orchestrator drags in the whole agent stack, and the
 				// bootstrap payload is the only thing that asks for this.
 				static fn (): array => $c->get( Orchestrator::class )->available_agents()
+			)
+		);
+
+		$this->container->set(
+			SetupProgress::class,
+			static fn ( Container $c ): SetupProgress => new SetupProgress(
+				$c->get( UsageRepository::class )
 			)
 		);
 
@@ -698,7 +706,8 @@ final class Plugin {
 			'bootstrap',
 			static fn (): BootstrapController => new BootstrapController(
 				$gate(),
-				$c->get( Onboarding::class )
+				$c->get( Onboarding::class ),
+				$c->get( SetupProgress::class )
 			)
 		);
 

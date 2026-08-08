@@ -64,6 +64,38 @@ foreach ( array( 'anthropic', 'openai', 'gemini', 'openrouter', 'deepseek' ) as 
 	$suite_secrets->forget( 'provider.' . $provider_id . '.key' );
 }
 
+// Every /bootstrap dispatch below runs the onboarding step recorder, which
+// writes usage events and a ledger option on a store whose setup is genuinely
+// finished. Snapshot the ledger and note the high-water mark of the events
+// table now, so cleanup can remove exactly the rows this suite caused and not
+// one the merchant's own onboarding wrote. Registered for shutdown too: a fatal
+// mid-suite would otherwise leave the ledger claiming steps that never
+// happened, and the *next* run would snapshot the lie.
+global $wpdb;
+
+$saved_progress = get_option( StoreCrew\Core\SetupProgress::OPTION, false );
+$events_before  = (int) $wpdb->get_var( 'SELECT COALESCE(MAX(id), 0) FROM ' . Tables::name( Tables::USAGE_EVENTS ) );
+
+$restore_progress = static function () use ( $saved_progress, $events_before ) {
+	global $wpdb;
+
+	if ( false === $saved_progress ) {
+		delete_option( StoreCrew\Core\SetupProgress::OPTION );
+	} else {
+		update_option( StoreCrew\Core\SetupProgress::OPTION, $saved_progress, false );
+	}
+
+	$wpdb->query(
+		$wpdb->prepare(
+			'DELETE FROM ' . Tables::name( Tables::USAGE_EVENTS ) . ' WHERE id > %d AND metric LIKE %s',
+			$events_before,
+			$wpdb->esc_like( StoreCrew\Database\Repositories\UsageRepository::METRIC_SETUP_STEP . '.' ) . '%'
+		)
+	);
+};
+
+register_shutdown_function( $restore_progress );
+
 do_action( 'rest_api_init' );
 $server = rest_get_server();
 
@@ -152,6 +184,99 @@ $t(
 	'provider' === ( $onboarding['current'] ?? '' ) && false === ( $onboarding['complete'] ?? null ),
 	wp_json_encode( array( $onboarding['current'] ?? null, $onboarding['complete'] ?? null ) )
 );
+
+echo "\n== Onboarding step events (02 § 7 drop-off) ==\n";
+
+// Wired, not merely built. The recorder writes its ledger on every bootstrap,
+// so the option existing after a dispatch is what proves the controller calls
+// it — the fourth instance of Gate 2's built-but-unconsumed pattern is what
+// this assertion exists to prevent becoming a fifth.
+$t(
+	'a bootstrap dispatch runs the step recorder',
+	false !== get_option( StoreCrew\Core\SetupProgress::OPTION, false )
+);
+
+$progress_events = Tables::name( Tables::USAGE_EVENTS );
+$count_step      = static function ( string $step ) use ( $wpdb, $progress_events ): int {
+	return (int) $wpdb->get_var(
+		$wpdb->prepare(
+			"SELECT COUNT(*) FROM {$progress_events} WHERE metric = %s",
+			StoreCrew\Core\SetupProgress::metric( $step )
+		)
+	);
+};
+
+// Drive the recorder directly from here on, with a state of the suite's own
+// making. Dispatching /bootstrap again would record whichever steps this
+// particular store happens to have finished, so the assertions would say
+// something different on every machine — and on a finished store they would
+// assert nothing at all.
+delete_option( StoreCrew\Core\SetupProgress::OPTION );
+
+$recorder = new StoreCrew\Core\SetupProgress(
+	new StoreCrew\Database\Repositories\UsageRepository()
+);
+
+$partial = array(
+	'steps'    => array(
+		array( 'id' => 'provider', 'done' => true ),
+		array( 'id' => 'sources', 'done' => true ),
+		array( 'id' => 'index', 'done' => false ),
+		array( 'id' => 'agents', 'done' => false ),
+		array( 'id' => 'widget', 'done' => false ),
+	),
+	'complete' => false,
+);
+
+$provider_before = $count_step( 'provider' );
+$index_before    = $count_step( 'index' );
+
+$recorder->observe( $partial );
+
+$t( 'a completed step is recorded', $count_step( 'provider' ) === $provider_before + 1 );
+$t( 'an unfinished step is not', $count_step( 'index' ) === $index_before );
+
+// Drop-off is a count of installs that reached a step. A second event from the
+// same install would say two merchants got there.
+$recorder->observe( $partial );
+$recorder->observe( $partial );
+
+$t(
+	'PROBE: re-observing the same step records it once',
+	$count_step( 'provider' ) === $provider_before + 1,
+	(string) $count_step( 'provider' )
+);
+
+$partial['steps'][2]['done'] = true;
+$recorder->observe( $partial );
+
+$t( 'a step completed later is picked up', $count_step( 'index' ) === $index_before + 1 );
+
+// The install that finished before the instrument existed. Stamping its steps
+// now would report a five-second onboarding; unknown has to read as unknown.
+delete_option( StoreCrew\Core\SetupProgress::OPTION );
+
+$widget_before = $count_step( 'widget' );
+
+$recorder->observe(
+	array(
+		'steps'    => array(
+			array( 'id' => 'provider', 'done' => true ),
+			array( 'id' => 'sources', 'done' => true ),
+			array( 'id' => 'index', 'done' => true ),
+			array( 'id' => 'agents', 'done' => true ),
+			array( 'id' => 'widget', 'done' => true ),
+		),
+		'complete' => true,
+	)
+);
+
+$t(
+	'PROBE: an already-finished install is marked backfilled, not timed',
+	array( StoreCrew\Core\SetupProgress::BACKFILLED ) === $recorder->ledger(),
+	wp_json_encode( $recorder->ledger() )
+);
+$t( 'PROBE: and records no step events it cannot date', $count_step( 'widget' ) === $widget_before );
 $onboarding_done = array_column( $onboarding['steps'] ?? array(), 'done', 'id' );
 $t(
 	'PROBE: the step named as current is the one reporting itself unfinished',
@@ -502,6 +627,24 @@ $restore = static function ( string $option, $value ): void {
 $restore( StoreCrew\Ai\ModelPolicy::OPTION, $saved_policy );
 $restore( StoreCrew\Ai\SpendGuard::OPTION_CAP_MICROS, $saved_cap );
 $restore( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH, $saved_breach );
+
+// Called here as well as registered for shutdown. Measured, not assumed: under
+// `wp eval-file` a shutdown function registered by the suite does *not* run
+// after a fatal — WordPress's own fatal handler is registered first and ends
+// the request — though it does run on the `exit(1)` a failing suite takes.
+// Plain PHP runs it in both cases, which is where the assumption came from.
+$restore_progress();
+
+$t(
+	'step-event probes left no rows behind',
+	0 === (int) $wpdb->get_var(
+		$wpdb->prepare(
+			'SELECT COUNT(*) FROM ' . Tables::name( Tables::USAGE_EVENTS ) . ' WHERE id > %d AND metric LIKE %s',
+			$events_before,
+			$wpdb->esc_like( StoreCrew\Database\Repositories\UsageRepository::METRIC_SETUP_STEP . '.' ) . '%'
+		)
+	)
+);
 
 if ( false === $saved_sources ) {
 	delete_option( StoreCrew\Knowledge\SourceSelection::OPTION );

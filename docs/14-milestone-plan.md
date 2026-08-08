@@ -153,12 +153,41 @@ hardware* are not yet observed.
 
 ## M2 — Private beta
 
-20–30 stores from the Decent Themes base. Instrumented for the strategy's
-leading indicators (02 § 7): onboarding step drop-off, deflection rate,
-escalation reasons. Exit: two consecutive weeks with **zero
-boundary-violation incidents** and **zero storefront fatals** across the
-fleet; deflection ≥ 40% (launch target is 55% at 12 months, not at beta);
-ten quotable merchants.
+20–30 stores from the Decent Themes base. Exit: two consecutive weeks with
+**zero boundary-violation incidents** and **zero storefront fatals** across
+the fleet; deflection ≥ 40% (launch target is 55% at 12 months, not at
+beta); ten quotable merchants.
+
+**The instrumentation is built** (2026-08-08). All three of 02 § 7's leading
+indicators are readable from one install's own tables via
+`tools/beta-metrics.php` — read-only, safe on a live store, and nothing is
+transmitted. Collecting a fleet means twenty merchants running it and
+pasting the output; that is the price of no external analytics
+(FR-DIST-11) and it is deliberate.
+
+Only one of the three needed a new instrument:
+
+| Indicator | Where it comes from |
+|---|---|
+| **Onboarding step drop-off** | **New.** `Core\SetupProgress` emits a `setup_step.<id>` usage event the first time each step is *observed* complete, once per install. `Onboarding` still derives done-ness from the thing itself and remains the only answer to "is this step done" — what is stored is when we first saw it, which never feeds back into the derivation. |
+| **Deflection rate** | Already recorded: `conversations.status` / `escalated_at`. The report counts conversations, not turns, and counts never-escalated as deflected — including abandoned ones. That flatters it, and is the definition the target was set against. |
+| **Escalation reasons** | Already recorded, but not where it looks: `ChatService` writes a prose summary into a system message for the merchant's inbox, which cannot be aggregated. The report groups `agent_runs.status` + `error_code` across escalated conversations instead — the queryable form, and the reason Gate 3's `error_code` work matters here. |
+
+Two honesty constraints are built into the recorder rather than left to the
+reader. An install that finished setup **before** this shipped has step times
+nobody recorded, so it is marked `backfilled` and reports no timings at all —
+stamping them at first observation would report a five-second onboarding and
+drag every fleet average toward a figure no merchant lived through, which is
+the fabricated-zero defect wearing a different hat. And elapsed times are
+wall-clock between observations, not attention: a subject who leaves the tab
+open over lunch shows an enormous step, which is why the fifteen-minute
+protocol still keeps a human observer counting hesitations.
+
+That last point is also why this **does not close M1's fifteen-minute row**.
+It makes the measurement repeatable and removes the stopwatch — the report
+prints both numbers the protocol asks for, total and total-less-provider-
+signup — but the criterion is still three strangers on a fresh install, and
+what they stall on is the output that matters.
 
 ## M3 — WordPress.org launch (free)
 

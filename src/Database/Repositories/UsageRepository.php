@@ -35,6 +35,16 @@ final class UsageRepository extends Repository {
 	public const METRIC_TOKENS_IN    = 'tokens_in';
 	public const METRIC_TOKENS_OUT   = 'tokens_out';
 
+	/**
+	 * Namespace for onboarding step events — `setup_step.provider` and friends,
+	 * one per step, emitted once per install by `Core\SetupProgress`.
+	 *
+	 * A prefix rather than a metric on its own: drop-off is a comparison between
+	 * steps, so each step needs its own countable row. Never passed to
+	 * `record()` bare.
+	 */
+	public const METRIC_SETUP_STEP = 'setup_step';
+
 	protected function table(): string {
 		return Tables::USAGE_EVENTS;
 	}

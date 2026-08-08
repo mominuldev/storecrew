@@ -39,6 +39,40 @@ $t = static function ( string $label, bool $ok, string $detail = '' ) use ( &$pa
 $saved_activated = get_option( Activator::OPTION_ACTIVATED_AT, false );
 $saved_redirect  = get_option( Activator::OPTION_SETUP_REDIRECT, false );
 
+// This file dispatches /bootstrap, which runs the onboarding step recorder. On
+// a store whose setup is finished that writes real step events stamped *now* —
+// days after the merchant actually did the steps — and a ledger that stops the
+// install ever being recognised as one whose times are unknown. Snapshot both;
+// the events are removed by id so a merchant's own onboarding rows survive.
+$saved_progress = get_option( StoreCrew\Core\SetupProgress::OPTION, false );
+$events_before  = (int) $GLOBALS['wpdb']->get_var(
+	'SELECT COALESCE(MAX(id), 0) FROM ' . StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::USAGE_EVENTS )
+);
+
+$restore_progress = static function () use ( $saved_progress, $events_before ): void {
+	static $done = false;
+
+	if ( $done ) {
+		return;
+	}
+
+	$done = true;
+
+	if ( false === $saved_progress ) {
+		delete_option( StoreCrew\Core\SetupProgress::OPTION );
+	} else {
+		update_option( StoreCrew\Core\SetupProgress::OPTION, $saved_progress, false );
+	}
+
+	$GLOBALS['wpdb']->query(
+		$GLOBALS['wpdb']->prepare(
+			'DELETE FROM ' . StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::USAGE_EVENTS ) . ' WHERE id > %d AND metric LIKE %s',
+			$events_before,
+			$GLOBALS['wpdb']->esc_like( StoreCrew\Database\Repositories\UsageRepository::METRIC_SETUP_STEP . '.' ) . '%'
+		)
+	);
+};
+
 $restore_activation = static function () use ( $saved_activated, $saved_redirect ): void {
 	static $done = false;
 
@@ -58,6 +92,7 @@ $restore_activation = static function () use ( $saved_activated, $saved_redirect
 };
 
 register_shutdown_function( $restore_activation );
+register_shutdown_function( $restore_progress );
 
 echo "\n== Built assets ==\n";
 $js  = STORECREW_DIR . 'assets/admin/app.js';
@@ -246,6 +281,23 @@ $t(
 	wp_json_encode( array( 'embedded' => $live_health['embedded'], 'pending' => $live_health['pending'], 'step' => $onboarding_steps['index'] ) )
 );
 $t( 'routes carry a locked flag for gating', ! $boot['routes'] || array_key_exists( 'locked', $boot['routes'][0] ) );
+
+echo "\n== Cleanup ==\n";
+// Explicitly, not only on shutdown: a suite's shutdown function does not run
+// after a fatal under `wp eval-file` — WordPress's own fatal handler goes
+// first. Measured 2026-08-08; it was believed otherwise.
+$restore_progress();
+
+$t(
+	'the bootstrap dispatches left no step events behind',
+	0 === (int) $GLOBALS['wpdb']->get_var(
+		$GLOBALS['wpdb']->prepare(
+			'SELECT COUNT(*) FROM ' . StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::USAGE_EVENTS ) . ' WHERE id > %d AND metric LIKE %s',
+			$events_before,
+			$GLOBALS['wpdb']->esc_like( StoreCrew\Database\Repositories\UsageRepository::METRIC_SETUP_STEP . '.' ) . '%'
+		)
+	)
+);
 
 echo "\n" . str_repeat( '-', 60 ) . "\n";
 printf( "%d passed, %d failed\n", $pass, $fail );

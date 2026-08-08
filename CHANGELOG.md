@@ -14,6 +14,58 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**Private-beta instrumentation — the three leading indicators** — 2026-08-08
+
+- `tools/beta-metrics.php` prints all three of 02 § 7's leading indicators from
+  one install's own tables: onboarding step drop-off with elapsed times,
+  deflection rate, and escalation reasons. Read-only, safe on a live store, and
+  nothing is transmitted — FR-DIST-11 gates telemetry and there is none. A fleet
+  is collected by asking twenty merchants to run it and paste the output, which
+  is the cost of having no external analytics and is the deliberate trade.
+- Only one indicator needed a new instrument. **Onboarding step events** did not
+  exist: `Core\SetupProgress` now emits a `setup_step.<id>` usage event the first
+  time each step is *observed* complete, once per install. Knowing 40% never
+  finish is a number; knowing they all stop at the provider key is a decision.
+- `Onboarding` is untouched and still derives completion from the thing itself.
+  What is stored is *when we first saw* a step done, which never feeds back into
+  the derivation — a stored "step 3 done" flag is precisely what that class
+  exists to make impossible.
+- **An install that finished setup before this shipped is marked `backfilled`
+  and reports no timings.** Stamping its steps at first observation would claim
+  a five-second onboarding and drag every fleet average toward a figure nobody
+  lived through — the fabricated-zero defect wearing a different hat. Unknown
+  reads as unknown, and the install is excluded from the sample.
+- Deflection and escalation reasons needed no instrument, but escalation reasons
+  were not where they looked: `ChatService` writes a prose summary into a system
+  message for the merchant's inbox, which cannot be aggregated. The report groups
+  `agent_runs.status` + `error_code` across escalated conversations instead — the
+  queryable form, and where Gate 3's `error_code` work pays off. Against this
+  store's real traffic: 28 conversations, 6 escalated, 78.6% deflection, every
+  escalation a provider 429 or 400.
+- This does **not** close M1's fifteen-minute row. It removes the stopwatch and
+  makes the run repeatable — the report prints both numbers the protocol asks
+  for, total and total-less-provider-signup — but the criterion is still three
+  strangers on a fresh install, and elapsed time between observations is not
+  attention.
+
+### Fixed
+
+- **`register_shutdown_function` does not survive a fatal under `wp eval-file`.**
+  The suites' snapshot-restore safety net was believed to hold through a mid-suite
+  fatal; measured, it does not — WordPress registers its own fatal handler first
+  and ends the request there. It *does* run on the `exit(1)` a failing suite
+  takes, and plain PHP runs it in both cases, which is where the belief came
+  from. `verify-rest` and `verify-schema` now call their restores explicitly as
+  well as registering them, and assert the cleanup. `verify-knowledge` still
+  relies on the shutdown alone — recorded in CLAUDE.md as open.
+- `verify-admin` dispatches `/bootstrap` and so began writing real step events
+  stamped *now*, days after the merchant actually completed those steps, plus a
+  ledger that would stop the install ever being recognised as one whose times
+  are unknown. Caught by checking the table after a full suite run rather than by
+  a failing assertion. Both suites that dispatch `/bootstrap` now snapshot the
+  ledger and delete their own event rows by id, so a merchant's own onboarding
+  rows survive.
+
 **WordPress.org compliance pass** — 2026-08-08
 
 - **Plugin Check is clean on the built dist: 0 errors, 0 warnings.** The bulk
