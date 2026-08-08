@@ -14,6 +14,43 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**The conversation meter, its quota reader, and the free-tier cap
+(FR-LIC-02, 10 § 5 — M4.1's substrate)** — 2026-08-08
+
+- `METRIC_CONVERSATION` is finally written, three gates after it was declared:
+  `ChatService::send()` records it when a conversation first receives an agent
+  *answer*. Not on open (widget boots stay free of side effects), not per
+  message, and not on a failed or refused turn — quota is spent only when the
+  customer got something, because the alternative is the fabricated-figure
+  defect billed to the customer. `record_conversation()` is a NOT EXISTS
+  insert against the event log, so the second answered turn is a no-op rather
+  than a double charge.
+- `Licensing\Quota` reads `conversations.monthly` (free tier: 100, D1) and
+  nothing else — `sites` waits for a consumer, because inventing the key now
+  is the built-but-unconsumed defect with a smaller font. The
+  `storecrew_quota` filter is **loosen-only** (null = unlimited; below-free
+  values clamp back up), the same one-direction contract as
+  `storecrew_feature_enabled`: a lapsed licence degrades *to* free, never
+  below it. An unknown quota key is unlimited, loudly under `WP_DEBUG` —
+  the opposite default from `FeatureGate`, since a typo that silently capped
+  a storefront would be fabricated protection pointed at the customer.
+- The cap is enforced at exactly one point: `POST /chat/session`, opening a
+  **new** conversation (503 `at_capacity`; the widget renders a
+  boot-delivered string). Resume is checked before the cap and the message
+  POST is never gated, so a conversation in progress always finishes — the
+  cap declines new work, it never abandons a customer mid-question. The
+  Overview shows used/limit all month via `/health` (R-MKT-01: the count is
+  visible long before the cliff).
+- **Bug avoided by probing on a configured store:** the suite itself would
+  have been the first casualty of the cap — a store genuinely at capacity
+  fails every "a session opens" probe, which is the cap working and the
+  suite lying. `verify-chat` now pins quota to unlimited for its run, drops
+  the pin only inside the cap section (where a quantity-100 probe event
+  vaults the counter past any real limit), and its cleanup was taught that
+  conversation-meter events carry no provider tag — without the extra
+  delete-by-conversation-id sweep, every suite run would have inflated the
+  merchant's real monthly count by its own probe conversations.
+
 **The WordPress.org submission gate, as a command** — 2026-08-08
 
 - `tools/build-dist.sh` assembles the distribution exactly as it will be

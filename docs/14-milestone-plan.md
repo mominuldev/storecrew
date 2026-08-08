@@ -239,12 +239,16 @@ tools' approval defaults:
 
 1. **Licence infrastructure** (10 § 8): server + webhook + `LicenceClient`
    replacing the stub (**ship-blocking**), snapshot verification in
-   `FeatureGate`, update server, free-tier cap enforcement at the widget.
-   Includes the metering substrate FR-LIC-02 rests on:
-   `UsageRepository::METRIC_CONVERSATION` is declared and recorded nowhere
-   (Gate 3), so a conversation cap today counts nothing — a cap must be
-   enforced against a metric that is actually written, and probe-tested at
-   the boundary before any tier depends on it.
+   `FeatureGate`, update server. **The metering substrate FR-LIC-02 rests on
+   is built and probe-tested at the boundary** (2026-08-08, the milestone's
+   first change-set): `METRIC_CONVERSATION` is written on a conversation's
+   first agent *answer* (idempotent; failed turns charge nothing),
+   `Licensing\Quota` reads `conversations.monthly` (free default 100,
+   loosen-only `storecrew_quota` filter, null = unlimited), `/chat/session`
+   declines new conversations at cap while resume and in-progress turns are
+   never gated, and the Overview shows the count all month (R-MKT-01). What
+   remains of this item is the remote half: the licence server, the client
+   that turns a signed snapshot into that filter, and updates.
 2. **Marketing agent** (FR-MKT): segments from Woo data, coupon tool
    (approval-gated — FR-SALES-06/FR-MKT-03), abandoned-cart sequence with
    consent discipline (FR-MKT-06 is a MUST before any send).

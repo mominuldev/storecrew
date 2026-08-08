@@ -381,6 +381,12 @@ export class ChatWidget {
       return this.strings.tooLong.replace('%d', String(this.maxChars));
     }
 
+    // The free-tier conversation cap. Only ever refused when *opening* a new
+    // conversation — one in progress is never cut off mid-question.
+    if (error.code === 'storecrew_at_capacity') {
+      return this.strings.atCapacity;
+    }
+
     return this.appearance.offline;
   }
 

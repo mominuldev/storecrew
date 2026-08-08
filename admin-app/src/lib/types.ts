@@ -38,6 +38,7 @@ export type Health = {
   index: { chunks: number; embedded: number; pending: number; mismatched: number; model: string; dimensions: number; sources: Record<string, number> };
   indexRun: null | { id: number; status: string; total: number; processed: number; failed: number; alive: boolean; startedAt: string };
   spend: { capMicros: number; spentMicros: number; remainingMicros: number; percentUsed: number; blocked: boolean; behaviour: string };
+  usage: { conversations: { used: number; limit: number | null; period: string } };
   encryption: { source: string; secure: boolean; advice: string };
 };
 

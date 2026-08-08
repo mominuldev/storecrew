@@ -15,6 +15,7 @@ use StoreCrew\Agent\SharedContext;
 use StoreCrew\Ai\Message;
 use StoreCrew\Database\Repositories\ConversationRepository;
 use StoreCrew\Database\Repositories\MessageRepository;
+use StoreCrew\Database\Repositories\UsageRepository;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -64,6 +65,7 @@ final class ChatService {
 		private readonly ConversationRepository $conversations,
 		private readonly MessageRepository $messages,
 		private readonly Orchestrator $orchestrator,
+		private readonly UsageRepository $usage,
 	) {}
 
 	/**
@@ -220,6 +222,16 @@ final class ChatService {
 
 		$this->conversations->touch( $conversation_id );
 		$this->conversations->record_run( $conversation_id );
+
+		// The free-tier quota unit (FR-LIC-02, 10 § 5): a conversation is
+		// consumed when it first receives an agent *answer*. Only an answered
+		// turn counts — a provider failure, a refusal, or a blown budget is
+		// already metered as what it is, and charging conversation quota for
+		// a turn the customer got nothing from would be the fabricated-figure
+		// defect running in the customer's disfavour.
+		if ( $turn->succeeded() ) {
+			$this->usage->record_conversation( $conversation_id );
+		}
 
 		if ( $turn->needs_escalation() ) {
 			$this->escalate( $conversation_id, $turn );

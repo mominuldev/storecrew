@@ -118,6 +118,74 @@ final class UsageRepository extends Repository {
 	}
 
 	/**
+	 * Meter a conversation, once, ever.
+	 *
+	 * The free-tier quota unit is the conversation, and it is consumed when the
+	 * conversation first receives an agent answer — not on open, not per
+	 * message (10 § 5). "First" is decided against the event log itself with a
+	 * NOT EXISTS insert, so calling this on every turn is safe and the second
+	 * call is a no-op rather than a double charge.
+	 *
+	 * Two accepted imprecisions, both in the merchant's favour and both far
+	 * cheaper than a schema column: two genuinely concurrent first answers in
+	 * one conversation could each insert (the rate limiter makes that
+	 * practically impossible), and a conversation that outlives the usage-event
+	 * retention window could be re-metered after its first-answer event is
+	 * pruned (conversations are closed by maintenance long before that).
+	 *
+	 * @return bool True when this call consumed quota; false when the
+	 *              conversation had already been metered.
+	 */
+	public function record_conversation( int $conversation_id ): bool {
+		if ( $conversation_id <= 0 ) {
+			return false;
+		}
+
+		$events = $this->table_name();
+		$period = self::period();
+		$now    = $this->now();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$inserted = $this->db->query(
+			$this->db->prepare(
+				"INSERT INTO {$events} (metric, quantity, period, conversation_id, agent_id, provider, model, cost_micros, recorded_at)
+				 SELECT %s, 1, %s, %d, '', '', '', 0, %s FROM DUAL
+				 WHERE NOT EXISTS (
+				   SELECT 1 FROM {$events} WHERE metric = %s AND conversation_id = %d
+				 )",
+				self::METRIC_CONVERSATION,
+				$period,
+				$conversation_id,
+				$now,
+				self::METRIC_CONVERSATION,
+				$conversation_id
+			)
+		);
+
+		if ( 1 !== (int) $inserted ) {
+			return false;
+		}
+
+		$counters = $this->counters_table();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$this->db->query(
+			$this->db->prepare(
+				"INSERT INTO {$counters} (metric, period, total, cost_micros, updated_at)
+				 VALUES (%s, %s, 1, 0, %s)
+				 ON DUPLICATE KEY UPDATE
+				   total = total + 1,
+				   updated_at = VALUES(updated_at)",
+				self::METRIC_CONVERSATION,
+				$period,
+				$now
+			)
+		);
+
+		return true;
+	}
+
+	/**
 	 * Total for a metric in a period.
 	 *
 	 * Reads the rollup, not the event log. The free-tier check runs on every

@@ -14,8 +14,10 @@ use StoreCrew\Api\Rest\RestController;
 use StoreCrew\Core\Capabilities\Capabilities;
 use StoreCrew\Core\Queue\Scheduler;
 use StoreCrew\Database\Repositories\IndexRunRepository;
+use StoreCrew\Database\Repositories\UsageRepository;
 use StoreCrew\Knowledge\Indexer;
 use StoreCrew\Licensing\FeatureGate;
+use StoreCrew\Licensing\Quota;
 use StoreCrew\Security\SecretStore;
 
 defined( 'ABSPATH' ) || exit;
@@ -37,6 +39,8 @@ final class HealthController extends RestController {
 		private readonly IndexRunRepository $runs,
 		private readonly SpendGuard $spend,
 		private readonly SecretStore $secrets,
+		private readonly UsageRepository $usage,
+		private readonly Quota $quota,
 	) {
 		parent::__construct( $features );
 	}
@@ -77,6 +81,16 @@ final class HealthController extends RestController {
 					'startedAt' => (string) $active->started_at,
 				),
 				'spend'       => $this->spend->status(),
+				// R-MKT-01 instrumentation: the count is on the operator's
+				// screen all month, not only at the cliff. `limit` null means
+				// no cap applies.
+				'usage'       => array(
+					'conversations' => array(
+						'used'   => $this->usage->total( UsageRepository::METRIC_CONVERSATION ),
+						'limit'  => $this->quota->limit( Quota::CONVERSATIONS_MONTHLY ),
+						'period' => UsageRepository::period(),
+					),
+				),
 				'encryption'  => $this->secrets->master_key_source(),
 			)
 		);

@@ -56,6 +56,7 @@ use StoreCrew\Database\Repositories\ToolCallRepository;
 use StoreCrew\Database\Repositories\UsageRepository;
 use StoreCrew\Database\Tables;
 use StoreCrew\Licensing\FeatureGate;
+use StoreCrew\Licensing\Quota;
 
 $pass = 0;
 $fail = 0;
@@ -77,6 +78,8 @@ $messages      = $c->get( MessageRepository::class );
 $configs       = $c->get( AgentConfigRepository::class );
 $audit         = $c->get( AuditLogRepository::class );
 $features      = $c->get( FeatureGate::class );
+$usage_repo    = $c->get( UsageRepository::class );
+$quota_reader  = new Quota();
 
 /** Status of a WP_Error or WP_REST_Response, whichever came back. */
 $status_of = static function ( $result ): int {
@@ -119,6 +122,14 @@ $purge_limits = static function (): void {
 	wp_cache_flush();
 };
 $purge_limits();
+
+// The free-tier conversation cap is live code now, and this store's own month
+// of traffic is none of this suite's business: on a store genuinely at
+// capacity, every "a session opens" probe below would otherwise fail — the cap
+// working, and the suite lying. Quota is held at unlimited for the whole run
+// except the one section that probes the cap itself.
+$unlimited_quota = static fn () => null;
+add_filter( 'storecrew_quota', $unlimited_quota );
 
 $server = rest_get_server();
 $routes = array_keys( $server->get_routes() );
@@ -293,8 +304,8 @@ $agents = new AgentRegistry();
 $agents->register( CoreAgents::support() );
 
 $orchestrator = new Orchestrator( $agents, $runner, $providers, $policy, $features, $configs, $c->get( StoreCrew\Ai\SpendGuard::class ) );
-$chat         = new ChatService( $conversations, $messages, $orchestrator );
-$controller   = new ChatController( $features, $chat, $orchestrator, $policy );
+$chat         = new ChatService( $conversations, $messages, $orchestrator, $usage_repo );
+$controller   = new ChatController( $features, $chat, $orchestrator, $policy, $usage_repo, $quota_reader );
 
 // The same controller over a store with no provider at all. Built explicitly
 // rather than inferred from this machine's configuration, so the probe means the
@@ -303,7 +314,9 @@ $unconfigured = new ChatController(
 	$features,
 	$chat,
 	new Orchestrator( $agents, $runner, new ProviderRegistry(), new ModelPolicy( new ProviderRegistry() ), $features, $configs, $c->get( StoreCrew\Ai\SpendGuard::class ) ),
-	new ModelPolicy( new ProviderRegistry() )
+	new ModelPolicy( new ProviderRegistry() ),
+	$usage_repo,
+	$quota_reader
 );
 
 /** Build a request carrying a session token. */
@@ -438,6 +451,135 @@ $t(
 	! str_contains( $transcript, 'Your identity is verified' ),
 	$transcript
 );
+
+// ---------------------------------------------------------------------------
+
+echo "\n== The conversation meter (FR-LIC-02, 10 § 5) ==\n";
+
+// The quota unit is the conversation, consumed when it first receives an agent
+// answer. The conversation above has now been answered twice — the meter must
+// read one, not two.
+$conversation_events = static function ( int $conversation_id ) use ( $usage_repo ): int {
+	return (int) $GLOBALS['wpdb']->get_var(
+		$GLOBALS['wpdb']->prepare(
+			'SELECT COUNT(*) FROM ' . Tables::name( Tables::USAGE_EVENTS ) . ' WHERE metric = %s AND conversation_id = %d',
+			UsageRepository::METRIC_CONVERSATION,
+			$conversation_id
+		)
+	);
+};
+
+$t(
+	'PROBE: two answered turns consume one conversation, not two',
+	1 === $conversation_events( (int) $conversation->id ),
+	(string) $conversation_events( (int) $conversation->id )
+);
+
+// A conversation that never gets an answer must never be charged: not for
+// opening, and not for a turn the provider failed.
+$meter_token = Session::issue();
+$result      = $controller->session( $request( 'POST', array(), $meter_token ) );
+$meter_uuid  = (string) ( $data_of( $result )['uuid'] ?? '' );
+$meter_row   = $conversations->find_by_uuid( $meter_uuid );
+
+$t( 'opening a conversation consumes nothing', 0 === $conversation_events( (int) $meter_row->id ) );
+
+$scripted->calls  = 0;
+$scripted->script = array( new ProviderException( 'upstream is down', 'scripted', 503 ) );
+
+// The failed turn escalates, and escalation rings the merchant's doorbell.
+// Short-circuit the mailer for exactly this send — a suite must no more send
+// real email than make a live model call.
+$swallow_mail = static fn () => true;
+add_filter( 'pre_wp_mail', $swallow_mail );
+$controller->send( $request( 'POST', array( 'uuid' => $meter_uuid, 'message' => 'anyone there?' ), $meter_token ) );
+remove_filter( 'pre_wp_mail', $swallow_mail );
+
+$t(
+	'PROBE: a failed turn consumes no quota — the customer got nothing',
+	0 === $conversation_events( (int) $meter_row->id ),
+	(string) $conversation_events( (int) $meter_row->id )
+);
+
+$scripted->script = array( new ChatResponse( 'Here now.', 'scripted-1', 'scripted', new TokenUsage( 5, 2 ) ) );
+$controller->send( $request( 'POST', array( 'uuid' => $meter_uuid, 'message' => 'still there?' ), $meter_token ) );
+$t( 'the first real answer is the one that meters', 1 === $conversation_events( (int) $meter_row->id ) );
+
+// ---------------------------------------------------------------------------
+
+echo "\n== The free-tier cap declines new work, never abandons old ==\n";
+
+// The suite-wide unlimited filter comes off; the store's real limit (the free
+// default) applies. One oversized probe event vaults the counter past any
+// real limit regardless of what this store has already used this month.
+// Provider 'scripted' so the standard cleanup removes it and the rebuild
+// restores the true counters.
+remove_filter( 'storecrew_quota', $unlimited_quota );
+$usage_repo->record( UsageRepository::METRIC_CONVERSATION, 100, 0, 'probe', 'scripted', 'scripted-1', 0 );
+
+$capped_stranger = Session::issue();
+$result          = $controller->session( $request( 'POST', array(), $capped_stranger ) );
+$t(
+	'PROBE: at capacity, a new conversation is refused politely',
+	503 === $status_of( $result ) && 'storecrew_at_capacity' === $code_of( $result ),
+	$code_of( $result ) . ' ' . $status_of( $result )
+);
+
+$scripted->script = array( new ChatResponse( 'Still with you.', 'scripted-1', 'scripted', new TokenUsage( 5, 2 ) ) );
+
+$result = $controller->send( $request( 'POST', array( 'uuid' => $meter_uuid, 'message' => 'and my refund?' ), $meter_token ) );
+$t(
+	'PROBE: a conversation already in progress still finishes past the cap',
+	200 === $status_of( $result ),
+	(string) $status_of( $result )
+);
+
+$result = $controller->session( $request( 'POST', array(), $meter_token ) );
+$t(
+	'PROBE: resuming an open conversation is never cap-gated',
+	200 === $status_of( $result ) && $meter_uuid === ( $data_of( $result )['uuid'] ?? '' ),
+	(string) $status_of( $result )
+);
+
+// The filter is loosen-only: the same one-direction contract as
+// storecrew_feature_enabled. An add-on returning less than the free tier's
+// own number is clamped back up, because "degrades to free, never below it"
+// (FR-LIC-06) is not premium's to break.
+$tightener = static fn () => 5;
+add_filter( 'storecrew_quota', $tightener );
+$t(
+	'PROBE: a filter cannot tighten a quota below the free tier',
+	100 === $quota_reader->limit( Quota::CONVERSATIONS_MONTHLY ),
+	var_export( $quota_reader->limit( Quota::CONVERSATIONS_MONTHLY ), true )
+);
+remove_filter( 'storecrew_quota', $tightener );
+
+add_filter( 'storecrew_quota', $unlimited_quota );
+$t(
+	'and null loosens to unlimited — the paid tiers\' shape',
+	null === $quota_reader->limit( Quota::CONVERSATIONS_MONTHLY )
+);
+remove_filter( 'storecrew_quota', $unlimited_quota );
+
+// An unknown quota key is unlimited, loudly — never a fabricated zero that
+// caps a storefront against a number nobody chose.
+$quota_warned = false;
+set_error_handler(
+	static function () use ( &$quota_warned ): bool {
+		$quota_warned = true;
+
+		return true;
+	},
+	E_USER_WARNING
+);
+$unknown_limit = $quota_reader->limit( 'no.such.quota' );
+restore_error_handler();
+
+$t( 'PROBE: an unknown quota is unlimited, never zero', null === $unknown_limit );
+$t( 'and it warns under WP_DEBUG', $quota_warned || ! ( defined( 'WP_DEBUG' ) && WP_DEBUG ) );
+
+// Quota back to unlimited for everything downstream.
+add_filter( 'storecrew_quota', $unlimited_quota );
 
 // ---------------------------------------------------------------------------
 
@@ -588,7 +730,7 @@ $t( 'done terminates the request', 1 === $ended );
 $frames = array();
 $ended  = 0;
 
-$streaming_controller = new ChatController( $features, $chat, $orchestrator, $policy, $emitter );
+$streaming_controller = new ChatController( $features, $chat, $orchestrator, $policy, $usage_repo, $quota_reader, $emitter );
 
 $sse_scripted = new class() implements StoreCrew\Ai\StreamingChatProviderInterface {
 	public function id(): string { return 'scripted'; }
@@ -626,8 +768,8 @@ $sse_runner = new AgentRunner(
 	$c->get( StoreCrew\Ai\SpendGuard::class )
 );
 $sse_orchestrator = new Orchestrator( $agents, $sse_runner, $sse_providers, $sse_policy, $features, $configs, $c->get( StoreCrew\Ai\SpendGuard::class ) );
-$sse_chat         = new ChatService( $conversations, $messages, $sse_orchestrator );
-$sse_controller   = new ChatController( $features, $sse_chat, $sse_orchestrator, $sse_policy, $emitter );
+$sse_chat         = new ChatService( $conversations, $messages, $sse_orchestrator, $usage_repo );
+$sse_controller   = new ChatController( $features, $sse_chat, $sse_orchestrator, $sse_policy, $usage_repo, $quota_reader, $emitter );
 
 $sse_request = $request( 'POST', array( 'uuid' => $uuid, 'message' => 'stream this' ), $owner_token );
 $sse_request->set_header( 'Accept', 'text/event-stream' );
@@ -901,7 +1043,7 @@ $tools->register(
 );
 
 $pair_orchestrator = new Orchestrator( $pair_registry, $runner, $providers, $policy, $features, $configs, $c->get( StoreCrew\Ai\SpendGuard::class ) );
-$pair_chat         = new ChatService( $conversations, $messages, $pair_orchestrator );
+$pair_chat         = new ChatService( $conversations, $messages, $pair_orchestrator, $usage_repo );
 
 $scripted->calls  = 0;
 $scripted->script = array(
@@ -989,7 +1131,7 @@ $id_registry->register(
 );
 
 $id_orchestrator = new Orchestrator( $id_registry, $runner, $providers, $policy, $features, $configs, $c->get( StoreCrew\Ai\SpendGuard::class ) );
-$id_chat         = new ChatService( $conversations, $messages, $id_orchestrator );
+$id_chat         = new ChatService( $conversations, $messages, $id_orchestrator, $usage_repo );
 
 $scripted->calls  = 0;
 $scripted->script = array(
@@ -1019,11 +1161,15 @@ $t(
 	! has_action( 'storecrew_identity_verified' )
 );
 
-// Remove the two probe conversations and their satellite rows.
+// Remove the two probe conversations and their satellite rows. The usage
+// events matter now: their answered turns metered METRIC_CONVERSATION with no
+// provider tag, so the provider = 'scripted' sweep below would miss them and
+// every suite run would inflate the merchant's real monthly count by two.
 foreach ( array( (int) $handoff_row->id, (int) $id_row->id ) as $probe_cid ) {
 	$messages->delete_for_conversation( $probe_cid );
 	$GLOBALS['wpdb']->query( 'DELETE FROM ' . Tables::name( Tables::AGENT_RUNS ) . " WHERE conversation_id = {$probe_cid}" );
 	$GLOBALS['wpdb']->query( 'DELETE FROM ' . Tables::name( Tables::TOOL_CALLS ) . " WHERE conversation_id = {$probe_cid}" );
+	$GLOBALS['wpdb']->query( 'DELETE FROM ' . Tables::name( Tables::USAGE_EVENTS ) . " WHERE conversation_id = {$probe_cid}" );
 	$GLOBALS['wpdb']->delete( Tables::name( Tables::CONVERSATIONS ), array( 'id' => $probe_cid ), array( '%d' ) );
 }
 
@@ -1035,7 +1181,6 @@ echo "\n== The spend cap guards routing too (FR-AI-06) ==\n";
 $saved_cap    = get_option( StoreCrew\Ai\SpendGuard::OPTION_CAP_MICROS );
 $saved_breach = get_option( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH );
 
-$usage_repo = $c->get( UsageRepository::class );
 $usage_repo->record( 'tokens_in', 1, 0, 'probe', 'scripted', 'scripted-1', 5_000_000 );
 update_option( StoreCrew\Ai\SpendGuard::OPTION_CAP_MICROS, 1 );
 update_option( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH, StoreCrew\Ai\SpendGuard::BEHAVIOUR_STOP );
@@ -1086,7 +1231,7 @@ echo "\n== Cleanup ==\n";
 
 $wpdb = $GLOBALS['wpdb'];
 
-$uuids = array_filter( array( $uuid, $new_uuid, $cust_uuid ) );
+$uuids = array_filter( array( $uuid, $new_uuid, $cust_uuid, $meter_uuid ) );
 $ids   = array();
 
 foreach ( $uuids as $one ) {
@@ -1106,6 +1251,10 @@ if ( array() !== $ids ) {
 	$wpdb->query( 'DELETE FROM ' . Tables::name( Tables::AGENT_RUNS ) . ' WHERE conversation_id IN (' . implode( ',', $ids ) . ')' );
 	$wpdb->query( 'DELETE FROM ' . Tables::name( Tables::TOOL_CALLS ) . ' WHERE conversation_id IN (' . implode( ',', $ids ) . ')' );
 	$wpdb->query( 'DELETE FROM ' . Tables::name( Tables::AUDIT_LOG ) . " WHERE object_type = 'conversation' AND object_id IN (" . implode( ',', $ids ) . ')' );
+	// Conversation-meter events carry no provider tag, so the sweep below
+	// would leave them behind — and the merchant's monthly count would grow
+	// by the suite's own conversations on every run.
+	$wpdb->query( 'DELETE FROM ' . Tables::name( Tables::USAGE_EVENTS ) . ' WHERE conversation_id IN (' . implode( ',', $ids ) . ')' );
 }
 
 $wpdb->query( 'DELETE FROM ' . Tables::name( Tables::USAGE_EVENTS ) . " WHERE provider = 'scripted'" );
@@ -1129,8 +1278,16 @@ if ( false === $saved_chat ) {
 }
 
 $purge_limits();
+remove_filter( 'storecrew_quota', $unlimited_quota );
 
 $t( 'probe conversations removed', null === $conversations->find_by_uuid( $uuid ) );
+$t(
+	'no suite conversation left a mark on the merchant\'s meter',
+	0 === (int) $wpdb->get_var(
+		'SELECT COUNT(*) FROM ' . Tables::name( Tables::USAGE_EVENTS ) .
+		" WHERE metric = '" . UsageRepository::METRIC_CONVERSATION . "' AND ( provider = 'scripted' OR conversation_id IN (" . implode( ',', array_merge( $ids ?: array( 0 ), array( (int) $handoff_row->id, (int) $id_row->id ) ) ) . ') )'
+	)
+);
 $t( 'merchant settings restored untouched', get_option( ChatSettings::OPTION ) === $saved_chat && get_option( ModelPolicy::OPTION ) === $saved_policy );
 
 echo "\n" . str_repeat( '-', 60 ) . "\n";

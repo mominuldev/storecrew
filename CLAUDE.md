@@ -520,7 +520,13 @@ ciphertext, ragged embedding vectors, and the migration lock.
   merchant guardrail overrides deferred (`agent_configs.guardrails` is
   stored but consumed by nothing — deliberate). **Gate 3 was approved
   2026-08-07** after re-verifying every fix against `src/` and re-running the
-  suites in two orders (615 assertions each). Three surfaces stay stored and
-  inert on purpose, now with owners: `agent_configs.guardrails` and
-  `agent_configs.model_policy` in 14 § M1, `METRIC_CONVERSATION` in § M4 —
-  a conversation cap counts nothing until that metric is written.
+  suites in two orders (615 assertions each). Three surfaces stayed stored
+  and inert on purpose, with owners: `agent_configs.guardrails` and
+  `agent_configs.model_policy` in 14 § M1; `METRIC_CONVERSATION` was § M4's
+  and is **now written** (2026-08-08, M4.1's first change-set) — recorded on
+  a conversation's first agent *answer* via `record_conversation()`
+  (idempotent; failed turns charge nothing), read by `Licensing\Quota`
+  (free 100/month, loosen-only `storecrew_quota` filter) and enforced at
+  `/chat/session` only — resume and in-progress sends are never cap-gated.
+  Probe-tested in `verify-chat`, which holds quota unlimited for its own run
+  so an at-capacity store's suite stays honest.

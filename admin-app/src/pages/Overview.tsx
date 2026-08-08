@@ -132,6 +132,17 @@ export function Overview() {
               unit={h.spend.capMicros ? `of ${money(h.spend.capMicros)}` : 'no cap'}
               to="/settings"
             />
+            {/* The free-tier meter (R-MKT-01): the count is visible all
+                month, not only when the cap is near. "no cap" is the paid
+                tiers' shape — the number is still worth watching. */}
+            <Tile
+              tile="var(--tile-green)"
+              title="Conversations this month"
+              hint="Customers the crew has answered."
+              value={h.usage.conversations.used}
+              unit={h.usage.conversations.limit ? `of ${h.usage.conversations.limit}` : 'no cap'}
+              to="/inbox"
+            />
             <Tile
               tile="var(--tile-gray)"
               title="Background work"

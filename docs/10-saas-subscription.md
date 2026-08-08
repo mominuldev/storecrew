@@ -1,11 +1,14 @@
 # 10 — SaaS Subscription Architecture
 
 **Product:** StoreCrew AI
-**Status:** Draft complete — design; mostly **unbuilt** (see § 8)
-**Version:** 0.1
+**Status:** Design; the merchant-side half is **built** (meter, quota
+reader, cap — § 5, § 8), the remote half is not (licence server,
+`LicenceClient`, updates)
+**Version:** 0.2
 
-Unlike 03–09, this document designs ahead of code: the only licensing that
-exists today is `FeatureGate` (built, tested) and a `Pro\Licence` stub that
+Unlike 03–09, this document designed ahead of code. What exists today:
+`FeatureGate` (built, tested), the § 5 meter with its quota reader and cap
+enforcement (built 2026-08-08, probe-tested), and a `Pro\Licence` stub that
 must not ship. It consumes strategy decisions D1–D5 (02 § 9) as inputs; if
 Gate 1 amends those, the tier table here changes but the machinery does not —
 that separation is the design's main claim.
@@ -68,16 +71,19 @@ real one. It joins this table when Pro registers it.
 
 A quota is a number, and `FeatureGate` reads no numbers anywhere — it maps
 slugs to booleans by tier and that is all it does. These keys travel in the
-snapshot, but the reader that enforces them is unbuilt (§ 5, § 8, 14 § M4):
+snapshot; the reader is `Licensing\Quota` (built — § 5, § 8), which today
+reads `conversations.monthly` alone (`sites` waits for its consumer):
 
 | Quota key | Free | Pro | Agency |
 |---|---|---|---|
 | `conversations.monthly` | 100 | `null` (fair-use) | `null` |
 | `sites` | 1 | 1 | 25 |
 
-`FeatureGate` maps feature slugs → tiers today; the entitlement payload (§ 4)
-toggles which tier the gate evaluates as. That is the whole of what exists —
-the quota half needs both a reader and a metric to read (§ 5).
+`FeatureGate` maps feature slugs → tiers; the entitlement payload (§ 4)
+toggles which tier the gate evaluates as. The quota half now has both its
+reader and a metric that is actually written (§ 5); what it still lacks is
+the signed snapshot as a *source* — until `LicenceClient` exists, the only
+writer of a non-free quota is the `storecrew_quota` filter itself.
 
 ---
 
@@ -141,24 +147,45 @@ The unit of trust. Returned by activation and each revalidation:
 
 ## 5. Metering the Free Tier (FR-LIC-02, D1)
 
-**What exists is per-run counting, which is not this.** `UsageRepository`
-records every agent run against its conversation, and a single conversation
-produces many runs — routing, the answer, each retry. The quota unit here is
-the *conversation*, and `UsageRepository::METRIC_CONVERSATION` is declared
-and recorded by nothing (Gate 3; 14 § M4.1). A cap enforced today would be
-enforced against a counter that is permanently zero, which is the pricing
-rule's failure mode inverted: the merchant believes a limit protects the
-plan, and it never trips. The meter adds:
+**Built and probe-tested, 2026-08-08** (14 § M4.1's substrate). The quota
+unit is the *conversation* — per-run counting long predated this and is not
+it: a single conversation produces many runs (routing, the answer, each
+retry), which is why a cap enforced against any pre-existing counter would
+have been wrong. As built:
 
 - **A conversation consumes quota when it first receives an agent answer**
   — not on open (widget boots must stay free of side effects), not per
-  message (a clarifying question must not cost quota).
-- At cap: the *widget* declines new conversations politely
-  ("chat is busy — email us"); open conversations finish. Admin surfaces
-  show the count all month, not only at the cliff (R-MKT-01
-  instrumentation).
+  message (a clarifying question must not cost quota), and **not on a turn
+  that failed or refused** — those are metered as what they are, and quota
+  is only spent when the customer got an answer. Written by
+  `ChatService::send()` through `UsageRepository::record_conversation()`,
+  which is idempotent per conversation (a NOT EXISTS insert against the
+  event log), so the second answered turn charges nothing.
+- **The reader is `Licensing\Quota`**, deliberately separate from
+  `FeatureGate` (§ 2.2's boolean/number split, kept structural). Free
+  default: `conversations.monthly` = 100. The `storecrew_quota` filter is
+  **loosen-only** — null means unlimited, and a value below the free tier's
+  own number is clamped back up, the same one-direction contract as
+  `storecrew_feature_enabled` (§ 4): a lapsed licence degrades **to** free,
+  never below it. An unknown quota key is unlimited, loudly under
+  `WP_DEBUG` — the opposite default from FeatureGate, because an invented
+  limit would cap a storefront against a number nobody chose (the
+  fabricated-figure rule applied to limits).
+- At cap: **`POST /chat/session` refuses to open a *new* conversation**
+  (503 `at_capacity`; the widget renders the boot-delivered `atCapacity`
+  string — "chat is busy, email us"). Resume is checked before the cap and
+  the message POST is never gated, so open conversations finish; quota being
+  spent on first answer, a conversation admitted just under the cap may
+  finish just over it — rounding that errs toward the customer. The
+  Overview shows `used / limit` all month via `/health`, not only at the
+  cliff (R-MKT-01 instrumentation).
 - The counter is local truth. It is never reported to Decent Themes —
   consented telemetry, if ever added, is a separate opt-in (FR-DIST-11).
+
+Until premium ships a validated licence that filters the quota, the free
+plugin's 100/month is the only limit that exists — which is the launch
+sequencing § 8 always intended (free was uncapped only while there was no
+premium to sell).
 
 ---
 
@@ -207,9 +234,9 @@ could take a paying store down on a network failure — R-COST-01's lesson
 | Piece | Status | Phase |
 |---|---|---|
 | `FeatureGate`, tier mapping, manifest, server-side re-checks | ✅ Built, probe-tested | — |
-| Conversation counting substrate | ⬜ **Not built.** `UsageRepository` meters per *run*; `METRIC_CONVERSATION` is declared and written nowhere (Gate 3), so the § 5 meter would count zero forever | 2 — 14 § M4.1, before any tier depends on it |
-| Quota reader (`conversations.monthly`, `sites`) | ⬜ `FeatureGate` resolves booleans only; nothing reads a number | 2 — with the meter above |
-| Cap enforcement at the widget | ⬜ | 2 — with Pro launch (free is uncapped until premium exists to sell) |
+| Conversation counting substrate | ✅ **Built, probe-tested** (2026-08-08): `record_conversation()` written on first agent *answer*, idempotent per conversation; failed turns charge nothing | — |
+| Quota reader (`conversations.monthly`) | ✅ **Built, probe-tested**: `Licensing\Quota`, loosen-only `storecrew_quota` filter, null = unlimited. `sites` joins when something reads it — inventing the key now would be the built-but-unconsumed defect | — (`sites`: 3) |
+| Cap enforcement at the widget | ✅ **Built, probe-tested**: `/chat/session` refuses new conversations at cap; resume and send never gated; count on the Overview all month | — |
 | Licence server + store webhook | ⬜ | 2 |
 | `LicenceClient` (replace the stub), snapshot verification | ⬜ | 2 — **ship-blocking for Pro**; the stub is not a security boundary |
 | Update server + premium updater | ⬜ | 2 |

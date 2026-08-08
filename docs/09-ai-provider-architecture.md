@@ -143,10 +143,10 @@ Two rules, both absolute:
   computes `blocked` directly rather than via `allows_call()`, whose `warn`
   path fires the breach action — a `/health` GET must never emit spend events.
   Metering (`UsageRepository`) records tokens and cost per
-  conversation/provider/model, which is also the free-tier meter's substrate
-  (FR-LIC-02) — substrate in the future tense: the counters and
-  `within_limit()` exist, nothing records `METRIC_CONVERSATION` yet, and the
-  meter itself is unbuilt (per Gate 1 D1 it lives in free when it is).
+  conversation/provider/model, and since 2026-08-08 it is also the free-tier
+  meter FR-LIC-02 names, no longer just its substrate: `METRIC_CONVERSATION`
+  is written on a conversation's first agent answer and enforced at
+  `/chat/session` (10 § 5 — it lives in free, per Gate 1 D1).
 
 ---
 

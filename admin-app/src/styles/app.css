@@ -127,6 +127,7 @@
   /* The pastel tiles — the reference's headline-number treatment. */
   --tile-peach: #f6e3c8;
   --tile-blue: #ccdbf7;
+  --tile-green: #d2e7cf;
   --tile-gray: #e4e5ea;
   --tile-fg: #16181d;
   --tile-dim: rgba(22, 24, 29, 0.6);
@@ -171,6 +172,7 @@
   /* The pastels keep their hue but drop to the ink register. */
   --tile-peach: #292013;
   --tile-blue: #17203a;
+  --tile-green: #16261a;
   --tile-gray: #1b2027;
   --tile-fg: #e7eaee;
   --tile-dim: rgba(231, 234, 238, 0.6);

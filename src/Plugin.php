@@ -86,6 +86,7 @@ use StoreCrew\Database\Repositories\MessageRepository;
 use StoreCrew\Database\Repositories\ToolCallRepository;
 use StoreCrew\Database\Repositories\UsageRepository;
 use StoreCrew\Licensing\FeatureGate;
+use StoreCrew\Licensing\Quota;
 
 /**
  * Builds the container, opens the extension API, and closes it again.
@@ -321,8 +322,14 @@ final class Plugin {
 			static fn ( Container $c ): ChatService => new ChatService(
 				$c->get( ConversationRepository::class ),
 				$c->get( MessageRepository::class ),
-				$c->get( Orchestrator::class )
+				$c->get( Orchestrator::class ),
+				$c->get( UsageRepository::class )
 			)
+		);
+
+		$this->container->set(
+			Quota::class,
+			static fn (): Quota => new Quota()
 		);
 
 		$this->container->set(
@@ -729,7 +736,9 @@ final class Plugin {
 				$c->get( Indexer::class ),
 				$c->get( IndexRunRepository::class ),
 				$c->get( SpendGuard::class ),
-				$c->get( SecretStore::class )
+				$c->get( SecretStore::class ),
+				$c->get( UsageRepository::class ),
+				$c->get( Quota::class )
 			)
 		);
 
@@ -783,7 +792,9 @@ final class Plugin {
 				$gate(),
 				$c->get( ChatService::class ),
 				$c->get( Orchestrator::class ),
-				$c->get( ModelPolicy::class )
+				$c->get( ModelPolicy::class ),
+				$c->get( UsageRepository::class ),
+				$c->get( Quota::class )
 			)
 		);
 

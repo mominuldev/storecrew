@@ -17,7 +17,9 @@ use StoreCrew\Chat\ChatSettings;
 use StoreCrew\Chat\RateLimiter;
 use StoreCrew\Chat\Session;
 use StoreCrew\Chat\SseEmitter;
+use StoreCrew\Database\Repositories\UsageRepository;
 use StoreCrew\Licensing\FeatureGate;
+use StoreCrew\Licensing\Quota;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -57,6 +59,8 @@ final class ChatController extends RestController {
 		private readonly ChatService $chat,
 		private readonly Orchestrator $orchestrator,
 		private readonly ModelPolicy $policy,
+		private readonly UsageRepository $usage,
+		private readonly Quota $quota,
 		/** Injectable because the default emitter terminates the request —
 		 *  and a probe that exits is a probe that never reports. */
 		private readonly ?SseEmitter $emitter = null,
@@ -191,6 +195,7 @@ final class ChatController extends RestController {
 				'closed'       => __( 'This conversation has ended. Reload the page to start a new one.', 'storecrew' ),
 				/* translators: %d is a maximum number of characters. */
 				'tooLong'      => __( 'Please keep messages under %d characters.', 'storecrew' ),
+				'atCapacity'   => __( 'Chat is busy right now. Please contact the store by email instead.', 'storecrew' ),
 			),
 			'conversation' => null,
 		);
@@ -253,6 +258,21 @@ final class ChatController extends RestController {
 		}
 
 		$conversation = $this->chat->resume( $token, get_current_user_id() );
+
+		// The free-tier cap is enforced here and only here: at the opening of
+		// a *new* conversation (10 § 5). Resume is above this line and send()
+		// never checks it, so a conversation already in progress always
+		// finishes — the cap declines new work, it never abandons a customer
+		// mid-question. Quota is consumed on first answer, not on open, so a
+		// conversation admitted just under the cap may finish just over it;
+		// that rounding errs toward the customer by design.
+		if ( null === $conversation && ! $this->within_quota() ) {
+			return $this->error(
+				'at_capacity',
+				__( 'Chat is busy right now. Please contact the store by email instead.', 'storecrew' ),
+				503
+			);
+		}
 
 		if ( null === $conversation ) {
 			$conversation = $this->chat->start(
@@ -499,6 +519,19 @@ final class ChatController extends RestController {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Whether this month's conversation quota has room for one more.
+	 *
+	 * Reads the rollup counter, not the event log, because this runs on every
+	 * conversation open. `Quota::limit()` answering null means unlimited,
+	 * which `within_limit()` spells as a ceiling of zero.
+	 */
+	private function within_quota(): bool {
+		$limit = $this->quota->limit( Quota::CONVERSATIONS_MONTHLY );
+
+		return $this->usage->within_limit( UsageRepository::METRIC_CONVERSATION, $limit ?? 0 );
 	}
 
 	/**

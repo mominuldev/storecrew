@@ -40,6 +40,7 @@ export interface WidgetStrings {
   rateLimited: string;
   closed: string;
   tooLong: string;
+  atCapacity: string;
 }
 
 export interface BootPayload {
