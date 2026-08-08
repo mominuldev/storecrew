@@ -331,6 +331,18 @@ $t( 'PROBE: a fresh conversation is not selected', ! in_array( $conv_id, $conver
 
 echo "\n== GDPR exporter / eraser (04 § 11) ==\n";
 
+// A leftover probe user from a crashed run holds this address, and
+// wp_insert_user then refuses the duplicate. Clear it first, for the reason
+// verify-knowledge clears a leftover SKU: restoring state on the way out is no
+// use if the suite cannot start again.
+$stale_probe = get_user_by( 'email', 'privacy.probe@example.test' );
+
+if ( $stale_probe instanceof WP_User && (int) $stale_probe->ID > 1 ) {
+	require_once ABSPATH . 'wp-admin/includes/user.php';
+	wp_delete_user( (int) $stale_probe->ID );
+	echo "  (cleared a leftover probe user from an earlier run)\n";
+}
+
 $gdpr_user = wp_insert_user(
 	array(
 		'user_login' => 'scr_privacy_probe_' . wp_rand( 1000, 9999 ),
@@ -339,7 +351,22 @@ $gdpr_user = wp_insert_user(
 		'role'       => 'customer',
 	)
 );
+
+// **Never cast this without checking.** `(int)` on a WP_Error is 1 in PHP 8 —
+// with a warning nobody reads — and 1 is the administrator. A duplicate-email
+// failure therefore made this suite anonymise and then *delete* the site's
+// admin account. It happened here, on this repository's own dev site.
+if ( is_wp_error( $gdpr_user ) ) {
+	echo "\n  FATAL: could not create the privacy probe user: " . $gdpr_user->get_error_message() . "\n";
+	exit( 1 );
+}
+
 $gdpr_user = (int) $gdpr_user;
+
+if ( $gdpr_user <= 1 ) {
+	echo "\n  FATAL: refusing to run privacy probes against user {$gdpr_user}.\n";
+	exit( 1 );
+}
 
 $g_uuid = $conversations->start( hash( 'sha256', 'gdpr-probe' ), $gdpr_user, 'widget' );
 $g_conv = $conversations->find_by_uuid( (string) $g_uuid );
@@ -349,7 +376,7 @@ $messages->append( $g_id, MessageRepository::ROLE_USER, 'Where is my parcel? My 
 $messages->append( $g_id, MessageRepository::ROLE_ASSISTANT, 'It ships tomorrow.', 'support' );
 $messages->append( $g_id, MessageRepository::ROLE_SYSTEM, 'Escalated: internal note.', 'support' );
 
-$privacy = new StoreCrew\Core\Privacy\PersonalData( $conversations, $messages );
+$privacy = new StoreCrew\Core\Privacy\PersonalData( $conversations, $messages, $c->get( StoreCrew\Database\Repositories\AttributionRepository::class ) );
 
 $export = $privacy->export( 'privacy.probe@example.test' );
 $t( 'export finds the conversation', 1 === count( $export['data'] ), (string) count( $export['data'] ) );
@@ -386,7 +413,13 @@ $t(
 $messages->delete_for_conversation( $g_id );
 $conversations->delete_ids( array( $g_id ) );
 $w->delete( StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::AGENT_RUNS ), array( 'agent_id' => 'probe-agent' ), array( '%s' ) );
-wp_delete_user( $gdpr_user );
+
+// Guarded a second time at the point of destruction. The check above already
+// makes this unreachable, but a delete that can reach user 1 should be
+// impossible to arrive at by any route, not merely unlikely.
+if ( $gdpr_user > 1 ) {
+	wp_delete_user( $gdpr_user );
+}
 
 echo "\n== Cleanup ==\n";
 foreach ( $cleanup['conversations'] as $id ) {

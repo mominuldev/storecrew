@@ -9,6 +9,7 @@ declare( strict_types=1 );
 
 namespace StoreCrew\Core\Privacy;
 
+use StoreCrew\Database\Repositories\AttributionRepository;
 use StoreCrew\Database\Repositories\ConversationRepository;
 use StoreCrew\Database\Repositories\MessageRepository;
 
@@ -43,6 +44,7 @@ final class PersonalData {
 	public function __construct(
 		private readonly ConversationRepository $conversations,
 		private readonly MessageRepository $messages,
+		private readonly AttributionRepository $attributions,
 	) {}
 
 	/**
@@ -176,7 +178,15 @@ final class PersonalData {
 		$ids    = array_map( static fn ( object $row ): int => (int) $row->id, $rows );
 
 		$blanked = $this->messages->erase_content_for_conversations( $ids );
-		$done    = count( $rows ) < self::PAGE_SIZE;
+
+		// Attribution links are severed, not anonymised. The row itself holds
+		// no personal data, but "the person who owns order 4182 had a
+		// conversation before buying" is a fact about them — the same kind of
+		// link `verified_order_id` is stripped for, and erasure means the
+		// links go with it.
+		$this->attributions->delete_for_conversations( $ids );
+
+		$done = count( $rows ) < self::PAGE_SIZE;
 
 		if ( $done ) {
 			$this->conversations->anonymise_customer( $customer_id );
@@ -188,7 +198,7 @@ final class PersonalData {
 			// "retained", with the reason given alongside.
 			'items_retained' => true,
 			'messages'       => array(
-				__( 'Conversation records were anonymised: message content erased, and the account, verified order, and session references removed. Aggregate counters retain no personal data.', 'storecrew' ),
+				__( 'Conversation records were anonymised: message content erased, and the account, verified order, order-attribution, and session references removed. Aggregate counters retain no personal data.', 'storecrew' ),
 			),
 			'done'           => $done,
 		);

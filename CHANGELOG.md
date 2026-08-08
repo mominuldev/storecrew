@@ -14,6 +14,74 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**Revenue attribution: the link that never existed** — 2026-08-08
+
+- FR-ANALYTICS-03 asked for revenue influenced by StoreCrew conversations
+  "with methodology stated", and there was nothing to state a methodology
+  *about*: no record joined a conversation to an order.
+  `conversations.verified_order_id` looks like one and is not — it records
+  that a customer proved who they were against an order they already had,
+  which is identity verification pointing backwards. `scr_attributions`
+  (Migration005) points forwards.
+- **Recorded at checkout, because that is the only moment it is visible.**
+  `Chat\OrderAttribution` listens on both the classic and Blocks checkout
+  hooks, where the shopper's browser is still presenting the chat session
+  cookie. An hour later nothing can tell which conversation belonged to the
+  person who bought, which is why this is recorded rather than derived.
+  Deliberately not `woocommerce_new_order`: that fires for orders an
+  administrator creates in wp-admin, where the cookie belongs to whoever is
+  staffing the shop.
+- **The table holds no money.** No revenue column, no currency, no captured
+  total — the row is a link, and the amount is read live from the order when
+  a report asks. A refunded order therefore stops counting on its own. This
+  is FR-KB-08's rule (volatile values are never indexed) pointed at revenue,
+  and it is why a merchant can never read a figure WooCommerce no longer
+  agrees with.
+- **`order_id` is unique**, so the model is last-touch by construction
+  rather than by convention — and the doubled checkout hook, which fires
+  twice on a store running both checkouts, is idempotent for free rather
+  than by luck.
+- A link needs a **storefront** conversation (a merchant console thread is
+  never a customer's shopping conversation), at least one answer from the
+  crew in it, and a last activity inside the window —
+  `storecrew_attribution_window_days`, 7 days, clamped to 1–90 because a
+  window measured in years does not measure attribution, it measures having
+  ever had a conversation.
+- **`Api\Attribution` is the fourth widened API surface**, and it publishes
+  `methodology()` alongside the reads. The description of what the links
+  mean is written by the code that records them; kept beside the reader
+  instead, it drifts, and a merchant told something false about a number
+  that is otherwise correct is worse off than one told nothing. The
+  methodology states what it **cannot** see as well as what it can — the
+  figure is a floor, because a shopper who chats on a phone and buys on a
+  laptop is invisible to it.
+- Retention and GDPR erasure both sever the links. A link to a conversation
+  nobody can open is a revenue figure nobody can check; attribution history
+  is bounded by conversation retention, and the report says so.
+- New `tests/schema/verify-attribution.php`, 29 probes against real MySQL
+  and real WooCommerce orders it creates and destroys itself.
+
+### Fixed
+
+**A test suite could delete the site's administrator** — 2026-08-08
+
+- `verify-repositories` cast `wp_insert_user()`'s return with `(int)` and no
+  `is_wp_error()` check. **`(int)` on an object is `1` in PHP 8**, with a
+  warning nobody reads, and 1 is the administrator. A crashed earlier run
+  left a probe user holding the fixture email; the next run's insert failed
+  as a duplicate, and the suite then ran its erasure probes against user 1
+  and finished by deleting it. **This happened, on this repository's own dev
+  site.**
+- Now guarded four ways: `is_wp_error()`, a refusal to run against any id
+  ≤ 1, a guard at the `wp_delete_user()` call itself, and a sweep for a
+  leftover probe user on entry — because restoring state on the way out is
+  no use if the suite cannot start again.
+- Same defect family as the `null === ( $x['k'] ?? 'fallback' )` probe bug
+  already on record: an unchecked conversion producing a *plausible* value
+  instead of failing loudly.
+
+### Added
+
 **Agents declare who they answer, and merchants get a console to talk to
 them in** — 2026-08-08
 

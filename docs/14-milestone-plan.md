@@ -306,10 +306,20 @@ tools' approval defaults:
    Building it surfaced that Woo's lookup tables are filled by a *scheduled
    import*, so a store can report "0 items sold" against a month of real
    revenue; that combination is now detected and reported as unmeasured
-   rather than zero. **Remaining:** `-03` (revenue attributed to StoreCrew
-   conversations) needs a linkage that does not exist yet —
-   `verified_order_id` is identity verification, not attribution — plus a
-   stated methodology; and `-05` (inventory forecasting) is MAY-priority.
+   rather than zero. **`-03` is built** (2026-08-08): the linkage it needed
+   now exists on the free side as `scr_attributions` (04 § 3.3), recorded at
+   checkout by `Chat\OrderAttribution` and published to premium as the
+   fourth widened API surface, `Api\Attribution`. `revenue.attribution`
+   reports it. The design decisions are all refusals: the table stores **no
+   money**, so revenue is read live from each order and a refund stops
+   counting on its own; the methodology is published by the *recorder*
+   rather than restated by the reader, so description and mechanism cannot
+   drift; the figure is reported as a **floor and never a total**, because a
+   shopper who chats on a phone and buys on a laptop cannot be seen; and the
+   share-of-store-revenue ratio is withheld rather than computed when Woo
+   Analytics cannot supply a trustworthy denominator. 29 probes in a new
+   `verify-attribution` suite. **Remaining:** `-05` (inventory forecasting),
+   MAY-priority.
 4. **ESP adapters** (FR-MKT-04) — **built 2026-08-08**: one `EspAdapter`
    interface with Mailchimp (hosted) and FluentCRM (in-WordPress) behind
    it, the rest by demand. The real deliverable is FR-MKT-06: an ESP is the

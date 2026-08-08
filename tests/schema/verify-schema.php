@@ -65,7 +65,7 @@ $meta = $wpdb->get_results(
 );
 $t( 'all tables are InnoDB', array() === array_filter( $meta, static fn ( $r ) => 'InnoDB' !== $r->ENGINE ) );
 $t( 'all tables are utf8mb4', array() === array_filter( $meta, static fn ( $r ) => ! str_starts_with( (string) $r->TABLE_COLLATION, 'utf8mb4' ) ) );
-$t( 'exactly 11 tables', 11 === count( $meta ), (string) count( $meta ) );
+$t( 'exactly 12 tables', 12 === count( $meta ), (string) count( $meta ) );
 
 echo "\n== Indexes that carry load ==\n";
 $index_of = static function ( string $table ) use ( $wpdb ): array {

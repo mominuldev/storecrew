@@ -155,6 +155,71 @@ final class ConversationRepository extends Repository {
 	}
 
 	/**
+	 * The most recent *answered* conversation on a session, live or not.
+	 *
+	 * The attribution lookup (FR-ANALYTICS-03), and deliberately not
+	 * {@see self::find_open_for_session()}: a shopper who asked about a jacket,
+	 * closed the widget, and bought it an hour later is exactly the case being
+	 * measured, and their conversation is no longer live. Status is therefore
+	 * ignored while the channel — storefront only — is not.
+	 *
+	 * `run_count > 0` is in the query rather than left to the caller on
+	 * purpose. Filtering afterwards would find the newest conversation, reject
+	 * it for having no answer in it, and never look at the answered one behind
+	 * it — silently attributing nothing on the stores that open a conversation
+	 * per page view.
+	 *
+	 * @param string $session_token_hash Stored digest, never the raw token.
+	 * @param int    $within_minutes     How far back to look.
+	 */
+	public function find_recent_for_session( string $session_token_hash, int $within_minutes, string $channel = self::CHANNEL_WIDGET ): ?object {
+		if ( '' === $session_token_hash || $within_minutes < 1 ) {
+			return null;
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$row = $this->db->get_row(
+			$this->db->prepare(
+				'SELECT * FROM ' . $this->table_name()
+					. ' WHERE session_token = %s AND channel = %s AND run_count > 0 AND last_activity_at >= %s'
+					. ' ORDER BY last_activity_at DESC, id DESC LIMIT 1',
+				$session_token_hash,
+				$channel,
+				gmdate( 'Y-m-d H:i:s', time() - ( $within_minutes * 60 ) )
+			)
+		);
+
+		return $row ?: null;
+	}
+
+	/**
+	 * The same lookup, keyed on the account instead of the session.
+	 *
+	 * The weaker basis, used only when no session cookie reached checkout. One
+	 * account can be a household or a shared machine, so a link made this way
+	 * is recorded as such rather than presented as the same fact.
+	 */
+	public function find_recent_for_customer( int $customer_id, int $within_minutes, string $channel = self::CHANNEL_WIDGET ): ?object {
+		if ( $customer_id <= 0 || $within_minutes < 1 ) {
+			return null;
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$row = $this->db->get_row(
+			$this->db->prepare(
+				'SELECT * FROM ' . $this->table_name()
+					. ' WHERE customer_id = %d AND channel = %s AND run_count > 0 AND last_activity_at >= %s'
+					. ' ORDER BY last_activity_at DESC, id DESC LIMIT 1',
+				$customer_id,
+				$channel,
+				gmdate( 'Y-m-d H:i:s', time() - ( $within_minutes * 60 ) )
+			)
+		);
+
+		return $row ?: null;
+	}
+
+	/**
 	 * Placeholder list for LIVE_STATUSES, so the constant stays the single
 	 * definition of what "still live" means.
 	 */

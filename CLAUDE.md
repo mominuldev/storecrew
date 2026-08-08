@@ -226,6 +226,7 @@ src/
     Queue/                 Scheduler, Deadline, MaintenanceJob
   Api/
     ExtensionApi.php       The entire add-on contract
+    Attribution.php        Published: which orders followed a conversation
     Feature.php            Gateable feature + tier
     AdminRoute.php         SPA route declaration
     Registry/              Freezable registries
@@ -234,7 +235,7 @@ src/
     Tables.php             The only place table names are built
     Migrator.php           Forward-only, locked, admin_init
     Migrations/
-    Repositories/          10 repositories, the only $wpdb consumers
+    Repositories/          11 repositories, the only $wpdb consumers
   Ai/
     Providers/             Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek
     Http/                  HttpClientInterface + WP HTTP API implementation
@@ -251,6 +252,7 @@ src/
   Chat/
     ChatService            One customer turn, end to end
     ConsoleService         One merchant turn, for admin-audience agents
+    OrderAttribution       Records which conversation preceded an order
     Session                Session token: issue, digest, cookie
     RateLimiter            Per session and per IP (FR-CHAT-06)
     ChatSettings           Widget appearance and placement
@@ -289,7 +291,7 @@ because it runs with no database at all.
 
 ## Testing
 
-Ten PHP suites (760 assertions) plus three suites under `tests/browser`
+Eleven PHP suites plus three suites under `tests/browser`
 (56 assertions), green in any run order.
 
 ```bash
@@ -333,6 +335,7 @@ wp eval-file wp-content/plugins/storecrew/tests/schema/verify-knowledge.php
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-jobs.php
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-admin.php --user=1
 wp eval-file wp-content/plugins/storecrew/tests/schema/verify-chat.php --user=1
+wp eval-file wp-content/plugins/storecrew/tests/schema/verify-attribution.php --user=1
 
 # The injection corpus (12 § 10, R-SEC-02). The compliant-scripted driver runs
 # here with no key and proves every attack dies at a boundary. Add
@@ -389,6 +392,7 @@ ciphertext, ragged embedding vectors, and the migration lock.
 | A test probe deselected a source type against the merchant's live index | `POST /index/sources` purges what falls out of scope — correct behaviour, catastrophic as a probe. Selecting `['post']` inside `verify-rest` deleted 47 real product chunks on a configured store; the suite restored the *option* and never noticed the rows were gone. The purge is now probed in `verify-knowledge` against a **synthetic source type**, where the only rows at risk are the ones the probe created. Any probe of a destructive endpoint needs its own fixture, not the merchant's data. |
 | A fatal mid-suite left the merchant carrying the suite's fake model policy | `verify-knowledge` writes the live policy at the top and restores it at the bottom; a fatal in between (a constructor signature change) skipped the restore, and the *next* run snapshotted the poison and put it back. The restore was then also registered with `register_shutdown_function` — which **does not do what it was believed to do** (measured 2026-08-08 by writing to a file from the callback): under `wp eval-file` a suite's shutdown function does *not* run after an uncaught Throwable, because WordPress registers its own fatal handler first and ends the request there. It **does** run on a clean finish and on the `exit(1)` a failing suite takes; plain PHP runs it in both cases, which is where the belief came from. **`set_exception_handler` is what actually works** — it catches the `ArgumentCountError` a constructor change raises — so a suite that writes live options installs all three: end-of-file call, shutdown, and exception handler. The handler must re-report the error itself (installing one suppresses PHP's own message) or the suite dies silently, which is worse. Nothing survives a *true* fatal — memory exhaustion, timeout — and that exposure remains. Probe-tested by injecting a throw after the policy write and asserting the merchant's policy came back. |
 | `verify-adversarial` overwrote the merchant's model policy and never restored it | It calls `$policy->save()` with a scripted provider **once per corpus item**, against the live option, with no snapshot — the same shape as the `verify-providers` key wipe, found the same way. It hid better than any of them: `ModelPolicy::resolve()` falls back to `infer()` when the stored provider is not registered, and `scripted` never is outside that file, so chat kept answering on an inferred provider and nothing looked broken. **The store silently degraded from honouring a choice to guessing** — worse than an outage, because an outage gets reported. Found on this repo's own dev store, whose Gemini selection had been replaced by `{"chat":{"provider":"scripted"}}`. Cleanup now restores it three ways and **asserts** the merchant kept what they configured: "chat still works" was never evidence the option was intact. |
+| A test suite deleted the site's administrator | `verify-repositories` did `$gdpr_user = (int) wp_insert_user( … )` with no `is_wp_error()` check. **`(int)` on an object is `1` in PHP 8** — with a warning nobody reads — and 1 is the administrator. The trigger was a crashed earlier run leaving a probe user holding the fixture email, so the next `wp_insert_user` returned a duplicate-email `WP_Error`; the suite then ran its erasure probes against user 1 and finished with `wp_delete_user( 1 )`. Same family as the `??` bug below: an unchecked conversion producing a *plausible* value instead of failing. Now checked three ways — `is_wp_error()`, a refusal to run against any id ≤ 1, and a guard at the delete itself — plus a leftover-probe-user sweep on entry, because restoring state on the way out is no use if the suite cannot start again. **Any suite that creates a WordPress user needs all four.** |
 | A crashed suite could not be run again | `verify-knowledge` creates a product with a fixed SKU. A fatal between creation and cleanup leaves it behind, and WooCommerce then refuses every subsequent run outright — "Invalid or duplicated SKU" — so one crash cost every run after it until someone found the orphan by hand. Restoring options on the way out is not enough if the suite cannot *start* again; it now clears a leftover probe product before creating its own, and says so. |
 | Boot minted its nonce as user 0, killing the widget for every signed-in visitor | The boot request carries the login cookie but no nonce, so core demotes it to anonymous *before* the handler runs; the user-0 nonce is then refused (`403 rest_cookie_invalid_nonce`, before any callback) on every POST, which arrives with the same cookie and verifies as the signed-in user. Absent nonce degrades to guest; **wrong** nonce refuses. Invisible to curl, the PHP suites, and a fresh browser — all anonymous. boot now mints the nonce for the user `wp_validate_auth_cookie` proves. |
 | The index walk could make zero forward progress on a tight host | `Deadline::has_room_for(1.5)` stopped a batch *before* its first object. Fine at the ≥5s auto-detected budget, but a host whose real kill window is tighter (php-fpm `request_terminate_timeout`, now clampable via `storecrew_index_batch_seconds`) could stop at zero objects, write the same cursor, reschedule, and loop forever indexing nothing. Latent because local objects are fast and the budget floor is 5s; surfaced by `tools/probe-budget-host.php` forcing a 1s window. The first object of every batch now always runs. |
@@ -470,6 +474,24 @@ ciphertext, ragged embedding vectors, and the migration lock.
   push the merchant's locale into a conversation that may be in another language.
   The widget is RTL-safe (logical CSS + `dir` from `is_rtl()`), probed in
   `widget.spec.mjs`.
+- **Revenue attribution is built** (FR-ANALYTICS-03, 2026-08-08). The
+  linkage never existed — `conversations.verified_order_id` is identity
+  verification pointing *backwards*, not attribution — so `scr_attributions`
+  (04 § 3.3, Migration005) records it forwards, written by
+  `Chat\OrderAttribution` on both checkout hooks and published to premium as
+  `Api\Attribution`. Four things about it are load-bearing. **The table
+  holds no money**: the row is a link and the amount is read live from the
+  order, so a refund stops counting without anything noticing — FR-KB-08's
+  discipline pointed at revenue. **`order_id` is unique**, which makes the
+  model last-touch by construction and makes the doubled classic/Blocks
+  checkout hook idempotent. **The methodology is published by the recorder**
+  (`Api\Attribution::methodology()`) rather than restated by whatever
+  reports on it, so the description cannot drift from the mechanism. And
+  **the figure is a floor, never a total** — a shopper who chats on a phone
+  and buys on a laptop is invisible — which the tool's summary states before
+  it states the number. Links cascade with their conversation on both
+  retention and GDPR erasure: a link to a conversation nobody can open is a
+  revenue figure nobody can check.
 - **FR-KB-09 has been measured** — see `tools/measure-recall.php`. recall@3 is
   0.96 on a 62-chunk corpus with dense weight 1.0. Two findings carried into the
   design: the lexical arm *hurts* ranking (0.80 vs 1.00), and the two-stage

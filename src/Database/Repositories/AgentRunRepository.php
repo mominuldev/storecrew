@@ -137,6 +137,32 @@ final class AgentRunRepository extends Repository {
 	}
 
 	/**
+	 * Which agent answered last in a conversation.
+	 *
+	 * One indexed row, because the only caller is attribution and it runs
+	 * inside a checkout request — where {@see self::for_conversation()}, which
+	 * loads every run, would be a real cost on a long conversation for one
+	 * column of a report.
+	 */
+	public function last_agent_for( int $conversation_id ): string {
+		if ( $conversation_id < 1 ) {
+			return '';
+		}
+
+		$table = $this->table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$agent = $this->db->get_var(
+			$this->db->prepare(
+				"SELECT agent_id FROM {$table} WHERE conversation_id = %d ORDER BY id DESC LIMIT 1",
+				$conversation_id
+			)
+		);
+
+		return (string) ( $agent ?? '' );
+	}
+
+	/**
 	 * Decoded retrieval trace for a run.
 	 *
 	 * @return array<string, mixed>|null

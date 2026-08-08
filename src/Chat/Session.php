@@ -54,15 +54,29 @@ final class Session {
 	}
 
 	/**
+	 * The token in this request's cookie, if any.
+	 *
+	 * Separate from {@see self::from_request()} because attribution reads it
+	 * from an ordinary checkout request, where there is no `WP_REST_Request` to
+	 * ask — and where the header fallback deliberately does not apply, since
+	 * nothing but our own widget ever sets that header.
+	 */
+	public static function from_cookie(): string {
+		$cookie = isset( $_COOKIE[ self::COOKIE ] ) ? sanitize_text_field( wp_unslash( (string) $_COOKIE[ self::COOKIE ] ) ) : '';
+
+		return self::looks_valid( $cookie ) ? $cookie : '';
+	}
+
+	/**
 	 * The token this request presents, if any.
 	 *
 	 * The cookie wins over the header. A visitor with a working cookie should
 	 * not be overridable by a header an injected script could set.
 	 */
 	public static function from_request( \WP_REST_Request $request ): string {
-		$cookie = isset( $_COOKIE[ self::COOKIE ] ) ? sanitize_text_field( wp_unslash( (string) $_COOKIE[ self::COOKIE ] ) ) : '';
+		$cookie = self::from_cookie();
 
-		if ( self::looks_valid( $cookie ) ) {
+		if ( '' !== $cookie ) {
 			return $cookie;
 		}
 

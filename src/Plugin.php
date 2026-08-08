@@ -22,6 +22,7 @@ use StoreCrew\Ai\Providers\OpenRouterProvider;
 use StoreCrew\Ai\SpendGuard;
 use StoreCrew\Api\ExtensionApi;
 use StoreCrew\Api\Feature;
+use StoreCrew\Api\Attribution;
 use StoreCrew\Api\Secrets;
 use StoreCrew\Api\Rest\Controllers\AgentController;
 use StoreCrew\Api\Rest\Controllers\BootstrapController;
@@ -63,6 +64,7 @@ use StoreCrew\Security\SecretStore;
 use StoreCrew\Chat\ChatService;
 use StoreCrew\Chat\ConsoleService;
 use StoreCrew\Chat\EscalationNotifier;
+use StoreCrew\Chat\OrderAttribution;
 use StoreCrew\Chat\Widget;
 use StoreCrew\Core\Admin\AdminPage;
 use StoreCrew\Core\Container\Container;
@@ -76,9 +78,11 @@ use StoreCrew\Database\Migrations\Migration001InitialSchema;
 use StoreCrew\Database\Migrations\Migration002RunCostKnown;
 use StoreCrew\Database\Migrations\Migration003DropUpgradeFlag;
 use StoreCrew\Database\Migrations\Migration004DropVersionOption;
+use StoreCrew\Database\Migrations\Migration005Attributions;
 use StoreCrew\Database\Migrator;
 use StoreCrew\Database\Repositories\AgentConfigRepository;
 use StoreCrew\Database\Repositories\AgentRunRepository;
+use StoreCrew\Database\Repositories\AttributionRepository;
 use StoreCrew\Database\Repositories\AuditLogRepository;
 use StoreCrew\Database\Repositories\ConversationRepository;
 use StoreCrew\Database\Repositories\IndexRunRepository;
@@ -190,6 +194,17 @@ final class Plugin {
 
 		add_filter( 'wp_privacy_personal_data_exporters', static fn ( $e ) => $privacy()->register_exporter( $e ) );
 		add_filter( 'wp_privacy_personal_data_erasers', static fn ( $e ) => $privacy()->register_eraser( $e ) );
+
+		// Attribution (FR-ANALYTICS-03). Lazily resolved for the same reason as
+		// the privacy object: this constructs three repositories, and the
+		// overwhelming majority of requests that reach here are not checkouts.
+		$attribution = function (): OrderAttribution {
+			return $this->container->get( OrderAttribution::class );
+		};
+
+		foreach ( OrderAttribution::HOOKS as $checkout_hook ) {
+			add_action( $checkout_hook, static fn ( $order ) => $attribution()->from_order( $order ), 10, 1 );
+		}
 
 		// Routes register on rest_api_init, which fires long after the
 		// registries freeze, so the contributed set is always final by then.
@@ -460,7 +475,8 @@ final class Plugin {
 			PersonalData::class,
 			static fn ( Container $c ): PersonalData => new PersonalData(
 				$c->get( ConversationRepository::class ),
-				$c->get( MessageRepository::class )
+				$c->get( MessageRepository::class ),
+				$c->get( AttributionRepository::class )
 			)
 		);
 
@@ -474,7 +490,8 @@ final class Plugin {
 				$c->get( Scheduler::class ),
 				$c->get( MessageRepository::class ),
 				$c->get( ToolCallRepository::class ),
-				$c->get( UsageRepository::class )
+				$c->get( UsageRepository::class ),
+				$c->get( AttributionRepository::class )
 			)
 		);
 
@@ -492,6 +509,24 @@ final class Plugin {
 		$this->container->set(
 			Secrets::class,
 			fn (): Secrets => $this->container->get( SecretStore::class )
+		);
+
+		$this->container->set(
+			OrderAttribution::class,
+			static fn ( Container $c ): OrderAttribution => new OrderAttribution(
+				$c->get( ConversationRepository::class ),
+				$c->get( AttributionRepository::class ),
+				$c->get( AgentRunRepository::class )
+			)
+		);
+
+		// The published half of the same object (Api\Attribution), on the same
+		// reasoning as Secrets above: premium reports on these links, the free
+		// plugin is the only thing that can record them, and the methodology
+		// has to come from the recorder rather than be restated by the reader.
+		$this->container->set(
+			Attribution::class,
+			fn (): Attribution => $this->container->get( OrderAttribution::class )
 		);
 
 		$this->container->set(
@@ -539,6 +574,7 @@ final class Plugin {
 			IndexRunRepository::class,
 			AuditLogRepository::class,
 			AgentConfigRepository::class,
+			AttributionRepository::class,
 		);
 
 		foreach ( $repositories as $repository ) {
@@ -556,6 +592,7 @@ final class Plugin {
 					new Migration002RunCostKnown(),
 					new Migration003DropUpgradeFlag(),
 					new Migration004DropVersionOption(),
+					new Migration005Attributions(),
 				);
 
 				/**

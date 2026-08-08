@@ -47,7 +47,7 @@ Contributes only through the API. Contains no copy of free-plugin code.
 | Subsystem | Contents |
 |---|---|
 | Agents | **Marketing agent** (built 2026-08-08, `audience: admin`), **Analytics agent**, custom agent builder |
-| Tools | `segment.build`, `coupon.create`, `metrics.report`, `product.performance`, `segment.sync` (built), campaign dispatch, forecasting queries |
+| Tools | `segment.build`, `coupon.create`, `metrics.report`, `product.performance`, `segment.sync`, `revenue.attribution` (built), campaign dispatch, forecasting queries |
 | Workflows | Visual workflow builder — engine, node types, runner |
 | Integrations | Mailchimp, Brevo, FluentCRM, Klaviyo, ActiveCampaign adapters |
 | Admin | Additional SPA routes and panels, mounted into the free shell |
@@ -243,7 +243,9 @@ Every one of these rules must be **probe-tested** — deliberately violated once
 
 Lives in the **Pro** repository (`tools/PhpStan/NoCrossPluginImportsRule.php`), because it constrains Pro and should fail Pro's build. It runs as part of `composer analyse` there.
 
-**The published surface is declared by an `@api` tag on the class docblock**, and the rule reads those docblocks rather than any list. A list living in Pro would let Pro decide what Pro may use, which inverts the relationship the rule exists to enforce: the free plugin publishes, Pro consumes. Eleven classes carry the tag today — the `Api\` namespace (`ExtensionApi`, `Feature`, `AdminRoute`, `Rest\RestController`), the agent and tool contribution types (`Agent\Agent`, `Agent\Tool\ToolInterface`, `ToolContext`, `ToolResult`, `Ai\ToolDefinition`), `Chat\ConsoleService`, and `Licensing\FeatureGate`.
+**The published surface is declared by an `@api` tag on the class docblock**, and the rule reads those docblocks rather than any list. A list living in Pro would let Pro decide what Pro may use, which inverts the relationship the rule exists to enforce: the free plugin publishes, Pro consumes. Thirteen classes carry the tag today — the `Api\` namespace (`ExtensionApi`, `Feature`, `AdminRoute`, `Rest\RestController`, `Secrets`, `Attribution`), the agent and tool contribution types (`Agent\Agent`, `Agent\Tool\ToolInterface`, `ToolContext`, `ToolResult`, `Ai\ToolDefinition`), `Chat\ConsoleService`, and `Licensing\FeatureGate`.
+
+The last two arrived the way the rule intends, each because premium needed something it could not reach. **`Api\Secrets`** (four methods — put, get, has, forget) exists because an ESP adapter needed somewhere safe to keep a Mailchimp key and `composer analyse` correctly refused to let Pro name `Security\SecretStore`; publishing the whole store would have committed the free plugin to `rotate_data_key()` forever so an add-on could keep one API key. **`Api\Attribution`** exists because only the free plugin *can* record which conversation preceded an order — it owns the conversation and the storefront session cookie, and both are visible only during the checkout request — while reporting on that is a premium concern. Note what `Attribution` publishes besides the reads: `methodology()`, written by the class that does the recording. A description of what the links mean, kept beside the reader instead, drifts from the mechanism — and a merchant told something false about a number that is otherwise correct is worse off than one told nothing.
 
 `@api` is a claim about **compatibility, not visibility**. Marking a class means accepting that third-party code depends on it and that breaking it is a major version. Adding the tag is a deliberate act of publication, not a formality to unblock a build — the right response to the rule firing is usually to widen the API on purpose, occasionally to stop using the class, and never to tag whatever the error happened to name.
 

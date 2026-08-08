@@ -10,6 +10,7 @@ declare( strict_types=1 );
 namespace StoreCrew\Core\Queue;
 
 use StoreCrew\Database\Repositories\AgentRunRepository;
+use StoreCrew\Database\Repositories\AttributionRepository;
 use StoreCrew\Database\Repositories\AuditLogRepository;
 use StoreCrew\Database\Repositories\ConversationRepository;
 use StoreCrew\Database\Repositories\IndexRunRepository;
@@ -63,6 +64,7 @@ final class MaintenanceJob {
 		private readonly MessageRepository $messages,
 		private readonly ToolCallRepository $tool_calls,
 		private readonly UsageRepository $usage,
+		private readonly AttributionRepository $attributions,
 	) {}
 
 	/**
@@ -160,6 +162,12 @@ final class MaintenanceJob {
 		$this->messages->delete_for_conversations( $ids );
 		$this->agent_runs->delete_for_conversations( $ids );
 		$this->tool_calls->delete_for_conversations( $ids );
+
+		// Attribution links go with the conversation that explains them. A
+		// surviving link would leave the Analytics agent reporting revenue
+		// against a conversation nobody can open — a figure that cannot be
+		// checked, which this codebase treats as worse than a missing one.
+		$this->attributions->delete_for_conversations( $ids );
 
 		return $this->conversations->delete_ids( $ids );
 	}

@@ -35,6 +35,7 @@ final class Tables {
 	public const INDEX_RUNS        = 'index_runs';
 	public const AUDIT_LOG         = 'audit_log';
 	public const AGENT_CONFIGS     = 'agent_configs';
+	public const ATTRIBUTIONS      = 'attributions';
 
 	/**
 	 * Fully qualified table name, including the site's table prefix.
@@ -66,6 +67,7 @@ final class Tables {
 			self::INDEX_RUNS,
 			self::AUDIT_LOG,
 			self::AGENT_CONFIGS,
+			self::ATTRIBUTIONS,
 		);
 	}
 

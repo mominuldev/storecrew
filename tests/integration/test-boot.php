@@ -519,12 +519,68 @@ t( 'PROBE: and it is the only parameter, so nothing else can be composed', array
 // A range the model invented must be refused, not coerced into a default. The
 // coercing version is how a merchant gets last month's figures labelled as this
 // month's and never finds out.
-$query        = new StoreCrew\Pro\Analytics\MetricsQuery();
-$injected     = $query->report( "2024-01-01' OR 1=1" );
-$bad_ranking  = $query->top_products( 'last_30_days', 'net_revenue; DROP TABLE', 5 );
+// The attribution resolver throws if anything calls it: nothing in these three
+// probes reads a link, and a resolver that would happily hand one over cannot
+// prove the laziness the harness exists to enforce.
+$scr_no_links = static function (): StoreCrew\Api\Attribution {
+	throw new RuntimeException( 'attribution resolved when it was not needed' );
+};
+
+$query       = new StoreCrew\Pro\Analytics\MetricsQuery( $scr_no_links );
+$injected    = $query->report( "2024-01-01' OR 1=1" );
+$bad_ranking = $query->top_products( 'last_30_days', 'net_revenue; DROP TABLE', 5 );
 
 t( 'PROBE: a range outside the enum is refused, not defaulted', isset( $injected['error'] ) );
 t( 'PROBE: and so is a ranking column outside its enum', isset( $bad_ranking['error'] ) );
+
+// PROBE: building the analytics tools must not resolve attribution, which
+// resolves three repositories. This is the eager-resolution defect the DB-free
+// harness has now caught six times, and it caught this one too — the first
+// version of MetricsQuery took the object rather than a resolver, and every
+// metrics tool paid for a database it never reads.
+$scr_lazy_ok = true;
+
+try {
+	$query->report( 'last_30_days' );
+} catch ( RuntimeException $e ) {
+	$scr_lazy_ok = false;
+}
+
+t( 'PROBE: a metrics report never resolves the attribution reader', $scr_lazy_ok );
+
+echo "\n== revenue.attribution: a floor, and the methodology that says why ==\n";
+
+use StoreCrew\Api\Attribution;
+
+t( 'Pro registered revenue.attribution', $tools->has( 'revenue.attribution' ) && 'storecrew-pro' === $tools->owner( 'revenue.attribution' ) );
+
+$scr_attr_tool = $tools->get( 'revenue.attribution' );
+
+t( 'the factory builds a real tool', $scr_attr_tool instanceof ToolInterface );
+t( 'PROBE: it is a read, so it never queues for approval', ToolInterface::INTENT_READ === $scr_attr_tool->intent() );
+t(
+	'PROBE: it demands storecrew_view_analytics, not storecrew_manage',
+	'storecrew_view_analytics' === $scr_attr_tool->required_capability()
+);
+
+// Same constrained-surface rule as its siblings (FR-ANALYTICS-02): one enum
+// parameter, so there is nothing for an injected string to compose.
+$scr_attr_props = (array) ( $scr_attr_tool->definition()->input_schema['properties'] ?? array() );
+
+t( 'PROBE: range is the only parameter, and it is an enum', array( 'range' ) === array_keys( $scr_attr_props ) && isset( $scr_attr_props['range']['enum'] ) );
+
+// The published seam. Pro cannot name a repository, and the free plugin is the
+// only thing that can record a link — it owns the conversation and the session
+// cookie, and both are only visible during the checkout request.
+//
+// Asserted as *bound*, deliberately not resolved. Resolving it constructs three
+// repositories, and this harness has no database on purpose — that is the alarm
+// which caught the eager version of MetricsQuery two probes above, and a probe
+// that fired it here would be a probe that disabled it everywhere. What
+// attribution actually *does* is probed against real MySQL in
+// tests/schema/verify-attribution.php.
+t( 'the published Attribution surface is bound', $api->container()->has( Attribution::class ) );
+t( 'and so is the recorder behind it', $api->container()->has( \StoreCrew\Chat\OrderAttribution::class ) );
 
 $analytics = $agents->get( AnalyticsAgent::ID );
 

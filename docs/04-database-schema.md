@@ -38,10 +38,12 @@ conversations ──< messages
 
 knowledge_sources ──< knowledge_chunks
 
+conversations ──< attributions >── (WooCommerce order, by id)
+
 index_runs          audit_log          agent_configs
 ```
 
-**Eleven** tables in the free plugin. Premium owns four more (§10).
+**Twelve** tables in the free plugin. Premium owns four more (§10).
 
 ### Reserved-word deviations
 
@@ -118,6 +120,40 @@ CREATE TABLE {prefix}scr_messages (
 `role` ∈ `user | assistant | system | tool | handoff`.
 
 `conversation_seq` is `(conversation_id, id)` rather than `(conversation_id, created_at)` deliberately: `id` is monotonic and unique, so transcript ordering is stable even when two messages land in the same second.
+
+### 3.3 `scr_attributions`
+
+```sql
+CREATE TABLE {prefix}scr_attributions (
+  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  order_id        BIGINT UNSIGNED NOT NULL,
+  conversation_id BIGINT UNSIGNED NOT NULL,
+  basis           VARCHAR(20)     NOT NULL DEFAULT '',
+  agent_id        VARCHAR(64)     NOT NULL DEFAULT '',
+  minutes_elapsed INT UNSIGNED    NOT NULL DEFAULT 0,
+  recorded_at     DATETIME        NOT NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY order_id (order_id),
+  KEY conversation_id (conversation_id),
+  KEY recorded_at (recorded_at)
+) {charset_collate};
+```
+
+`basis` ∈ `session | customer`. **Implemented** (Migration005), FR-ANALYTICS-03.
+
+**`verified_order_id` on the conversation is not this.** That column records that a customer *proved who they were* against an order they already had — identity verification, pointing backwards. This table points forwards: this shopper talked to the crew and then bought. Nothing recorded that until now, which is why the honest answer to "what did StoreCrew earn me" was silence rather than an estimate.
+
+Three properties are deliberate.
+
+**It holds no money.** No revenue column, no currency, no captured total. The row is the *link*; the amount is read live from the order at report time — the same discipline FR-KB-08 applies to price and stock. A stored total would keep counting a refunded order forever, and a merchant reading revenue WooCommerce no longer agrees with cannot tell which number is wrong.
+
+**`order_id` is unique.** One order credits at most one conversation, so the model is last-touch by construction rather than by convention — and the checkout hooks, which fire twice on a store running both classic and Blocks checkout, are idempotent for free.
+
+**`basis` is stored per row**, so the methodology is auditable against the data rather than only described in prose. A store whose links are all `customer` has cookie trouble, and that is worth being able to see.
+
+Recording happens in `Chat\OrderAttribution` on the two checkout hooks, and only there: `woocommerce_new_order` is deliberately not one of them, because it fires for orders an administrator creates in wp-admin where the session cookie belongs to whoever is staffing the shop. A link requires a **storefront** conversation (§ 7b — a merchant console thread is never a customer's shopping conversation), at least one agent answer in it, and a last activity inside the window (`storecrew_attribution_window_days`, 7 days by default, clamped to 1–90).
+
+The methodology is published from the recorder through `Api\Attribution::methodology()` rather than restated by whatever reports on it, so the description and the mechanism cannot drift. It states what it **cannot** see as well as what it can: the figure is a floor, because a shopper who chats on a phone and buys on a laptop is invisible to it.
 
 ---
 
@@ -457,10 +493,11 @@ Owned by `storecrew-pro`, created by its own migrations, sharing the `scr_` pref
 | Usage events | 24 months | Yes — counters retained indefinitely | **Implemented** — events only; counters untouched |
 | Audit log | 24 months (730 days) | Yes, minimum 6 months (180-day floor) | **Implemented** — hourly maintenance sweep, batched at 500 |
 | Knowledge chunks | Until source deleted or reindexed | n/a | **Implemented** — deletion follows the source |
+| Attribution links | With their conversation | Follows the conversation window | **Implemented** — cascades from the conversation prune; no separate window |
 
-All four windows are enforced from the hourly `MaintenanceJob` sweep, each on the pattern the audit pruner set: batched at 500 rather than a single mass `DELETE`, which would lock the table on a busy store — exactly when it is largest. Three deliberate asymmetries, each probe-tested: pruning a conversation **cascades** to its messages, runs, and tool calls whatever their own age, because a run whose conversation is gone is unexplainable, which defeats the reason runs are kept; a **pending approval survives any window**, because an undecided write silently vanishing from the queue would make the approval model a lie; and sub-floor settings clamp *up*, so a mistyped window cannot quietly disable retention the merchant believes is on. The audit floor stays 180 days — audit history is a security control.
+All four windows are enforced from the hourly `MaintenanceJob` sweep, each on the pattern the audit pruner set: batched at 500 rather than a single mass `DELETE`, which would lock the table on a busy store — exactly when it is largest. Three deliberate asymmetries, each probe-tested: pruning a conversation **cascades** to its messages, runs, and tool calls whatever their own age, because a run whose conversation is gone is unexplainable, which defeats the reason runs are kept; a **pending approval survives any window**, because an undecided write silently vanishing from the queue would make the approval model a lie; and sub-floor settings clamp *up*, so a mistyped window cannot quietly disable retention the merchant believes is on. The audit floor stays 180 days — audit history is a security control. Attribution links (§ 3.3) have no window of their own and cascade with the conversation instead: a link to a conversation nobody can open is a revenue figure nobody can check, which is the shape of defect this codebase treats as worse than a missing figure. The consequence is stated rather than hidden — attribution history is bounded by conversation retention, so a report over a period older than that window reports less than happened.
 
-- **GDPR export and erasure are wired** (`Core/Privacy/PersonalData`, registered with the WordPress personal-data tools; resolved lazily so the DB-free harness never constructs a repository). Export pages a customer's conversations with full transcripts, excluding system rows — operator notes are about the conversation, not data held on the person. Erasure anonymises exactly as specified: `customer_id`, `identity_verified`, `verified_order_id`, and the session-token binding are stripped (so no surviving cookie can resume the thread) and message content is blanked, while rows and aggregate counters survive — they contain no personal data, and removing counters would corrupt billing history. Reach is bounded by the identity model: anonymous conversations carry only a token digest and are not attributable by email, so a privacy request cannot reach them — a property, not a gap, since honouring erasure must not require *creating* a link the system never held.
+- **GDPR export and erasure are wired** (`Core/Privacy/PersonalData`, registered with the WordPress personal-data tools; resolved lazily so the DB-free harness never constructs a repository). Export pages a customer's conversations with full transcripts, excluding system rows — operator notes are about the conversation, not data held on the person. Erasure anonymises exactly as specified: `customer_id`, `identity_verified`, `verified_order_id`, and the session-token binding are stripped (so no surviving cookie can resume the thread), attribution links are **deleted** rather than anonymised — the row holds no personal data but "the person who owns order 4182 had a conversation before buying" is a fact about them, the same kind of link `verified_order_id` is stripped for — and message content is blanked, while rows and aggregate counters survive — they contain no personal data, and removing counters would corrupt billing history. Reach is bounded by the identity model: anonymous conversations carry only a token digest and are not attributable by email, so a privacy request cannot reach them — a property, not a gap, since honouring erasure must not require *creating* a link the system never held.
 - **Structured storage never holds a raw email address.** `ToolExecutor` redacts identity-bearing arguments before they are persisted — the `email` key becomes `[redacted]`, and a pattern pass scrubs addresses volunteered inside free-text values — so even a failed `identity.verify` attempt records *that* an email was supplied, never which one. (The tool itself still receives the raw value; redaction happens at the storage boundary, not the execution one. The `storecrew_redacted_argument_keys` filter may only add keys, never remove the shipped ones.) The one place an address can still land is `scr_messages.content`, which stores whatever the customer typed — that is question 4 below, not a gap in this rule.
 - **No raw IP address is stored anywhere** — only a salted SHA-256 (§ 8.2).
 
