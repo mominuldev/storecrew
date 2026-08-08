@@ -75,6 +75,15 @@ promise nobody can date.*
 - `docs/README.md` still listed deliverables 08 and 09 as "Draft complete"
   while the same page, and the Gate 3 note directly beneath the table, said
   all fifteen were approved at v1.0.
+- **The same disagreement ran one layer deeper, and the first pass missed
+  it**: seven documents' *own* status headers contradicted that table — 06,
+  11, 12, 13 and 14 still read "Draft complete", 08 and 09 "Gate 3 reviewed
+  and remediated" — and six carried a pre-approval `Version: 0.1`/`0.2`. That
+  header is what a reader hits when they open the file directly, rather than
+  arriving through the index. All fifteen now state their gate, their
+  approval date, and v1.0, with the gate attribution cross-checked against
+  the README's own grouping. 10 keeps its caveat, because it is true: design
+  ahead of code, and the remote half still is.
 - CLAUDE.md carried a Gate 2 known-gaps bullet claiming retention pruning,
   the GDPR exporter/eraser, the static-analysis configs, and Pro's
   `uninstall.php` were still missing. All four had been done for a day, two of

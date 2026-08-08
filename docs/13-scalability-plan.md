@@ -1,8 +1,8 @@
 # 13 — Scalability Plan
 
 **Product:** StoreCrew AI
-**Status:** Draft complete — 2026-08-07
-**Version:** 0.1
+**Status:** Gate 5 approved 2026-08-07 — measured numbers, named cliffs
+**Version:** 1.0
 
 Scale for a self-hosted plugin means something different than for a SaaS:
 there is no fleet to grow — **every store must scale on whatever hosting it

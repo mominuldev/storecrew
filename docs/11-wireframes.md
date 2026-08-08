@@ -1,8 +1,8 @@
 # 11 — UI/UX Wireframes
 
 **Product:** StoreCrew AI
-**Status:** Draft complete — documents the built screens as of 2026-08-07
-**Version:** 0.1
+**Status:** Gate 4 approved 2026-08-07 — documents the built screens, verified against the code
+**Version:** 1.0
 
 These are as-built wireframes: every screen below exists, renders in both
 themes, and has been walked in a real browser. The document's job is to

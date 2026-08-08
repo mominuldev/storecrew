@@ -1,8 +1,8 @@
 # 06 — React Application Structure
 
 **Product:** StoreCrew AI
-**Status:** Draft complete — documents the built applications as of 2026-08-07
-**Version:** 0.1
+**Status:** Gate 4 approved 2026-08-07 — documents the built applications, verified against the code
+**Version:** 1.0
 
 There are **two** front-end applications, built separately on purpose because
 their constraints are opposite:

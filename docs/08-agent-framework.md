@@ -1,7 +1,7 @@
 # 08 — Agent Framework Architecture
 
 **Product:** StoreCrew AI
-**Status:** Gate 3 reviewed and remediated — documents the built framework
+**Status:** Gate 3 approved — documents the built framework
 **Version:** 1.0
 **Date:** 2026-08-07
 

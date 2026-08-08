@@ -1,8 +1,8 @@
 # 12 — Security Architecture
 
 **Product:** StoreCrew AI
-**Status:** Draft complete — consolidates the built posture as of 2026-08-07
-**Version:** 0.1
+**Status:** Gate 5 approved 2026-08-07 — consolidates the built posture, every probe traced to the suite that fires it
+**Version:** 1.0
 
 This document consolidates security decisions made throughout 03–09 into one
 threat-model-ordered view. Its rule of evidence is the project's own: **a

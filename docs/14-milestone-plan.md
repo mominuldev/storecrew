@@ -1,8 +1,8 @@
 # 14 — Development Milestone Plan
 
 **Product:** StoreCrew AI
-**Status:** Draft complete — 2026-08-07
-**Version:** 0.1
+**Status:** Gate 5 approved 2026-08-07 — exit-criteria-gated, no dates
+**Version:** 1.0
 
 This plan starts from where the code actually is, which is far past where a
 Gate 5 plan usually starts: the platform, agents, knowledge base, REST API,

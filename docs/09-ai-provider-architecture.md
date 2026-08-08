@@ -1,7 +1,7 @@
 # 09 — AI Provider Architecture
 
 **Product:** StoreCrew AI
-**Status:** Gate 3 reviewed and remediated — documents the built layer
+**Status:** Gate 3 approved — documents the built layer
 **Version:** 1.0
 **Date:** 2026-08-07
 

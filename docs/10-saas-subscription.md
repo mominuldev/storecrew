@@ -1,10 +1,12 @@
 # 10 — SaaS Subscription Architecture
 
 **Product:** StoreCrew AI
-**Status:** Design; the merchant-side half is **built** (meter, quota
-reader, cap — § 5, § 8), the remote half is not (licence server,
-`LicenceClient`, updates)
-**Version:** 0.2
+**Status:** Gate 4 approved 2026-08-07 — design ahead of code, and still
+partly ahead of it: the merchant-side half is **built** (meter, quota
+reader, cap — § 5, § 8) and `Snapshot`/`LicenceClient` replaced the stub,
+but the remote half is not (licence server, `LicenceClient::PUBLIC_KEY`,
+updates)
+**Version:** 1.0
 
 Unlike 03–09, this document designed ahead of code. What exists today
 (all built 2026-08-08, probe-tested): `FeatureGate` (earlier), the § 5
