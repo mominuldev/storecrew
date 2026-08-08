@@ -71,6 +71,7 @@ use StoreCrew\Core\Queue\Scheduler;
 use StoreCrew\Database\MigrationInterface;
 use StoreCrew\Database\Migrations\Migration001InitialSchema;
 use StoreCrew\Database\Migrations\Migration002RunCostKnown;
+use StoreCrew\Database\Migrations\Migration003DropUpgradeFlag;
 use StoreCrew\Database\Migrator;
 use StoreCrew\Database\Repositories\AgentConfigRepository;
 use StoreCrew\Database\Repositories\AgentRunRepository;
@@ -509,6 +510,7 @@ final class Plugin {
 				$migrations = array(
 					new Migration001InitialSchema(),
 					new Migration002RunCostKnown(),
+					new Migration003DropUpgradeFlag(),
 				);
 
 				/**

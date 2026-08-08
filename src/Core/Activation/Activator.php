@@ -27,7 +27,6 @@ final class Activator {
 
 	public const OPTION_VERSION        = 'storecrew_version';
 	public const OPTION_ACTIVATED_AT   = 'storecrew_activated_at';
-	public const OPTION_NEEDS_UPGRADE  = 'storecrew_needs_upgrade';
 	public const OPTION_SETUP_REDIRECT = 'storecrew_setup_redirect';
 
 	/**
@@ -54,8 +53,10 @@ final class Activator {
 
 		// The migrator reconciles on the next admin request rather than here,
 		// so that a fatal during schema work cannot leave activation half-done
-		// with no way to retry.
-		update_option( self::OPTION_NEEDS_UPGRADE, '1' );
+		// with no way to retry. Nothing is flagged for it: it gates on the
+		// version comparison, which is also the right answer for the merchant
+		// who upgrades over FTP and never reaches this hook at all. A flag set
+		// here would be absent on exactly that path (Migration003).
 		update_option( self::OPTION_VERSION, STORECREW_VERSION );
 
 		/**

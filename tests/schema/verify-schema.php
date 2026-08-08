@@ -17,6 +17,7 @@
 // where a declare must be the first statement of the script and cannot be.
 
 use StoreCrew\Database\Migrations\Migration001InitialSchema;
+use StoreCrew\Database\Migrations\Migration003DropUpgradeFlag;
 use StoreCrew\Database\Migrator;
 use StoreCrew\Database\Tables;
 
@@ -24,6 +25,22 @@ global $wpdb;
 
 $pass = 0;
 $fail = 0;
+
+// The lock probes below drive real migrations, which rewrites the live schema
+// version — this suite must not leave the site claiming an older schema than it
+// has. Restore is registered for shutdown as well as run at the end, so a fatal
+// mid-suite cannot strand it (the same reason verify-knowledge does it).
+$saved_schema_version = get_option( Migrator::OPTION_SCHEMA_VERSION, false );
+
+$restore_schema_version = static function () use ( $saved_schema_version ): void {
+	if ( false === $saved_schema_version ) {
+		delete_option( Migrator::OPTION_SCHEMA_VERSION );
+	} else {
+		update_option( Migrator::OPTION_SCHEMA_VERSION, $saved_schema_version, false );
+	}
+};
+
+register_shutdown_function( $restore_schema_version );
 
 $t = static function ( string $label, bool $ok, string $detail = '' ) use ( &$pass, &$fail ): void {
 	if ( $ok ) {
@@ -163,7 +180,43 @@ $recovered = new Migrator( array( new Migration001InitialSchema() ) );
 $result2   = $recovered->run();
 $t( 'PROBE: lock older than TTL is broken', array( 1 ) === $result2['applied'], wp_json_encode( $result2 ) );
 
+echo "\n== Migration003 removes the unread upgrade flag ==\n";
+// The flag was written by the activator, deleted at the end of Migrator::run(),
+// and read by nothing (Gate 2). Both halves are gone; this proves the removal
+// reaches an install that already stored it, and that a second pass is a no-op
+// rather than a failure — the forward-only contract re-runs after a mid-series
+// fatal, so "already absent" must be success.
+add_option( 'storecrew_needs_upgrade', '1' );
+update_option( Migrator::OPTION_SCHEMA_VERSION, 2, false );
+
+$flag_result = ( new Migrator( array( new Migration003DropUpgradeFlag() ) ) )->run();
+$t( 'migration 3 applies', array( 3 ) === $flag_result['applied'], wp_json_encode( $flag_result ) );
+$t( 'storecrew_needs_upgrade is gone', false === get_option( 'storecrew_needs_upgrade', false ) );
+
+update_option( Migrator::OPTION_SCHEMA_VERSION, 2, false );
+$flag_again = ( new Migrator( array( new Migration003DropUpgradeFlag() ) ) )->run();
+$t( 'PROBE: re-running with the option already absent succeeds', null === $flag_again['failed'], $flag_again['error'] );
+
+// That the write is gone at its source — otherwise every activation would put
+// back what this migration just removed — is asserted in verify-admin, which
+// already snapshots the options `Activator::activate()` touches.
+
 echo "\n== Cleanup ==\n";
+$restore_schema_version();
+// Compared as strings, not by identity. The migrator writes an int and the
+// database hands back a string, so after a restore that wrote the same digits
+// the option cache can legitimately hold either type — `$wpdb->update` reports
+// zero affected rows when the stored value already matches, and `update_option`
+// takes that as failure and leaves the cache alone. The version is what matters
+// here; its PHP type after a round trip is not.
+$restored = get_option( Migrator::OPTION_SCHEMA_VERSION, false );
+$t(
+	'schema version restored',
+	false === $saved_schema_version
+		? false === $restored
+		: (string) $saved_schema_version === (string) $restored,
+	wp_json_encode( $restored )
+);
 $wpdb->delete( Tables::name( Tables::INDEX_RUNS ), array( 'id' => $run_id ), array( '%d' ) );
 $wpdb->delete( Tables::name( Tables::TOOL_CALLS ), array( 'id' => $call_id ), array( '%d' ) );
 $wpdb->delete( $counters, array( 'metric' => 'probe_counter', 'period' => '1970-01' ), array( '%s', '%s' ) );

@@ -140,8 +140,6 @@ final class Migrator {
 			$this->release_lock();
 		}
 
-		delete_option( 'storecrew_needs_upgrade' );
-
 		return array(
 			'applied' => $applied,
 			'failed'  => null,

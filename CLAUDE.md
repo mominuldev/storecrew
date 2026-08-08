@@ -492,8 +492,13 @@ ciphertext, ragged embedding vectors, and the migration lock.
   spend-guarded. Still open from that review: retention pruning beyond the
   audit log and the GDPR exporter/eraser are **planned, not built** (04 § 11
   now says so); no phpcs/phpstan config exists despite `composer.json`
-  scripts; Pro has no `uninstall.php` though free's uninstall says it does;
-  `storecrew_needs_upgrade` is written but never read.
+  scripts; Pro has no `uninstall.php` though free's uninstall says it does.
+  ~~`storecrew_needs_upgrade` is written but never read~~ — **removed
+  2026-08-08** (Migration003): write, delete, and the rows already stored.
+  It was the wrong trigger anyway (absent on the FTP-upgrade path that has
+  migrations pending) and it leaked — the delete lived in `Migrator::run()`,
+  which only executes when there *is* pending work, so re-activating an
+  already-current site left an autoloaded row nothing would ever clear.
 - **The Gate 3 findings are remediated** (2026-08-07,
   `docs/reviews/gate-3-review.md`): handoff is wired via the `agent.handoff`
   tool and a run-scoped `storecrew_handoff_requested` listener (one hop per

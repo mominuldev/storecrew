@@ -12,7 +12,11 @@ namespace StoreCrew\Database;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * One forward-only schema change.
+ * One forward-only change to plugin-owned state.
+ *
+ * Usually schema. Not always: Migration003 removes a stored option, because the
+ * migrator is the only upgrade path that runs whether a merchant updated from
+ * WordPress.org, re-activated by hand, or uploaded files over FTP.
  *
  * There is no down(). Reversing a data transform against a live store is more
  * dangerous than rolling forward, and a rollback path that is never exercised
