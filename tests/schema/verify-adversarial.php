@@ -78,6 +78,61 @@ $t = static function ( string $label, bool $ok, string $detail = '' ) use ( &$pa
 
 $c = StoreCrew\Plugin::instance()->container();
 
+// This suite saves a scripted model policy — once per corpus item, to the live
+// option — and never put the merchant's back. Found 2026-08-08 on this very
+// store: `storecrew_model_policy` held `{"chat":{"provider":"scripted"}}` while
+// the merchant's real Gemini selection was gone.
+//
+// It hid because `ModelPolicy::resolve()` falls back to `infer()` when the
+// stored provider is not registered, and `scripted` never is outside this file
+// — so chat kept answering on the inferred provider and nothing looked wrong.
+// The store degraded silently to a guess instead of honouring a choice, which
+// is worse than an outage: an outage gets reported.
+//
+// The restore runs three ways, because none of them covers the others: at the
+// end of the file, on shutdown (a clean finish or the `exit(1)` a failing suite
+// takes), and from an exception handler (an uncaught Throwable under
+// `wp eval-file` reaches none of the shutdown functions — WordPress's own fatal
+// handler is registered first).
+$saved_policy = get_option( StoreCrew\Ai\ModelPolicy::OPTION, false );
+
+$restore_policy = static function () use ( $saved_policy ): void {
+	static $done = false;
+
+	if ( $done ) {
+		return;
+	}
+
+	$done = true;
+
+	if ( false === $saved_policy ) {
+		delete_option( StoreCrew\Ai\ModelPolicy::OPTION );
+	} else {
+		update_option( StoreCrew\Ai\ModelPolicy::OPTION, $saved_policy, false );
+	}
+};
+
+register_shutdown_function( $restore_policy );
+
+set_exception_handler(
+	static function ( \Throwable $e ) use ( $restore_policy ): void {
+		$restore_policy();
+
+		fwrite(
+			STDERR,
+			sprintf(
+				"\nFATAL: %s\n  at %s:%d\n  (the live model policy was restored before exit)\n\n%s\n",
+				$e->getMessage(),
+				$e->getFile(),
+				$e->getLine(),
+				$e->getTraceAsString()
+			)
+		);
+
+		exit( 1 );
+	}
+);
+
 $configs    = $c->get( AgentConfigRepository::class );
 $audit      = $c->get( AuditLogRepository::class );
 $calls_repo = $c->get( ToolCallRepository::class );
@@ -728,6 +783,17 @@ if ( 0 === $remaining_runs ) {
 $t( 'probe agent runs removed', 0 === $remaining_runs, (string) $remaining_runs );
 $t( 'probe tool-call rows removed', 0 === $remaining_calls, (string) $remaining_calls );
 $t( 'probe agent config removed', null === $configs->get( 'probe-adv' ) );
+
+$restore_policy();
+
+// Asserted, not assumed. The whole reason this went unnoticed is that a wrong
+// policy still answers — `resolve()` infers past a provider it cannot find — so
+// "chat still works" was never evidence the option was intact.
+$t(
+	'the merchant keeps the model policy they configured',
+	$saved_policy === get_option( StoreCrew\Ai\ModelPolicy::OPTION, false ),
+	wp_json_encode( get_option( StoreCrew\Ai\ModelPolicy::OPTION, false ) )
+);
 
 echo "\n" . str_repeat( '-', 60 ) . "\n";
 printf( "%d passed, %d failed\n", $pass, $fail );

@@ -84,7 +84,41 @@ $restore_options = static function () use ( $saved_policy, $saved_sources ): voi
 	}
 };
 
+// Both hooks, because neither covers the case alone. `register_shutdown_function`
+// runs on a clean finish and on the `exit(1)` a failing suite takes — but *not*
+// after an uncaught Throwable under `wp eval-file`, where WordPress's own fatal
+// handler is registered first and ends the request before this one is reached.
+// Measured 2026-08-08 by writing to a file from the callback; the belief that it
+// covered fatals had been recorded in CLAUDE.md and was wrong.
+//
+// `set_exception_handler` is what actually catches the shape that caused the
+// original incident — a constructor signature change raises ArgumentCountError,
+// which unwinds like any Throwable. Neither hook survives a true fatal (memory
+// exhaustion, timeout); nothing in PHP does, and that is the remaining exposure.
 register_shutdown_function( $restore_options );
+
+set_exception_handler(
+	static function ( \Throwable $e ) use ( $restore_options ): void {
+		$restore_options();
+
+		// Re-report by hand: installing a handler suppresses PHP's own message,
+		// and a suite that dies silently is worse than one that dies dirty —
+		// the whole point is that the *next* run is not poisoned, which nobody
+		// can act on if they never saw this run crash.
+		fwrite(
+			STDERR,
+			sprintf(
+				"\nFATAL: %s\n  at %s:%d\n  (live options were restored before exit)\n\n%s\n",
+				$e->getMessage(),
+				$e->getFile(),
+				$e->getLine(),
+				$e->getTraceAsString()
+			)
+		);
+
+		exit( 1 );
+	}
+);
 
 echo "\n== Chunker ==\n";
 $chunker = new Chunker( target_tokens: 40, max_tokens: 80, overlap_tokens: 8 );
@@ -148,6 +182,18 @@ $t( 'WooCommerce is available', $has_woo );
 $product_id = 0;
 
 if ( $has_woo ) {
+	// A crash between here and the cleanup block leaves this product behind, and
+	// WooCommerce then refuses the next run outright — "Invalid or duplicated
+	// SKU" — so one fatal used to cost every subsequent run until someone found
+	// the orphan by hand. Restoring options on the way out is not enough on its
+	// own if the suite cannot start again afterwards.
+	$orphan = wc_get_product_id_by_sku( 'SCR-PROBE-001' );
+
+	if ( $orphan ) {
+		wp_delete_post( $orphan, true );
+		echo "  NOTE  removed a probe product left by an earlier interrupted run.\n";
+	}
+
 	$product = new WC_Product_Simple();
 	$product->set_name( 'StoreCrew Probe Trail Runner' );
 	$product->set_sku( 'SCR-PROBE-001' );
