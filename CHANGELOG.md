@@ -14,6 +14,45 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**The WordPress.org submission gate, as a command** — 2026-08-08
+
+- `tools/build-dist.sh` assembles the distribution exactly as it will be
+  submitted: `.distignore` applied, the front end rebuilt from current source, a
+  `--no-dev` vendor, `composer.lock` removed after installing from it. The
+  assembly previously existed only as prose in `.distignore`'s header, and a
+  verification you cannot repeat is one you cannot trust the second time. It
+  builds into a sibling directory and never runs `--no-dev` against the working
+  tree's `vendor/`, which would delete phpstan and phpcs and break
+  `composer check` with no obvious cause.
+- **Plugin Check on the actual dist: 0 errors, 0 warnings** — and still clean
+  with `--severity=1`, low-severity errors, low-severity warnings and
+  `--include-experimental` all enabled. `--slug=storecrew` is required: without
+  it the build directory's name fails the text-domain check and reports a defect
+  that will not exist on `.org`.
+- **The checker was probe-tested rather than trusted.** Planting
+  `echo $_GET[...]` and `eval()` into the dist raised 3 errors and 8 warnings,
+  which vanished when removed. "No errors found" from a tool that is silently
+  not reading your files looks identical to success.
+- **The shipped artifact is now booted, not just linted.** `test-boot.php` takes
+  `STORECREW_FREE_DIR`, so the integration harness can load a built dist instead
+  of the working tree — 37/37, same as the repo. The dist's `--no-dev`
+  autoloader is a different artifact from the one every other suite exercises,
+  and a plugin that passes every check in the repo then fatals on activation
+  from the zip is the classic `.org` launch failure. `run.sh` runs this pass
+  automatically when a dist is present and skips loudly when not.
+- Dist contents recorded: 8 entries, 149 files, 1.3 MB; 123 PHP files lint
+  clean; `vendor/` reduced to the autoloader and `psr/container`. readme.txt
+  re-read against the `.org` header rules — 127-char short description, 5 tags,
+  `Stable tag` matching the plugin header.
+
+### Notes
+
+- Two things still block submission and neither is code: the SVN `assets/`
+  artwork (icons, banners, and the five screenshots `readme.txt` already commits
+  to — they live in SVN, not the zip, which is why every gate above passes
+  without them), and `Contributors: decentthemes` needing to be a real
+  WordPress.org account before submission.
+
 **Private-beta instrumentation — the three leading indicators** — 2026-08-08
 
 - `tools/beta-metrics.php` prints all three of 02 § 7's leading indicators from

@@ -32,6 +32,28 @@ run() {
 
 run "boot + handshake + entitlement" test-boot.php
 
+# The same boot against the built distribution, when one has been assembled.
+# Skipped loudly rather than silently: the dist is a different artifact — a
+# --no-dev autoloader, no tests, no composer.lock — and "it works in the repo"
+# has never been evidence about the zip.
+# tests/integration -> tests -> storecrew -> plugins, the same three levels
+# test-boot.php walks. Two levels lands inside the plugin and silently skips.
+DIST="$(cd ../../.. && pwd)/storecrew-dist"
+
+if [ -d "$DIST" ]; then
+	echo "=== boot: the built dist ==="
+	if ! STORECREW_FREE_DIR="$DIST" php test-boot.php 2>&1 | sed 's/^/  /'; then
+		failures=$((failures + 1))
+	fi
+	if [ "${PIPESTATUS[0]:-0}" -ne 0 ]; then
+		failures=$((failures + 1))
+	fi
+	echo
+else
+	echo "=== boot: the built dist — SKIPPED (run tools/build-dist.sh first) ==="
+	echo
+fi
+
 for scenario in pro-without-free free-without-woo free-with-old-woo pro-api-too-new pro-api-too-old pro-uninstall pro-i18n; do
 	run "guard: ${scenario}" test-guards.php "${scenario}"
 done

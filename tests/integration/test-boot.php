@@ -12,10 +12,19 @@ define( 'WP_DEBUG', true );
 // tests/integration -> tests -> storecrew -> plugins
 $plugins = dirname( __DIR__, 3 );
 
+// STORECREW_FREE_DIR points this at a built distribution instead of the working
+// tree, which is the only way to find out whether the thing merchants actually
+// download boots. The dist ships no tests, a `--no-dev` vendor/ and no
+// composer.lock, so its autoloader is a different artifact from the one every
+// other suite exercises — and a plugin that passes every check in the repo and
+// fatals on activation from the zip is the classic .org launch failure.
+$free = getenv( 'STORECREW_FREE_DIR' ) ?: $plugins . '/storecrew';
+
 echo "\n== Loading plugin files (Pro FIRST, to prove load order does not matter) ==\n";
 require $plugins . '/storecrew-pro/storecrew-pro.php';
-require $plugins . '/storecrew/storecrew.php';
+require $free . '/storecrew.php';
 t( 'Pro loaded before Free without fatal', true );
+t( 'loaded from ' . basename( $free ), true );
 
 echo "\n== Firing plugins_loaded ==\n";
 do_action( 'plugins_loaded' );

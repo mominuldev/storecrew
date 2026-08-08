@@ -197,6 +197,41 @@ installs + setup-difficulty reviews moves the hosted-proxy decision up
 (D8). Exit for M4 to begin: **500 active installs, ≥ 4.5★** (D9), support
 load ≤ the PRD's 0.4 tickets/customer/month equivalent.
 
+### The submission gate, as a repeatable command
+
+`tools/build-dist.sh` assembles the distribution the way it will be
+submitted — `.distignore` applied, front end rebuilt from current source, a
+`--no-dev` vendor, `composer.lock` gone — into `../storecrew-dist`. It never
+touches the working tree's `vendor/`, because a `--no-dev` install there
+deletes phpstan and phpcs and breaks `composer check` with no obvious cause.
+
+Everything below is verified against **that directory**, never the working
+tree. Status 2026-08-08:
+
+| Gate | How | Result |
+|---|---|---|
+| Plugin Check | `wp plugin check storecrew-dist --slug=storecrew` | **0 errors, 0 warnings** — and clean again at `--severity=1` with low-severity errors, low-severity warnings and `--include-experimental` all switched on. `--slug` is what makes this possible: without it the folder name fails the text-domain check and reports a defect that will not exist on `.org`. |
+| The check itself works | Plant `echo $_GET[...]` and `eval()` in the dist, re-run | 3 errors + 8 warnings raised, gone when removed. A checker that has never been seen to fail is not a checker. |
+| The shipped artifact boots | `STORECREW_FREE_DIR=… tests/integration/run.sh` | **37/37**, same as the working tree. The dist has a different autoloader from the one every other suite exercises, and a plugin that passes every check in the repo and fatals on activation from the zip is the classic `.org` launch failure. Runs automatically when a dist is present, skips loudly when not. |
+| Contents | `find` in the script's output | 8 entries, 149 files, 1.3 MB. 123 PHP files lint clean; `vendor/` is autoloader + `psr` only. |
+| readme.txt | Read against the `.org` header rules | Short description 127 chars (limit 150); 5 tags; `Stable tag: 0.1.0` matches the plugin header; all required sections present. |
+
+**Still blocking submission, and neither is code:**
+
+- **The SVN `assets/` artwork** — `icon-128x128`, `icon-256x256`,
+  `banner-772x250`, `banner-1544x500`, and five screenshots matching the
+  captions `readme.txt` already commits to. A design deliverable. These live
+  in SVN's `assets/` directory, not in the zip, which is why Plugin Check
+  passes without them and why their absence is invisible to every gate above.
+- **`Contributors: decentthemes`** must be a real WordPress.org username that
+  exists before the plugin is submitted, and the account that submits it.
+  Nothing local can check this.
+
+One housekeeping note: `../storecrew-dist` sits in the plugins directory
+because `wp plugin check` only sees installed plugins. It declares the same
+classes as the working copy, so **activating both fatals**. Remove it once
+verified; the harness skipping is the reminder.
+
 ## M4 — Pro build & launch (Phase 2)
 
 Order chosen so the licence spine lands first and each agent ships with its
