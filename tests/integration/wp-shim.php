@@ -141,6 +141,18 @@ class WP_Error {
 }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
+/** Script enqueues, recorded so asset wiring is assertable. */
+$GLOBALS['scr_scripts']   = array();
+$GLOBALS['scr_localized'] = array();
+function wp_enqueue_script( $handle, $src = '', $deps = array(), $ver = false, $args = false ) {
+	$GLOBALS['scr_scripts'][ $handle ] = array( 'src' => $src, 'deps' => $deps );
+	return true;
+}
+function wp_localize_script( $handle, $name, $data ) {
+	$GLOBALS['scr_localized'][ $handle ][ $name ] = $data;
+	return true;
+}
+
 /** Single-event cron surface, observable so scheduling is assertable. */
 $GLOBALS['scr_cron'] = array();
 function wp_next_scheduled( $hook, $args = array() ) { return $GLOBALS['scr_cron'][ $hook ] ?? false; }

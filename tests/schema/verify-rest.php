@@ -553,7 +553,11 @@ $t( 'PROBE: approving twice is a 409, not a silent success', 409 === $status, (s
 
 echo "\n== Registry ==\n";
 $registry = $c->get( ControllerRegistry::class );
-$t( 'nine controllers registered', 9 === count( $registry->all() ), (string) count( $registry->all() ) );
+// Counted by owner, not in total: the registry is designed to take add-on
+// contributions, and this suite runs on sites where Pro is active. A total
+// count made an add-on registering its first controller read as a defect in
+// the free plugin.
+$t( 'nine free controllers registered', 9 === count( $registry->owned_by( 'storecrew' ) ), (string) count( $registry->owned_by( 'storecrew' ) ) );
 $t( 'the registry is frozen', $registry->is_frozen() );
 $t( 'ownership is tracked', 'storecrew' === $registry->owner( 'health' ) );
 $t(

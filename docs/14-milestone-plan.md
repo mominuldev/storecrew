@@ -252,10 +252,14 @@ tools' approval defaults:
    stub — Ed25519 envelope verification failing closed, grace to the
    second, site binding, grant-from-entitlements-map, quota loosening, all
    probe-tested against fixture-signed envelopes in the integration
-   harness (37 → 73 assertions). What remains is the remote half: the
-   licence server implementing 10 § 6.1's contract, the production keypair
+   harness (37 → 73 assertions). **The activation UI is built** (2026-08-08,
+   third change-set): Pro's `/licence` screen arrives through the extension
+   seam — AdminRoute + contributed REST controller + plain-JS bundle on the
+   shell's new DOM-mount screen registry (06 § 2.3) — live-verified through
+   the real REST server. What remains is the remote half: the licence
+   server implementing 10 § 6.1's contract, the production keypair
    (`PUBLIC_KEY` empty = fail-closed `unconfigured`, still ship-blocking),
-   the activation UI, and updates.
+   and updates.
 2. **Marketing agent** (FR-MKT): segments from Woo data, coupon tool
    (approval-gated — FR-SALES-06/FR-MKT-03), abandoned-cart sequence with
    consent discipline (FR-MKT-06 is a MUST before any send).

@@ -211,10 +211,16 @@ premium to sell).
 - **Purchase** on the Decent Themes store (existing WooCommerce +
   subscriptions); webhook provisions the key; email + account page deliver
   it.
-- **Activation** in the premium plugin's settings panel: paste key →
-  activate → snapshot stored. Deactivation releases the seat. Agency keys
-  activate up to `seats.max` sites; the account page lists and can remotely
-  release activations (FR-LIC-04).
+- **Activation** on the admin console's `/licence` screen (built
+  2026-08-08): paste key → activate → snapshot stored; the screen shows the
+  masked key, plan, site, validity, and grace, and deactivation releases
+  the seat. The screen is Pro's own — delivered through the extension
+  seam (an AdminRoute, a contributed REST controller, and a plain-JS bundle
+  on the shell's DOM-mount registry, 06 § 2.3) — and deliberately **not**
+  feature-gated: an activation screen that renders as "part of a paid plan"
+  is a door that locks its own key inside. Agency keys activate up to
+  `seats.max` sites; the account page lists and can remotely release
+  activations (FR-LIC-04).
 - **Updates** (FR-DIST-08): premium checks the update server with its key;
   entitled sites get the package; lapsed licences keep the installed
   version working (§ 1.3) but stop receiving updates. The .org directory

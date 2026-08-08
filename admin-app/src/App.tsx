@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { api } from './lib/api';
-import { getScreen, useTheme } from './lib/store';
+import { getScreen, screenRevision, subscribeScreens, useTheme } from './lib/store';
+import type { ExtensionScreen } from './lib/store';
 import type { Approval, Bootstrap } from './lib/types';
 import { Layout } from './components/Layout';
 import { Card, Spinner } from './components/primitives';
@@ -15,6 +16,31 @@ import { Setup } from './pages/Setup';
 import { ConversationDetail } from './pages/ConversationDetail';
 
 /**
+ * Hosts an add-on's DOM-mounted screen inside the shell's layout.
+ *
+ * The add-on's bundle has no React (deliberately — see lib/store.ts), so the
+ * shell owns the element's lifecycle: mount on attach, run the returned
+ * cleanup on detach, remount if a different screen object arrives for the
+ * same path.
+ */
+function ExtensionMount({ screen }: { screen: ExtensionScreen }) {
+  const host = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!host.current) return;
+
+    const cleanup = screen.mount(host.current);
+
+    return () => {
+      if (cleanup) cleanup();
+      if (host.current) host.current.replaceChildren();
+    };
+  }, [screen]);
+
+  return <div ref={host} />;
+}
+
+/**
  * Routing is hash-based. WordPress owns the admin URL, and a history-based
  * router would need a rewrite rule to survive a page refresh — a hash keeps
  * every deep link working with no server involvement.
@@ -23,6 +49,10 @@ export function App() {
   const apply = useTheme((s) => s.apply);
 
   useEffect(apply, [apply]);
+
+  // A screen registered after first render (add-on bundles load after this
+  // one) must appear without a refresh.
+  useSyncExternalStore(subscribeScreens, screenRevision);
 
   const boot = useQuery({ queryKey: ['bootstrap'], queryFn: () => api.get<Bootstrap>('/bootstrap') });
   const approvals = useQuery({ queryKey: ['approvals'], queryFn: () => api.get<Approval[]>('/approvals') });
@@ -63,14 +93,14 @@ export function App() {
               upgrade panel rather than disappearing, so the merchant can see
               what the plan would add. */}
           {data.routes.map((route) => {
-            const Screen = getScreen(route.path);
+            const screen = getScreen(route.path);
 
             return (
               <Route
                 key={route.path}
                 path={route.path.replace(/^\//, '')}
                 element={
-                  route.locked || !Screen ? (
+                  route.locked || !screen ? (
                     <Card edge="var(--color-signal-500)" className="px-5 py-6">
                       <p className="text-[13px] font-semibold">{route.label}</p>
                       <p className="mt-1 text-[13px]" style={{ color: 'var(--text-dim)' }}>
@@ -80,7 +110,7 @@ export function App() {
                       </p>
                     </Card>
                   ) : (
-                    <Screen />
+                    <ExtensionMount screen={screen} />
                   )
                 }
               />

@@ -450,8 +450,10 @@ ciphertext, ragged embedding vectors, and the migration lock.
   grant-from-entitlements-map; probe-tested against fixture-signed
   envelopes in the integration harness. **Still ship-blocking:**
   `LicenceClient::PUBLIC_KEY` is empty until the licence server exists
-  (10 § 6.1 is its contract) — fail-closed as status `unconfigured`, and
-  the activation UI and updater are unbuilt.
+  (10 § 6.1 is its contract) — fail-closed as status `unconfigured` — and
+  the updater is unbuilt. The activation UI exists (2026-08-08): Pro's
+  `/licence` screen, the first consumer of the shell's DOM-mount screen
+  registry and the `storecrew_admin_assets` action (06 § 2.3).
 - **The storefront chat surface is live-verified** (21 REST routes). Five turns
   through the widget against real Gemini: routing picked Sales then Support,
   `product.search` and `policy.lookup` grounded the answers, a wrong email did

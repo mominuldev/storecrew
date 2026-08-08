@@ -14,6 +14,27 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**Add-on screens are a DOM mount, and the shell says when to arrive** — 2026-08-08
+
+- The admin shell's client-side screen registry
+  (`window.storecrew.registerScreen`) now takes `{ mount(el) → cleanup? }`
+  instead of a React component. The old contract was unimplementable from
+  outside: this app bundles its own React, so an add-on had no instance to
+  build elements with, and honouring the component signature would have
+  forced every add-on to ship a second React — the exact thing FR-DIST-12
+  forbids. The registry is also reactive now, because add-on bundles load
+  after the shell's first render and a screen registered late must appear
+  without a refresh.
+- `AdminPage` fires `storecrew_admin_assets` (with the shell's script
+  handle) after enqueueing the application, so add-ons enqueue their screen
+  bundles at exactly the right moment and depend on the handle — the
+  guarantee that `registerScreen` exists before their code runs. First
+  consumer: Pro's licence screen.
+- `verify-rest` counted controllers in total and failed the moment Pro
+  contributed its first one — an add-on doing exactly what the registry is
+  for read as a defect in the free plugin. It now counts free-owned
+  controllers.
+
 **The integration harness now probes the licence spine** — 2026-08-08
 
 - Pro's `Snapshot`/`LicenceClient` replaced the licence stub (see the Pro

@@ -45,7 +45,7 @@ $routes   = $api->admin_routes();
 
 t( 'Free registered 4 features', 4 === count( $features->owned_by( 'storecrew' ) ), (string) count( $features->owned_by( 'storecrew' ) ) );
 t( 'Pro registered 6 features', 6 === count( $features->owned_by( 'storecrew-pro' ) ), (string) count( $features->owned_by( 'storecrew-pro' ) ) );
-t( 'Pro registered 3 admin routes', 3 === count( $routes->owned_by( 'storecrew-pro' ) ) );
+t( 'Pro registered 4 admin routes', 4 === count( $routes->owned_by( 'storecrew-pro' ) ) );
 t( 'Ownership tracked', 'storecrew-pro' === $features->owner( 'agent.marketing' ) );
 t( 'Free owns agent.sales', 'storecrew' === $features->owner( 'agent.sales' ) );
 
@@ -360,6 +360,49 @@ Licence::boot( $unconfigured );
 $gate10 = new StoreCrew\Licensing\FeatureGate( $features, $routes );
 t( 'PROBE: no public key, no grants — fail closed', ! $gate10->enabled( 'agent.marketing' ) );
 t( 'PROBE: and the state is named, not mysterious', LicenceClient::STATE_UNCONFIGURED === $unconfigured->state() );
+
+echo "\n== The licence screen: route, controller, and bundle all arrive through the seam ==\n";
+// The activation UI is Pro's, delivered through three published surfaces —
+// an AdminRoute declaration, a REST controller factory, and the
+// storecrew_admin_assets action. Each is asserted here because each is a
+// separate way for the screen to silently not exist.
+
+$licence_route = $routes->has( '/licence' ) ? $routes->get( '/licence' ) : null;
+
+t( 'the /licence route is declared', null !== $licence_route );
+t(
+	'PROBE: it is capability-gated but NOT feature-gated — an activation screen must never render as "part of a paid plan"',
+	null !== $licence_route && null === $licence_route->feature && 'storecrew_manage' === $licence_route->capability
+);
+
+$manifest_routes = ( new StoreCrew\Licensing\FeatureGate( $features, $routes ) )->manifest()['routes'];
+$licence_locked  = null;
+foreach ( $manifest_routes as $r ) {
+	if ( '/licence' === $r['path'] ) {
+		$licence_locked = $r['locked'];
+	}
+}
+t( 'the manifest serves it unlocked with no licence at all', false === $licence_locked );
+
+$controllers = $api->controllers();
+t( 'the licence controller is registered', $controllers->has( 'licence' ) );
+t( 'and owned by storecrew-pro', 'storecrew-pro' === $controllers->owner( 'licence' ) );
+
+$built = $controllers->get( 'licence' )();
+t( 'its factory builds a real controller', $built instanceof StoreCrew\Api\Rest\RestController );
+t( 'which names its owner', 'storecrew-pro' === $built->owner() );
+
+// The bundle arrives only through the action the shell fires — enqueued with
+// the shell's handle as a dependency, so registerScreen exists before it runs.
+do_action( 'storecrew_admin_assets', 'storecrew-admin' );
+$enqueued = $GLOBALS['scr_scripts']['storecrew-pro-licence'] ?? null;
+t( 'the bundle is enqueued when the shell announces itself', null !== $enqueued );
+t( 'PROBE: it depends on the shell handle, so the registry exists before it runs', null !== $enqueued && in_array( 'storecrew-admin', $enqueued['deps'], true ) );
+t( 'the file it points at exists', null !== $enqueued && is_file( $plugins . '/storecrew-pro/assets/admin/licence.js' ) );
+t(
+	'its strings arrive translated from PHP, not from an i18n runtime',
+	isset( $GLOBALS['scr_localized']['storecrew-pro-licence']['storecrewProLicence']['strings']['activate'] )
+);
 
 // Leave the licence spine as the boot wiring had it: no licence at all.
 $install( null );

@@ -200,6 +200,13 @@ deny-by-default and the envelope. The shared namespace is deliberate — route
 *ownership* is tracked in the registry, not in the URL (docs/README § locked
 identifiers).
 
+The first contributed controller exists (2026-08-08): Pro's
+`/licence` (GET), `/licence/activate` and `/licence/deactivate` (POST), all
+requiring `storecrew_manage` and none feature-gated — an activation screen
+must be reachable when nothing is entitled yet. Live-verified through the
+real REST server: anonymous → 401, and with no public key in the build an
+activation attempt answers `storecrew_unconfigured` rather than pretending.
+
 **API stability:** the envelope, the auth model, the 404 rule, and every
 route documented here are covered by the extension API's semver promise from
 0.1.0. Additive change is minor; anything else is major.

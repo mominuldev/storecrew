@@ -83,12 +83,27 @@ session.
 
 The shell renders add-on screens from two sources that must agree: the
 server's bootstrap manifest declares a route (and whether it is entitled),
-and the premium bundle registers the component (`registerScreen()`). A route
-declared but not entitled renders the upgrade panel ("This is part of a paid
-plan."); declared and entitled but not registered renders "This screen has
-not finished loading. Try refreshing." Entitlement remains
+and the add-on's bundle registers the implementation (`registerScreen()`). A
+route declared but not entitled renders the upgrade panel ("This is part of
+a paid plan."); declared and entitled but not registered renders "This
+screen has not finished loading. Try refreshing." Entitlement remains
 server-authoritative; the manifest is a rendering hint and every controller
 re-checks (FR-DIST-09).
+
+**The registration contract is a DOM mount, not a React component**
+(built 2026-08-08, first consumed by Pro's licence screen):
+`window.storecrew.registerScreen(path, { mount(el) → cleanup? })`. This
+follows from the shell bundling its own React — an add-on's bundle has no
+React instance to build elements with, and a component contract would force
+every add-on to ship a second React, the exact thing FR-DIST-12 forbids.
+The shell wraps the mount in an internal component that owns the element's
+lifecycle; the page's design tokens (`--line`, `--field`, `--text-dim`, …)
+are custom properties, so a plain-DOM screen follows the light/dark toggle
+for free. The registry is reactive: add-on bundles are enqueued *after* the
+shell (via the `storecrew_admin_assets` action, which passes the shell's
+script handle for dependency declarations and fires only after
+`window.storecrew` exists), so a screen registered after first render
+appears without a refresh.
 
 **The shell renders from the manifest** (G4-D1, ratified and built
 2026-08-07). `Layout` appends every contributed route with `inMenu`, in

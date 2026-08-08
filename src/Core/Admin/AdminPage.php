@@ -188,6 +188,22 @@ final class AdminPage {
 			wp_add_inline_style( self::HANDLE, self::inline_reset() );
 		}
 
+		/**
+		 * The admin application is on the page — add-ons enqueue their screen
+		 * bundles now.
+		 *
+		 * Fired only after the shell's own script is enqueued, so a bundle
+		 * that lists the handle as a dependency is guaranteed to execute
+		 * after `window.storecrew.registerScreen` exists. This is the
+		 * client-side half of the AdminRoute contract: the PHP registry
+		 * declares that a screen exists; this action is where its
+		 * implementation arrives.
+		 *
+		 * @param string $handle The shell's script handle, for dependency
+		 *                       declarations.
+		 */
+		do_action( 'storecrew_admin_assets', self::HANDLE );
+
 		wp_localize_script(
 			self::HANDLE,
 			'storecrewBoot',
