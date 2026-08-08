@@ -113,8 +113,52 @@ $call = static function ( string $method, string $path, array $body = array() ) 
 	return array( $response->get_status(), $response->get_data() );
 };
 
-$admin_id = 1;
 $original = get_current_user_id();
+
+// Whose administrator is this? It used to be `1`, on the assumption that the
+// id WordPress ships with is the id that is there. It is not: a suite in this
+// very directory deleted user 1 on this repo's own dev site (see CLAUDE.md),
+// and every authenticated probe below then 401'd — 82 failures that read as
+// defects in the REST layer rather than as a missing account.
+//
+// Preference order: the user `--user=` named, if they hold the capability
+// under test (that is the operator stating who to run as), then any
+// administrator. Never a hard-coded id.
+$admin_id = 0;
+
+if ( $original > 0 && user_can( $original, 'storecrew_manage' ) ) {
+	$admin_id = $original;
+} else {
+	$admins = get_users(
+		array(
+			'role'    => 'administrator',
+			'number'  => 1,
+			'fields'  => 'ID',
+			'orderby' => 'ID',
+		)
+	);
+
+	$admin_id = empty( $admins ) ? 0 : (int) $admins[0];
+}
+
+// Loudly, rather than running the whole suite as user 0 and reporting the
+// resulting denials as product defects.
+if ( $admin_id <= 0 ) {
+	echo "\nFATAL: no administrator on this site, so the authenticated probes cannot run.\n";
+	echo "Pass --user=<id> for a user holding storecrew_manage.\n";
+	exit( 1 );
+}
+
+printf( "\nRunning authenticated probes as user %d.\n", $admin_id );
+
+// A crashed earlier run leaves its subscriber behind. Sweep before creating,
+// because restoring state on the way out is no use if the suite cannot start.
+foreach ( get_users( array( 'search' => 'scr_probe_sub_*', 'search_columns' => array( 'user_login' ), 'fields' => 'ID' ) ) as $stale_id ) {
+	if ( (int) $stale_id > 1 ) {
+		wp_delete_user( (int) $stale_id );
+		printf( "Removed a leftover probe subscriber (%d).\n", (int) $stale_id );
+	}
+}
 
 echo "\n== Routes are registered ==\n";
 $routes = array_keys( $server->get_routes() );
@@ -143,6 +187,11 @@ $t(
 );
 
 // A subscriber has an account but none of our capabilities.
+//
+// `(int)` on a WP_Error is 1 in PHP 8 — with a warning nobody reads — and 1 is
+// conventionally the administrator. That unchecked cast is what deleted this
+// site's administrator from another suite; this one creates a user too and had
+// none of the guards. Checked three ways here, plus the entry sweep above.
 $sub_id = wp_insert_user(
 	array(
 		'user_login' => 'scr_probe_sub_' . wp_rand( 1000, 9999 ),
@@ -150,7 +199,20 @@ $sub_id = wp_insert_user(
 		'role'       => 'subscriber',
 	)
 );
-wp_set_current_user( (int) $sub_id );
+
+if ( is_wp_error( $sub_id ) ) {
+	echo "\nFATAL: could not create the probe subscriber: " . $sub_id->get_error_message() . "\n";
+	exit( 1 );
+}
+
+$sub_id = (int) $sub_id;
+
+if ( $sub_id <= 1 ) {
+	printf( "\nFATAL: refusing to run capability probes against user %d.\n", $sub_id );
+	exit( 1 );
+}
+
+wp_set_current_user( $sub_id );
 
 [ $status ] = $call( 'GET', '/storecrew/v1/health' );
 $t( 'PROBE: a logged-in subscriber is still denied', 403 === $status, (string) $status );
@@ -165,7 +227,64 @@ $t( 'carries the product version', STORECREW_VERSION === ( $body['data']['versio
 $t( 'carries the API contract version', STORECREW_API_VERSION === ( $body['data']['apiVersion'] ?? '' ) );
 $t( 'carries the feature manifest', isset( $body['data']['features']['agent.sales'] ) );
 $t( 'free features are enabled in the manifest', true === ( $body['data']['features']['agent.sales'] ?? null ) );
-$t( 'pro features are locked in the manifest', false === ( $body['data']['features']['agent.marketing'] ?? null ) );
+// This used to assert `false === features['agent.marketing']`, which is a
+// claim about the *store's licence*, not about the free plugin: it holds on an
+// unlicensed store and fails on an entitled one, so any real Pro customer
+// running this suite would see it fail. Two honest assertions replace it.
+//
+// First, what the manifest owes the SPA regardless of licence: premium slugs
+// are present and boolean, because that payload is what renders the locked
+// panels. Picked from the registry rather than hard-coded, so this says
+// nothing when no add-on is installed.
+$premium_slug = '';
+
+foreach ( $c->get( StoreCrew\Api\Registry\FeatureRegistry::class )->all() as $slug => $feature ) {
+	if ( StoreCrew\Api\Feature::TIER_FREE !== $feature->tier ) {
+		$premium_slug = (string) $slug;
+		break;
+	}
+}
+
+if ( '' === $premium_slug ) {
+	echo "  SKIP  no premium features registered — install the add-on to exercise the tier gate\n";
+} else {
+	$t(
+		'the manifest carries premium features so the SPA can render them locked',
+		array_key_exists( $premium_slug, $body['data']['features'] ?? array() )
+			&& is_bool( $body['data']['features'][ $premium_slug ] ),
+		$premium_slug
+	);
+
+	// Second, the free plugin's own truth, with the licence taken out of the
+	// picture: detach every entitlement grant and ask a *fresh* gate — the
+	// container's is memoised per request, so the earlier dispatch's answer
+	// would otherwise be replayed. Constructing the unlicensed state rather
+	// than assuming it is the same discipline as the key-hiding above.
+	$saved_grants                              = $GLOBALS['wp_filter']['storecrew_feature_enabled'] ?? null;
+	unset( $GLOBALS['wp_filter']['storecrew_feature_enabled'] );
+
+	$ungranted = new StoreCrew\Licensing\FeatureGate(
+		$c->get( StoreCrew\Api\Registry\FeatureRegistry::class ),
+		$c->get( StoreCrew\Api\Registry\AdminRouteRegistry::class )
+	);
+
+	$t(
+		'PROBE: with no entitlement granted, a premium feature is denied',
+		false === $ungranted->enabled( $premium_slug ),
+		$premium_slug
+	);
+
+	if ( null === $saved_grants ) {
+		unset( $GLOBALS['wp_filter']['storecrew_feature_enabled'] );
+	} else {
+		$GLOBALS['wp_filter']['storecrew_feature_enabled'] = $saved_grants;
+	}
+
+	$t(
+		'the grants this store had are reattached',
+		( $GLOBALS['wp_filter']['storecrew_feature_enabled'] ?? null ) === $saved_grants
+	);
+}
 $t( 'carries onboarding state', isset( $body['data']['onboarding']['canEmbed'] ) );
 $t(
 	'PROBE: onboarding reports embedding unavailable with no key configured',
@@ -643,7 +762,16 @@ wp_set_current_user( $original );
 
 $calls_repo->delete( $call_id );
 $conversations->delete( (int) $conv->id );
-wp_delete_user( (int) $sub_id );
+
+// The fourth guard: at the delete itself. $sub_id is already checked above, so
+// this can only fire if something reassigned it in between — which is exactly
+// the case worth refusing, because the id it would most plausibly hold is 1.
+if ( $sub_id > 1 ) {
+	wp_delete_user( $sub_id );
+}
+
+$t( 'the probe subscriber is gone', false === get_userdata( $sub_id ) );
+$t( 'PROBE: the administrator this suite ran as survives', false !== get_userdata( $admin_id ) );
 
 $GLOBALS['wpdb']->query(
 	// Includes the agent enable/disable audit rows the toggle probes write —

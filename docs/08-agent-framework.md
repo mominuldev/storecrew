@@ -97,14 +97,28 @@ price guardrail in the composed prompt, ahead of them.
 - **Availability** = registered ∧ feature entitled ∧ not merchant-disabled
   (absent configuration means shipped defaults, which are on).
 - **Routing** uses a small model on the `routing` task with a one-line
-  catalogue of agents and `max_tokens: 16` — classification is cheap,
-  high-volume, and does not improve with capability, so paying flagship rates
-  to pick between two labels is pure waste. Live-verified across two sessions:
-  an earlier two-turn session routed an ear-warmer question to Sales; the
-  five-turn run routed order and policy questions to Support.
+  catalogue of agents — classification is cheap, high-volume, and does not
+  improve with capability, so paying flagship rates to pick between two labels
+  is pure waste. Live-verified across two sessions: an earlier two-turn session
+  routed an ear-warmer question to Sales; the five-turn run routed order and
+  policy questions to Support.
+- **The output ceiling budgets reasoning, not just the answer.** `max_tokens`
+  caps a reasoning model's thinking *and* its visible reply together, and
+  current Anthropic models reason by default when the request says nothing
+  about it. The classifier's ceiling was `16` — the identifier is one token's
+  worth of information — which is ample on a model that answers immediately and
+  enough for nothing at all on one that thinks first. Both ceilings now come
+  from `ModelPolicy::output_ceiling()` (routing 1024, chat 8192, floor 256,
+  `storecrew_max_output_tokens` filter). Sized rather than removed: an
+  unbounded ceiling on a storefront turn is a merchant's bill with no upper
+  edge.
 - **Routing failure is never fatal.** Unconfigured classifier, provider
-  outage, unrecognised output, fewer than two available agents (nothing to
-  decide), a spend-capped store — all fall through to the default agent
+  outage, unrecognised output, a classifier that ran out of budget before
+  choosing (`storecrew_routing_truncated` — it still defaults, but it says so
+  first, because a store that silently stopped routing looks identical to one
+  whose customers all happen to want the default agent), fewer than two
+  available agents (nothing to decide), a spend-capped store — all fall through
+  to the default agent
   (`storecrew_default_agent` filter, `support` shipped). A customer must get
   an answer from *somebody*. The spend check exists because the classifier is
   a provider call too: past the cap the runner is about to refuse the turn

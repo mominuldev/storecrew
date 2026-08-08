@@ -57,6 +57,87 @@ $max_index_run = (int) $GLOBALS['wpdb']->get_var( 'SELECT COALESCE(MAX(id),0) FR
 // merchant's usage counters one run at a time.
 $max_usage_event = (int) $GLOBALS['wpdb']->get_var( 'SELECT COALESCE(MAX(id),0) FROM ' . Tables::name( Tables::USAGE_EVENTS ) );
 
+// Every probe below indexes *pages*, and the walker honours the merchant's
+// source selection — so on a store that indexes products only, the walk
+// correctly skips them and this suite reports "the walk reaches objects beyond
+// the first batch" as a failure. That assertion names the catalogued keyset-
+// pagination bug, so a selection this suite never set read as a regression in
+// the walker. The incremental-reindex probe failed the same way, and its
+// partner ("unchanged content does not queue an embedding pass") *passed
+// vacuously* — the worse half, since a probe that passes for the wrong reason
+// reports nothing.
+//
+// Construct the state instead of inheriting it: add the post type for the
+// suite's duration, never replacing what the merchant chose.
+$selection      = $c->get( StoreCrew\Knowledge\SourceSelection::class );
+$saved_sources  = get_option( StoreCrew\Knowledge\SourceSelection::OPTION, false );
+$added_post_type = ! $selection->is_enabled( StoreCrew\Knowledge\Extractor\PostExtractor::SOURCE_TYPE );
+
+if ( $added_post_type ) {
+	// Written directly rather than through save(), which purges what falls out
+	// of scope — nothing should be purged on the way *in*.
+	update_option(
+		StoreCrew\Knowledge\SourceSelection::OPTION,
+		array_values( array_unique( array_merge( $selection->enabled(), array( StoreCrew\Knowledge\Extractor\PostExtractor::SOURCE_TYPE ) ) ) ),
+		true
+	);
+	printf( "Enabled the '%s' source type for this run.\n", StoreCrew\Knowledge\Extractor\PostExtractor::SOURCE_TYPE );
+}
+
+// Restore however the suite leaves — including a fatal. Same three-way pattern
+// as verify-knowledge, for the same reason: a crash between the write and the
+// cleanup block would leave the merchant indexing a source type they had
+// switched off, and the next run would snapshot that and put it back.
+$restore_indexer = $c->get( StoreCrew\Knowledge\Indexer::class );
+
+$restore_sources = static function () use ( $saved_sources, $added_post_type, $restore_indexer ): void {
+	static $done = false;
+
+	if ( $done || ! $added_post_type ) {
+		return;
+	}
+
+	$done = true;
+
+	if ( false === $saved_sources ) {
+		delete_option( StoreCrew\Knowledge\SourceSelection::OPTION );
+	} else {
+		update_option( StoreCrew\Knowledge\SourceSelection::OPTION, $saved_sources, true );
+	}
+
+	// Restoring the *option* is not restoring the *store*: `save()` only
+	// reports what fell out of scope, and the purge that makes deselection
+	// real lives in the REST controller. Without this, a products-only store
+	// would keep the post rows this suite's walk created — excluded content,
+	// still quotable, exactly the state deselection exists to prevent. Nothing
+	// the merchant owns is at risk: a store with the type switched off has no
+	// rows of it to begin with.
+	$restore_indexer->forget_type( StoreCrew\Knowledge\Extractor\PostExtractor::SOURCE_TYPE );
+};
+
+register_shutdown_function( $restore_sources );
+
+set_exception_handler(
+	static function ( \Throwable $e ) use ( $restore_sources ): void {
+		$restore_sources();
+
+		// Re-report by hand: installing a handler suppresses PHP's own message,
+		// and a suite that dies silently is worse than one that dies dirty.
+		fwrite(
+			STDERR,
+			sprintf(
+				"\nFATAL: %s\n  at %s:%d\n  (the source selection was restored before exit)\n\n%s\n",
+				$e->getMessage(),
+				$e->getFile(),
+				$e->getLine(),
+				$e->getTraceAsString()
+			)
+		);
+
+		exit( 1 );
+	}
+);
+
 echo "\n== Deadline ==\n";
 $budget = Deadline::detect_budget();
 $t( 'derives a budget from the host limit', $budget >= 5 && $budget <= 60, (string) $budget );
@@ -417,6 +498,21 @@ $c->get( StoreCrew\Database\Repositories\UsageRepository::class )->rebuild_count
 
 $t( 'queue drained', 0 === $scheduler->health()['pending'] );
 $t( 'probe pages removed', null === get_post( $page_ids[0] ) );
+
+// Explicitly as well as on shutdown — whichever runs first wins — and then
+// asserted, because "the suite finished" was never evidence the merchant kept
+// what they configured.
+$restore_sources();
+
+$t(
+	'the merchant keeps the source selection they configured',
+	$saved_sources === get_option( StoreCrew\Knowledge\SourceSelection::OPTION, false ),
+	wp_json_encode( get_option( StoreCrew\Knowledge\SourceSelection::OPTION, false ) )
+);
+$t(
+	'PROBE: a store that indexes products only has no post rows left behind',
+	! $added_post_type || 0 === count( $sources->ids_of_type( StoreCrew\Knowledge\Extractor\PostExtractor::SOURCE_TYPE ) )
+);
 
 echo "\n" . str_repeat( '-', 60 ) . "\n";
 printf( "%d passed, %d failed\n", $pass, $fail );

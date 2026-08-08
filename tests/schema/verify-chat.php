@@ -1235,6 +1235,39 @@ if ( false === $saved_breach ) {
 	update_option( StoreCrew\Ai\SpendGuard::OPTION_ON_BREACH, $saved_breach );
 }
 
+echo "\n== A starved classifier is reported, not silently defaulted ==\n";
+// max_tokens caps reasoning *and* the visible answer together, and current
+// Anthropic models reason by default. A ceiling sized for the identifier alone
+// therefore returns nothing — which matched no agent id and fell through to the
+// default agent with no error, no log, and no way to tell the difference from a
+// store whose customers all happen to want the default. Routing still defaults
+// (a customer must get an answer from somebody); it now says so first.
+$truncated_model = '';
+$on_truncation   = static function ( string $model ) use ( &$truncated_model ): void {
+	$truncated_model = $model;
+};
+add_action( 'storecrew_routing_truncated', $on_truncation );
+
+$starved = new AgentRegistry();
+$starved->register( CoreAgents::support() );
+$starved->register( CoreAgents::sales() );
+
+$scripted->calls  = 0;
+$scripted->script = array(
+	// The classifier, out of budget before it wrote the identifier.
+	new StoreCrew\Ai\ChatResponse( '', 'scripted-1', 'scripted', new StoreCrew\Ai\TokenUsage( 30, 16 ), StoreCrew\Ai\ChatResponse::STOP_MAX ),
+	new StoreCrew\Ai\ChatResponse( 'Answered anyway.', 'scripted-1', 'scripted', new StoreCrew\Ai\TokenUsage( 20, 8 ) ),
+);
+
+$starved_turn = ( new Orchestrator( $starved, $runner, $providers, $policy, $features, $configs, $c->get( StoreCrew\Ai\SpendGuard::class ) ) )
+	->handle( 'Which of these is warmest?', array(), new StoreCrew\Agent\SharedContext( 0 ) );
+
+$t( 'PROBE: a truncated classifier fires storecrew_routing_truncated', 'scripted-1' === $truncated_model, $truncated_model );
+$t( 'the customer still gets an answer from the default agent', 'support' === $starved_turn->agent_id, $starved_turn->agent_id );
+$t( 'the turn itself succeeded — routing failure is never fatal', $starved_turn->succeeded(), $starved_turn->outcome );
+
+remove_action( 'storecrew_routing_truncated', $on_truncation );
+
 echo "\n== Cleanup ==\n";
 
 $wpdb = $GLOBALS['wpdb'];

@@ -1071,6 +1071,34 @@ $broken->register( 'good', static fn () => $spy );
 $t( 'PROBE: a broken tool factory resolves to null, not a fatal', null === $broken->get( 'broken' ) );
 $t( 'a sibling tool still resolves', null !== $broken->get( 'good' ) );
 
+echo "\n== The output ceiling budgets reasoning, not just the answer ==\n";
+// max_tokens caps a reasoning model's thinking *and* its visible reply
+// together, so a ceiling sized for the reply alone truncates mid-sentence.
+$t( 'chat ships a ceiling with headroom for reasoning', 8192 === ModelPolicy::output_ceiling( ModelPolicy::TASK_CHAT, 8192 ) );
+
+$raise = static fn ( int $tokens, string $task ): int => ModelPolicy::TASK_CHAT === $task ? 32000 : $tokens;
+add_filter( 'storecrew_max_output_tokens', $raise, 10, 2 );
+$t( 'the filter raises it for a model that reasons at length', 32000 === ModelPolicy::output_ceiling( ModelPolicy::TASK_CHAT, 8192 ) );
+$t( 'and leaves the other tasks alone', 1024 === ModelPolicy::output_ceiling( ModelPolicy::TASK_ROUTING, 1024 ) );
+remove_filter( 'storecrew_max_output_tokens', $raise, 10 );
+
+$starve = static fn (): int => 1;
+add_filter( 'storecrew_max_output_tokens', $starve );
+$t( 'PROBE: a ceiling below the floor clamps up rather than starving the call', 256 === ModelPolicy::output_ceiling( ModelPolicy::TASK_CHAT, 8192 ) );
+remove_filter( 'storecrew_max_output_tokens', $starve );
+
+// The runner must actually send it — a ceiling nothing reads is the
+// built-but-unconsumed shape with a token budget attached.
+$scripted->calls    = 0;
+$scripted->requests = array();
+$scripted->script   = array( new ChatResponse( 'ceiling check', 'scripted-1', 'scripted', new TokenUsage( 4, 2 ) ) );
+$runner->run( $support, array( Message::user( 'hello' ) ), new SharedContext( 0 ) );
+$t(
+	'the chat request carries the ceiling',
+	isset( $scripted->requests[0] ) && 8192 === $scripted->requests[0]->max_tokens,
+	isset( $scripted->requests[0] ) ? (string) $scripted->requests[0]->max_tokens : 'no request'
+);
+
 echo "\n== Cleanup ==\n";
 if ( false === $saved_policy ) {
 	delete_option( ModelPolicy::OPTION );
@@ -1089,7 +1117,19 @@ $wpdb->query( 'DELETE FROM ' . Tables::name( Tables::AUDIT_LOG ) . " WHERE actor
 $wpdb->query( 'DELETE FROM ' . Tables::name( Tables::USAGE_EVENTS ) . " WHERE provider IN ( 'scripted', 'backup', 'streamer' )" );
 $c->get( StoreCrew\Database\Repositories\UsageRepository::class )->rebuild_counters();
 
-$t( 'probe tool calls removed', 0 === count( $calls_repo->approval_queue( 50 ) ) );
+// Scoped to what this suite owns. It used to assert the *global* approval
+// queue was empty, which fails on any store holding a genuine pending approval
+// — a merchant's queued coupon made the suite report its own cleanup as
+// broken. Third instance of the shape already on record for two other suites:
+// counting the platform rather than counting yourself.
+$leftover = (int) $wpdb->get_var(
+	$wpdb->prepare(
+		'SELECT COUNT(*) FROM ' . Tables::name( Tables::TOOL_CALLS ) . ' WHERE tool_id LIKE %s OR conversation_id = 0',
+		$wpdb->esc_like( 'probe.' ) . '%'
+	)
+);
+
+$t( 'probe tool calls removed', 0 === $leftover, (string) $leftover );
 $t( 'probe agent config removed', null === $configs->get( 'probe-agent' ) );
 
 echo "\n" . str_repeat( '-', 60 ) . "\n";

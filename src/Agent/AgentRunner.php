@@ -106,7 +106,7 @@ final class AgentRunner {
 			model: $resolved['model'],
 			messages: $history,
 			system: $this->system_prompt( $agent, $context ),
-			max_tokens: 2048,
+			max_tokens: ModelPolicy::output_ceiling( ModelPolicy::TASK_CHAT, 8192 ),
 			// Sampling is left unset so the request is legal on every provider,
 			// including the ones that reject it outright.
 			temperature: null,

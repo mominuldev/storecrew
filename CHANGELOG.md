@@ -12,6 +12,118 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ## [Unreleased]
 
+### Fixed
+
+**The output ceiling budgeted the answer, not the reasoning** — 2026-08-08
+
+- `max_tokens` caps a reasoning model's thinking **and** its visible reply
+  together, and current Anthropic models reason by default when the request
+  says nothing about it. Both ceilings in this plugin were sized for the reply
+  alone, because both were chosen against Gemini, which does not.
+- **The routing classifier is the one that mattered.** Its ceiling was `16` —
+  correct arithmetic for an answer that is one identifier, and enough for
+  nothing at all on a model that thinks first. The classifier returns empty,
+  the empty string matches no agent id, and routing falls through to the
+  default agent: no exception, no error code, nothing in the run record. **A
+  store that had silently stopped routing looked identical to one whose
+  customers all happen to want the default agent.** Found by reading the
+  request shapes after switching this repo's dev store to `claude-sonnet-5`,
+  not by a failing test — every suite drives a scripted model that answers
+  immediately.
+- The chat ceiling (`2048`) had the milder version of the same fault: enough
+  for a customer answer, not enough for the reasoning plus the answer, so a
+  thinking-heavy turn truncates mid-sentence. `AnthropicProvider` already maps
+  that to `STOP_MAX`, so it would have surfaced — as a plausible-looking half
+  answer.
+- Both now come from `ModelPolicy::output_ceiling()` — routing 1024, chat 8192,
+  a 256 floor so a misconfigured filter cannot starve a call back into the
+  original bug, and a `storecrew_max_output_tokens` filter taking the task.
+  **Sized rather than removed:** an unbounded ceiling on a storefront turn is a
+  merchant's bill with no upper edge.
+- **A truncated classifier now says so.** New `storecrew_routing_truncated`
+  action; routing still defaults, because a customer must get an answer from
+  somebody, but the silent-degradation path is no longer silent. Probed in
+  `verify-chat` by scripting a `STOP_MAX` classifier: the action fires, the
+  customer is answered, the default agent handles it.
+- Suites: `verify-agents` 143 → 148, `verify-chat` 126 → 129. The runner is
+  asserted to actually *send* the ceiling — a budget nothing reads is the
+  built-but-unconsumed shape with a token count attached.
+
+**Two suites asserted things about the store rather than about themselves** — 2026-08-08
+
+- **`verify-agents` asserted the global approval queue was empty** at cleanup.
+  Four genuinely-pending `coupon.create` approvals — a merchant's queued
+  writes, exactly what that queue is for — made the suite report its own
+  cleanup as broken. It now counts only rows matching its own delete criteria.
+  Third instance of the shape already on record for two other suites: counting
+  the platform instead of counting yourself.
+- **`verify-rest` asserted `agent.marketing` was locked**, which is a claim
+  about the store's *licence*, not about the free plugin. It holds on an
+  unlicensed store and fails on an entitled one, so any real Pro customer
+  running the suite would have watched it fail — and it started failing here
+  the moment a dev entitlement was installed. Replaced with two honest
+  assertions: the manifest carries premium slugs as booleans regardless of
+  licence (that payload is what renders the SPA's locked panels, and the slug
+  is taken from the registry rather than hard-coded, so it says nothing when no
+  add-on is installed), and — with every `storecrew_feature_enabled` grant
+  detached and a **fresh** `FeatureGate` asked, because the container's is
+  memoised per request — an unentitled premium feature is denied. Verified
+  green both with and without an entitlement present, which is the whole point.
+- Eleven suites, 858 assertions, green in both run orders.
+
+**`verify-jobs` blamed the walker for a source selection it never set** — 2026-08-08
+
+- Every probe in the index-walk and incremental-reindex sections indexes
+  *pages*, and the walker honours the merchant's source selection. On a store
+  that indexes products only — which this repo's dev store does — the walk
+  correctly skipped them and the suite reported **"the walk reaches objects
+  beyond the first batch"** as a failure. That assertion names the catalogued
+  keyset-pagination bug, so a selection the suite never constructed read as a
+  regression in the walker: the test pointed at the subject when the fault was
+  in its own fixture.
+- Its partner probe **passed vacuously**, which is the worse half. "Unchanged
+  content does not queue an embedding pass" is trivially true for content that
+  is out of scope entirely, so one probe failed loudly and the other reported
+  success for the wrong reason.
+- The suite now adds the post type for its own duration — **merged into what
+  the merchant chose, never replacing it** — and restores three ways
+  (end-of-file, shutdown, exception handler), the pattern `verify-knowledge`
+  already carries. Probe-tested by injecting a throw after the write and
+  confirming the selection came back.
+- **Restoring the option is not restoring the store.** `SourceSelection::save()`
+  only reports what fell out of scope; the purge that makes deselection real
+  lives in `IndexController`. Cleanup therefore calls `Indexer::forget_type()`
+  itself — without it a products-only store kept the post rows the walk
+  created: excluded content, still quotable, the exact state deselection
+  exists to prevent. Caught by a new cleanup assertion rather than by reading
+  the code.
+- 52 passed / 2 failed → 56 / 0, with the merchant's selection and their 47
+  product sources verified untouched afterwards.
+
+**`verify-rest` assumed the administrator was user 1** — 2026-08-08
+
+- `$admin_id = 1`, hard-coded, on the assumption that the id WordPress ships
+  with is the id that is there. It is not — a suite in this same directory
+  deleted user 1 on this repo's own dev site — and every authenticated probe
+  then 401'd: **82 failures that read as defects in the REST layer** rather
+  than as a missing account. Passing `--user=` did not help, because the suite
+  reassigned to `1` internally after its deliberately-anonymous permission
+  section. 46 passed / 82 failed → 130 passed / 0 failed.
+- It now prefers the user `--user=` named when they hold `storecrew_manage`
+  (that is the operator stating who to run as), falls back to any
+  administrator, and **exits loudly** when there is none — running the whole
+  suite as user 0 and reporting the denials as product defects is the failure
+  mode being fixed, not a fallback worth having.
+- **The same suite creates a user and had none of the four guards** the
+  administrator-deletion incident put on `verify-repositories` — including the
+  `wp_delete_user( (int) $sub_id )` that started it, where `(int)` on a
+  `WP_Error` is `1` in PHP 8. Now checked four ways: `is_wp_error()`, a refusal
+  to run against any id ≤ 1, a guard at the delete, and a leftover-probe-user
+  sweep on entry. The sweep found one on the first run — a crashed earlier run
+  had indeed left a subscriber behind.
+- Cleanup now asserts both directions: the probe subscriber is gone, and the
+  administrator the suite ran as survives.
+
 ### Added
 
 **Revenue attribution: the link that never existed** — 2026-08-08

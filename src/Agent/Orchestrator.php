@@ -11,6 +11,7 @@ namespace StoreCrew\Agent;
 
 use StoreCrew\Ai\ChatProviderInterface;
 use StoreCrew\Ai\ChatRequest;
+use StoreCrew\Ai\ChatResponse;
 use StoreCrew\Ai\Exception\ProviderException;
 use StoreCrew\Ai\Message;
 use StoreCrew\Ai\ModelPolicy;
@@ -240,12 +241,40 @@ final class Orchestrator {
 					system: "Choose which specialist should answer this customer message.\n\n"
 						. implode( "\n", $catalogue )
 						. "\n\nReply with the identifier only, nothing else.",
-					// Small: the answer is one token's worth of information.
-					max_tokens: 16,
+					// The *answer* is one token's worth of information; the
+					// budget is not, because a model that reasons before
+					// replying spends this ceiling on reasoning first and the
+					// identifier never gets written. This was 16, which is
+					// enough on a model that answers immediately and enough for
+					// nothing at all on one that thinks — and the failure is
+					// silent, because an empty choice matches no agent id and
+					// falls through to the default below.
+					max_tokens: ModelPolicy::output_ceiling( ModelPolicy::TASK_ROUTING, 1024 ),
 				)
 			);
 		} catch ( ProviderException ) {
 			// A classifier outage must not cost the customer an answer.
+			return $default;
+		}
+
+		if ( ChatResponse::STOP_MAX === $response->stop_reason ) {
+			/**
+			 * Fires when the classifier ran out of budget before choosing.
+			 *
+			 * Routing still falls through to the default agent — a customer
+			 * must get an answer from somebody — but a store that silently
+			 * stopped routing looks identical to one whose customers all
+			 * happen to want the default agent. This is the difference.
+			 *
+			 * @param string $model The classifier model that truncated.
+			 * @param int    $ceiling The ceiling it hit.
+			 */
+			do_action(
+				'storecrew_routing_truncated',
+				$resolved['model'],
+				ModelPolicy::output_ceiling( ModelPolicy::TASK_ROUTING, 1024 )
+			);
+
 			return $default;
 		}
 

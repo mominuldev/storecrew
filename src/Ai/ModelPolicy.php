@@ -48,6 +48,41 @@ final class ModelPolicy {
 	}
 
 	/**
+	 * The output ceiling for one call on a task.
+	 *
+	 * **This budget is not just the answer.** On models that reason before
+	 * replying, `max_tokens` caps the reasoning *and* the visible text
+	 * together, and current Anthropic models think by default when the request
+	 * says nothing about it. A ceiling sized for the answer alone therefore
+	 * spends itself on reasoning and truncates — or, on a small enough ceiling,
+	 * returns nothing at all. Both defaults here carry headroom for that, and
+	 * the caller must treat a `max_tokens` stop as a failure rather than as a
+	 * short answer.
+	 *
+	 * Sized rather than removed: an unbounded ceiling on a storefront turn is
+	 * a merchant's bill with no upper edge.
+	 *
+	 * @param string $task    One of the TASK_* constants.
+	 * @param int    $default Shipped ceiling for that task.
+	 */
+	public static function output_ceiling( string $task, int $default ): int {
+		/**
+		 * Filter the per-call output token ceiling.
+		 *
+		 * Raise it for a model that reasons at length before answering; lower
+		 * it to cap spend, accepting truncated answers as the trade.
+		 *
+		 * @param int    $default Shipped ceiling.
+		 * @param string $task    One of the ModelPolicy TASK_* constants.
+		 */
+		$ceiling = (int) apply_filters( 'storecrew_max_output_tokens', $default, $task );
+
+		// A ceiling below the floor is a misconfiguration that reads as a
+		// broken model, so it clamps up rather than silently starving the call.
+		return max( 256, $ceiling );
+	}
+
+	/**
 	 * Resolve the provider and model for a task.
 	 *
 	 * Returns null when nothing is configured — the caller surfaces that as
