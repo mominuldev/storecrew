@@ -12,7 +12,82 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ## [Unreleased]
 
+### Added
+
+**`Api\Secrets` — somewhere safe to keep a credential** — 2026-08-08
+
+*Recorded late: this and the three entries below shipped without a changelog
+line, and were found by the documentation audit rather than at the time. A
+published API surface that reaches `.org` uncatalogued is a compatibility
+promise nobody can date.*
+
+- The fourth widened API surface, and the rule working as intended:
+  `composer analyse` refused to let Pro name `Security\SecretStore` (rule 6 —
+  premium reaches only through `Api\`), an ESP adapter needed somewhere to
+  keep a Mailchimp key, so the API was widened rather than reached across.
+- **Deliberately four methods** — put, get, has, forget. `SecretStore` also
+  exposes `rewrap()`, `rotate_data_key()`, and `master_key_source()`, which
+  are operator concerns belonging to the platform's own settings screen.
+  Publishing the whole class would commit the free plugin to those signatures
+  forever so an add-on could store one API key; `@api` is a promise about
+  compatibility, not a convenience.
+- Resolved from the published container, so an add-on stores a credential
+  without knowing how it is protected (envelope encryption, rotatable).
+
+**The published API says so in the source** — 2026-08-08
+
+- `@api` annotations on the classes an add-on may name: `ExtensionApi`,
+  `Feature`, `AdminRoute`, `RestController`, `FeatureGate`, `ConsoleService`,
+  `Agent`, `ToolInterface`, `ToolContext`, `ToolResult`, `ToolDefinition` —
+  and, as each was widened, `Secrets` and `Attribution`, for thirteen today.
+  The boundary was documented in 15 § 7 and enforced by the invariant checker;
+  it was not visible to anyone reading the class itself.
+
+**The integration harness stops dialling out, and grows real orders** — 2026-08-08
+
+- The DB-free boot harness gained `home_url`, `WP_Error`/`is_wp_error`,
+  `wp_json_encode`, an observable single-event cron surface, and WooCommerce
+  order fixtures — so premium's segment queries and the licence spine are
+  driven against a shim rather than a network or a database.
+- 15 § 4 and 14 § 8 record the widening; 07's tree did not, which is how the
+  audit found all four of these.
+
 ### Fixed
+
+**The documentation drifted from the tree it describes** — 2026-08-08
+
+- `docs/07-folder-structure.md` is the one deliverable whose entire job is an
+  accurate tree, and it had fallen ~15 items behind: no `Api\Secrets` or
+  `Api\Attribution` (both *published* surfaces), no `product.lookup`, no
+  `ConsoleService`/`OrderAttribution`/`EscalationNotifier`/`SseEmitter`, no
+  `Core\Onboarding`/`SetupProgress`/`Privacy`, no `SourceSelection`, no
+  `StreamingChatProviderInterface` or `CurlSseClient`, two of five migrations,
+  "10 repositories" (11), "9 suites" (11, plus 3 browser specs), two of eight
+  `tools/` scripts, and a `languages/` directory described as absent that
+  holds the generated `.pot`. Pro's tree was a full generation behind — still
+  the "Phase 1 skeleton", still calling `Licence.php` a stub that "must not
+  ship as-is", still listing as *planned* the agents, tools, integrations and
+  REST controllers that exist.
+- **Pro has no `.distignore`** — noticed while correcting that tree, and now
+  stated in it. The free plugin excludes `tools/`, `tests/`, and `docs/` from
+  the distribution; nothing excludes them from a Pro build, so anything left
+  in Pro's `tools/` is a candidate for shipping.
+- `docs/README.md` still listed deliverables 08 and 09 as "Draft complete"
+  while the same page, and the Gate 3 note directly beneath the table, said
+  all fifteen were approved at v1.0.
+- CLAUDE.md carried a Gate 2 known-gaps bullet claiming retention pruning,
+  the GDPR exporter/eraser, the static-analysis configs, and Pro's
+  `uninstall.php` were still missing. All four had been done for a day, two of
+  them were contradicted elsewhere in the same file, and the bullet cited
+  04 § 11 as agreeing when 04 § 11 says *Implemented*. **A known-gaps list
+  nobody prunes reads as current, and the next session rebuilds what it says
+  is missing.**
+- Also in CLAUDE.md: the layout block omitted `Api\Secrets`, `product.lookup`,
+  `Core\Admin`/`Privacy`/`SetupProgress`, `EscalationNotifier`, `SseEmitter`
+  and `Licensing\Quota`; a parenthetical fixed the REST surface at 21 routes
+  (24); and the recorded model policy predated this store's move to
+  `claude-sonnet-5`, which is what the output-ceiling entry below was found
+  through.
 
 **The output ceiling budgeted the answer, not the reasoning** — 2026-08-08
 

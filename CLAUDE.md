@@ -220,13 +220,18 @@ src/
   Core/
     Requirements.php       Version guard             (PHP 5.6-parseable)
     Onboarding.php         The five setup steps, all derived
+    SetupProgress.php      When each step was first *observed* done
+    Admin/AdminPage.php    Menu + SPA mount, nothing else
     Container/             Hand-written PSR-11, no autowiring
     Capabilities/          storecrew_manage, _view_analytics, _manage_agents, _converse
     Activation/            Activator / Deactivator
+    Privacy/PersonalData   GDPR exporter + eraser, on core's hooks
     Queue/                 Scheduler, Deadline, MaintenanceJob
   Api/
     ExtensionApi.php       The entire add-on contract
     Attribution.php        Published: which orders followed a conversation
+    Secrets.php            Published: put/get/has/forget — four methods, so
+                           an add-on never invents credential storage
     Feature.php            Gateable feature + tier
     AdminRoute.php         SPA route declaration
     Registry/              Freezable registries
@@ -247,17 +252,22 @@ src/
   Agent/
     Agent, AgentRunner, AgentTurn, Orchestrator, TurnBudget, SharedContext
     Tool/                  ToolInterface, ToolExecutor (the security boundary)
-    Tools/                 product.search, policy.lookup, identity.verify,
-                           order.lookup, order.note, agent.handoff
+    Tools/                 product.search, product.lookup, policy.lookup,
+                           identity.verify, order.lookup, order.note,
+                           agent.handoff
   Chat/
     ChatService            One customer turn, end to end
     ConsoleService         One merchant turn, for admin-audience agents
     OrderAttribution       Records which conversation preceded an order
+    EscalationNotifier     One email per escalation, on the transition
+    SseEmitter             The delta / done event stream
     Session                Session token: issue, digest, cookie
     RateLimiter            Per session and per IP (FR-CHAT-06)
     ChatSettings           Widget appearance and placement
     Widget                 Async enqueue, shortcode, block
-  Licensing/FeatureGate.php
+  Licensing/
+    FeatureGate.php        Server-authoritative entitlement; no network
+    Quota.php              Free-tier conversation cap, loosen-only filter
   Security/SecretStore.php Envelope encryption, rotatable
 docs/                      Architecture deliverables
 tests/                     See below
@@ -547,13 +557,19 @@ ciphertext, ragged embedding vectors, and the migration lock.
   (06 § 2.3). The updater's client half
   exists too (`Pro\Licensing\Updater` + the `Update URI` header, FR-DIST-08);
   only the server side of the spine remains.
-- **The storefront chat surface is live-verified** (21 REST routes). Five turns
-  through the widget against real Gemini: routing picked Sales then Support,
+- **The storefront chat surface is live-verified.** Five turns through the
+  widget against real Gemini: routing picked Sales then Support,
   `product.search` and `policy.lookup` grounded the answers, a wrong email did
   not verify, and the right one verified and read the real order **in one turn**
-  (two tool calls in one run — the mid-turn identity listener). The site's
-  working policy: `gemini-3.6-flash` chat, `gemini-3.1-flash-lite` routing,
-  `gemini-embedding-001` embeddings.
+  (two tool calls in one run — the mid-turn identity listener). The policy that
+  run used: `gemini-3.6-flash` chat, `gemini-3.1-flash-lite` routing,
+  `gemini-embedding-001` embeddings. **The dev store has since moved chat,
+  routing and summary to `anthropic` / `claude-sonnet-5`** (embedding stays on
+  Gemini — rule 2, Anthropic has no embeddings endpoint), which is what
+  surfaced the output-ceiling bug; two consequences worth knowing before
+  reading a failure: streaming is inactive on that policy, because only Gemini
+  implements `StreamingChatProviderInterface`, and the two providers bill
+  against separate keys. `05 § 1` is the current route count, not this bullet.
 - **Gemini's 2.5 generation is dead for new keys** — 404 "no longer available to
   new users" — and free-tier keys have zero quota for the Pro tiers (429). Both
   were found live on 2026-08-07; neither is findable from a test suite. When a
@@ -592,10 +608,14 @@ ciphertext, ragged embedding vectors, and the migration lock.
   `ToolExecutor` redacts identity-bearing arguments (the tool still sees raw
   values — verification depends on it); every `/chat/*` response is marked
   `no-store` via `rest_post_dispatch`; and the routing classifier is
-  spend-guarded. Still open from that review: retention pruning beyond the
-  audit log and the GDPR exporter/eraser are **planned, not built** (04 § 11
-  now says so); no phpcs/phpstan config exists despite `composer.json`
-  scripts; Pro has no `uninstall.php` though free's uninstall says it does.
+  spend-guarded. ~~Still open from that review~~ — **all four closed
+  2026-08-07** and this bullet was stale for a day: retention pruning is
+  enforced from the hourly sweep and 04 § 11 marks every window
+  *Implemented*; the GDPR exporter/eraser is `Core\Privacy\PersonalData`;
+  `phpcs.xml` and `phpstan.neon` exist and `composer check` runs them; Pro
+  ships `uninstall.php`. The lesson is the one the gates keep re-finding
+  pointed at this file: a known-gaps list nobody prunes reads as current, and
+  the next session rebuilds what it says is missing.
   ~~`storecrew_needs_upgrade` is written but never read~~ — **removed
   2026-08-08** (Migration003): write, delete, and the rows already stored.
   It was the wrong trigger anyway (absent on the FTP-upgrade path that has

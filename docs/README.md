@@ -123,8 +123,8 @@ partially resolved by measurement).
 ### Gate 3 — AI & Agent Core
 | # | Document | Status |
 |---|---|---|
-| 8 | [Agent Framework Architecture](08-agent-framework.md) | ✅ Draft complete |
-| 9 | [AI Provider Architecture](09-ai-provider-architecture.md) | ✅ Draft complete |
+| 8 | [Agent Framework Architecture](08-agent-framework.md) | ✅ Approved (v1.0) |
+| 9 | [AI Provider Architecture](09-ai-provider-architecture.md) | ✅ Approved (v1.0) |
 
 **Gate 3:** ✅ **Approved 2026-08-07** (reviewed, remediated, and approved the
 same day). Two

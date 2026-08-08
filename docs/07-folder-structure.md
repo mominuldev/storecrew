@@ -56,15 +56,25 @@ src/
                                hooks. Deliberately thin (03 § 3)
   Core/
     Requirements.php           Version guard                 (PHP 5.6-parseable)
+    Onboarding.php             The five setup steps, every one derived from
+                               the thing itself — never a stored "done" flag
+    SetupProgress.php          When each step was first *observed* complete;
+                               feeds the beta metrics, never the derivation
     Activation/                Activator, Deactivator
     Admin/                     AdminPage — menu + SPA mount, nothing else
     Capabilities/              storecrew_manage, _view_analytics,
                                _manage_agents, _converse
     Container/                 Hand-written PSR-11 + its two exceptions
+    Privacy/                   PersonalData — core's exporter/eraser hooks
     Queue/                     Scheduler, Deadline, MaintenanceJob
   Api/                         The extension surface (Deliverable 15)
     ExtensionApi.php           The entire add-on contract
     Feature.php, AdminRoute.php
+    Secrets.php                Published: put/get/has/forget, so an add-on
+                               never invents its own credential storage
+    Attribution.php            Published: which orders followed a
+                               conversation — and methodology(), written by
+                               the code that records the links
     Registry/                  Registry base + 7 freezable registries
     Rest/
       RestController.php       Envelope, deny-by-default permission()
@@ -74,22 +84,30 @@ src/
     Migrator.php               Forward-only, locked, admin_init
     MigrationInterface.php     One forward-only change: version(), up(),
                                deliberately no down()
-    Migrations/                Migration001InitialSchema,
-                               Migration002RunCostKnown
+    Migrations/                001 InitialSchema, 002 RunCostKnown,
+                               003 DropUpgradeFlag, 004 DropVersionOption,
+                               005 Attributions
     Repository.php             Abstract base — where $wpdb actually lives
                                (injected, global fallback) and the 65,535-byte
                                JSON cap (encode_json)
-    Repositories/              10 repositories extending it — the only $wpdb
+    Repositories/              11 repositories extending it — the only $wpdb
                                consumers (carve-outs: principle 1 above)
   Ai/
     ProviderInterface          id / label / capabilities — the identity base
                                both halves extend; the split below is intact
     ChatProviderInterface, EmbeddingProviderInterface   (separate: 03 § 5)
+    StreamingChatProviderInterface   Additive, never a change: stream()
+                               returns the same assembled response chat()
+                               would, so every runner decision reads the
+                               assembly (FR-CHAT-02)
     ChatRequest/Response, EmbeddingRequest/Response, Message,
     ToolCall, ToolDefinition, TokenUsage, Capabilities  (value objects)
     ModelPolicy, Pricing, SpendGuard
     Exception/                 ProviderException
-    Http/                      HttpClientInterface + WP HTTP implementation
+    Http/                      HttpClientInterface + WP HTTP implementation;
+                               SseClientInterface + CurlSseClient, the one
+                               sanctioned raw-cURL site (wp_remote_post
+                               buffers by design), proxy constants honoured
     Providers/                 Six files: Anthropic, OpenAi, Gemini, OpenRouter,
                                DeepSeek, and OpenAiCompatibleProvider — the
                                abstract base for the OpenAI chat-completions
@@ -98,6 +116,9 @@ src/
   Knowledge/
     ExtractorInterface, ExtractedDocument, Chunker, Indexer,
     Retriever, Vector
+    SourceSelection.php        Which source types the merchant indexes.
+                               Deselecting purges — excluded content that is
+                               still quotable is the failure this prevents
     Extractor/                 ProductExtractor, PostExtractor,
                                PagesPostTypeIds (keyset pagination)
     Jobs/                      IndexJob, EmbedJob, ReindexJob
@@ -106,12 +127,26 @@ src/
     SharedContext, TurnBudget
     Tool/                      The boundary: ToolInterface, ToolExecutor,
                                ToolContext, ToolResult
-    Tools/                     product.search, policy.lookup, identity.verify,
-                               order.lookup, order.note, agent.handoff
-  Chat/                        The storefront surface (03 § 8)
+    Tools/                     product.search, product.lookup, policy.lookup,
+                               identity.verify, order.lookup, order.note,
+                               agent.handoff
+  Chat/                        The storefront surface (03 § 8) and the
+                               merchant-side console (08 § 6b)
     ChatService, Session, RateLimiter, ChatSettings, Widget
+    ConsoleService             One merchant turn, on the `console` channel —
+                               no routing, no identity, no escalation, and no
+                               conversation quota (the free-tier unit is a
+                               *customer* conversation)
+    OrderAttribution           Records which conversation preceded an order,
+                               at checkout, because that is the only moment
+                               the session cookie is still visible
+    EscalationNotifier         One email per escalation — the transition
+                               rings, further failed turns do not
+    SseEmitter                 The `delta` / `done` event stream
   Licensing/
     FeatureGate.php            Server-authoritative entitlement; no network
+    Quota.php                  Free-tier conversation cap; the
+                               `storecrew_quota` filter is loosen-only
   Security/
     SecretStore.php            Envelope encryption, rotatable
 
@@ -120,13 +155,17 @@ admin-app/src/                 React SPA source (no @wordpress/* anywhere)
   components/                  Layout, CrewBar, primitives
   lib/                         api, store, types
   pages/                       Overview, Crew, Knowledge, Inbox,
-                               ConversationDetail, Settings
+                               ConversationDetail, Settings, Setup
   styles/app.css               Unlayered-important utilities; #storecrew-root
                                scoped reset (03 § 10)
 
 widget-app/src/                Storefront widget source (no framework)
   main.ts                      Boot, shadow mount, accent contrast
   widget.ts                    Panel, focus trap, a11y
+  sse.ts                       Transport-agnostic SSE assembler, extracted so
+                               the browser suite drives the *shipping* parser
+                               under buffered / streamed / byte-split / CRLF
+                               delivery (R-TECH-02)
   api.ts, render.ts, types.ts, widget.css
 
 assets/                        Build outputs + hand-written editor script
@@ -137,24 +176,37 @@ assets/                        Build outputs + hand-written editor script
                                only inside the editor
 
 tests/
-  schema/                      9 wp-eval-file suites (real MySQL/Woo/REST).
+  schema/                      11 wp-eval-file suites (real MySQL/Woo/REST).
                                No declare(strict_types) — eval() forbids it.
                                Must snapshot-and-restore any live option they
-                               write (03 § 12)
+                               write, and must **construct** the state they
+                               assert rather than inheriting the merchant's —
+                               an admin id, a source selection, an approval
+                               queue and a licence tier have each been
+                               assumed, and each failure read as a defect in
+                               the subject rather than in the fixture (03 § 12)
+  browser/                     3 Playwright/node specs — cascade fights,
+                               cookie and cache behaviour, and the SSE
+                               assembler; invisible to PHP
   integration/                 run.sh, wp-shim.php, test-boot.php,
                                test-guards.php — no WP, no DB; catches eager
                                construction and undeclared WP calls
 
 tools/                         Operator/measurement scripts, not shipped:
-                               measure-recall.php (FR-KB-09 harness),
-                               seed-demo-catalogue.php
+                               build-dist.sh (the .org submission gate),
+                               check-invariants.php, measure-recall.php
+                               (FR-KB-09 harness), probe-budget-host.php
+                               (R-TECH-03), probe-streaming-delivery.php
+                               (timed incremental delivery),
+                               beta-metrics.php, seed-demo-catalogue.php,
+                               phpstan-bootstrap.php
 
-languages/                     Text domain: storecrew. Not in the repo — .org
-                               installs get translations from
-                               translate.wordpress.org; this directory exists
-                               for self-hosted/local .mo files (the Domain Path
-                               header and load_plugin_textdomain point here)
-                               and appears when the first one lands
+languages/                     Text domain: storecrew. Holds storecrew.pot
+                               (the generated catalogue translators work
+                               from); .org installs get translations from
+                               translate.wordpress.org, and self-hosted .mo
+                               files land here too — the Domain Path header
+                               and load_plugin_textdomain point at it
 vendor/                        Composer autoloader plus the psr/container
                                interfaces the hand-written container implements
                                — no runtime code libraries, no HTTP client
@@ -177,37 +229,57 @@ node_modules/                  Never shipped; .org build excludes it with
 
 ## 2. Premium plugin — `wp-content/plugins/storecrew-pro/`
 
-Current tree (the Phase 1 skeleton that proves the seam):
+Current tree. Every directory maps to a registry the free plugin exposes,
+which is the point (15 § 2.2):
 
 ```
 storecrew-pro.php              Bootstrap + handshake         (PHP 5.6-parseable)
+                               and the Update URI header (FR-DIST-08)
 composer.json / composer.lock  PSR-4: StoreCrew\Pro\ — vendor/ here genuinely
                                is autoloader-only, not even psr/container
+uninstall.php                  Exactly Pro's licence options, nothing the free
+                               plugin owns
+phpcs.xml, phpstan.neon        Its own, matching free's
 CHANGELOG.md, CLAUDE.md
 src/
   Plugin.php                   Handshake (FR-DIST-04/05), registers on
                                storecrew_api_ready only
-  Licence.php                  ⚠ Stub — local option, no remote validation.
-                               Must not ship as-is (CLAUDE.md known gaps)
+  Licence.php                  Facade over Licensing\LicenceClient — a tier
+                               and a status word, which is all anything
+                               downstream ever asked the stub for. Never reads
+                               a bare option, never talks to the network
+  Licensing/                   Snapshot + LicenceClient (Ed25519-verified
+                               entitlement envelopes, verified locally, with
+                               grace and site binding) + Updater.
+                               ⚠ LicenceClient::PUBLIC_KEY is empty until the
+                               licence server exists (10 § 6.1) — fail-closed
+                               as status `unconfigured`, and ship-blocking
+  Agent/                       MarketingAgent, AnalyticsAgent — declarations,
+                               not subclasses; both AUDIENCE_ADMIN
+    Tools/                     coupon.create, segment.build, segment.sync,
+                               metrics.report, product.performance,
+                               revenue.attribution
+  Analytics/                   MetricsQuery
+  Marketing/                   SegmentQuery
+  Integrations/                EspAdapter + EspRegistry + BaseEspAdapter,
+                               ConsentSource; Mailchimp and FluentCRM
+                               adapters (Brevo, Klaviyo, ActiveCampaign
+                               still to come)
+  Rest/                        4 controllers contributed through the free
+                               plugin's registry — Licence, Marketing,
+                               Analytics, Integrations
+assets/                        Built panels mounted into the free shell — no
+                               second application (FR-DIST-12)
+languages/, tools/
 ```
 
-Planned shape as Phase 2 lands (mirrors 15 § 2.2 — every directory maps to a
-registry the free plugin exposes, which is the point):
+Still absent, and deliberately: `Workflows/` (FR-MKT workflow builder) and
+`Agency/` (multi-site, roles, white-label) — both Agency-tier, both unstarted.
 
-```
-src/
-  Agents/                      Marketing, Analytics, custom-agent builder
-  Tools/                       coupon.create, segment.build, segment.sync, …
-  Workflows/                   Engine, node types, runner
-  Integrations/                Mailchimp, Brevo, FluentCRM, Klaviyo,
-                               ActiveCampaign adapters
-  Admin/                       SPA route contributions (mounted into the free
-                               shell — no second application, FR-DIST-12)
-  Agency/                      Multi-site, roles, white-label
-  Licensing/                   Real licence client + self-hosted updater
-                               (FR-DIST-08)
-admin-app/                     Builds contributed panels only
-```
+> ⚠ Pro has **no `.distignore`**, so nothing yet excludes `tools/` or `tests/`
+> from a Pro build the way `.distignore` does for the free plugin. Anything
+> placed in Pro's `tools/` — a local dev-licence stub, say — is a candidate
+> for shipping until that file exists.
 
 Structural rules restated from 15: no file in `storecrew-pro` may reference a
 free-plugin class outside `StoreCrew\Api\` and the value objects it exposes;
@@ -220,9 +292,16 @@ never registers anything before `storecrew_api_ready`.
 
 | Artefact | Source | Command | Budget |
 |---|---|---|---|
-| `assets/admin/app.js` | `admin-app/` | `npm run build:admin` | ≤ 250 KB gz (at 94 KB) |
-| `assets/widget/widget.js` | `widget-app/` | `npm run build:widget` | ≤ 45 KB gz (at 5.3 KB) |
-| .org zip | everything minus dev dirs | release script (Deliverable 14) | — |
+| `assets/admin/app.js` | `admin-app/` | `npm run build:admin` | ≤ 250 KB gz (at 105 KB) |
+| `assets/widget/widget.js` | `widget-app/` | `npm run build:widget` | ≤ 45 KB gz (at 6.0 KB) |
+| .org zip | everything minus dev dirs | `tools/build-dist.sh` | — |
+
+`build-dist.sh` is the submission gate as a command: `.distignore` applied, the
+front end rebuilt from current source, a `--no-dev` vendor, `composer.lock`
+removed after installing from it. It builds into a sibling directory and never
+runs `--no-dev` against the working tree's `vendor/`, which would delete
+phpstan and phpcs and break `composer check` with no obvious cause. Verify
+Plugin Check against the *built dist*, never the working tree.
 
 Built assets are committed so `wp eval-file` suites and a checkout-without-
 node both work; the release build regenerates and verifies them.
