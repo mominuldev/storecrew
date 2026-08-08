@@ -802,6 +802,117 @@ t( 'the consent source answers the bulk filter', is_array( $bulk ) );
 t( 'consented customer comes back true', true === ( $bulk[ $scr_yes ] ?? null ) );
 t( 'PROBE: and the other comes back false, not absent', false === ( $bulk[ $scr_no ] ?? null ) );
 
+echo "\n== segment.sync: the first tool that sends store data anywhere ==\n";
+
+use StoreCrew\Agent\Tool\ToolContext;
+use StoreCrew\Pro\Agent\Tools\SegmentSyncTool;
+use StoreCrew\Pro\Marketing\SegmentQuery;
+
+t( 'Pro registered segment.sync', $tools->has( 'segment.sync' ) && 'storecrew-pro' === $tools->owner( 'segment.sync' ) );
+
+$scr_sync_registered = $tools->get( 'segment.sync' );
+
+t( 'the factory builds a real tool', $scr_sync_registered instanceof ToolInterface );
+t( 'PROBE: it is a write, so it queues for approval by default', ToolInterface::INTENT_WRITE === $scr_sync_registered->intent() );
+t( 'PROBE: and demands storecrew_manage', 'storecrew_manage' === $scr_sync_registered->required_capability() );
+t( 'the marketing agent can actually reach it', in_array( 'segment.sync', $marketing->tool_ids, true ) );
+
+// The two parameters this tool deliberately does not have, probed rather than
+// trusted — both are the difference between a merchant's decision and a model's.
+//
+// `audience_id` would make the destination list something composed from model
+// output, and model output has spent the conversation reading product
+// descriptions and customer reviews. `customer_ids` would make the membership a
+// list the model retyped from an earlier result: one mistyped integer is a real
+// person tagged into a campaign they are not in, and nothing downstream can tell
+// a wrong id from a right one. Criteria re-derive the audience at execution.
+$scr_sync_props = array_keys( (array) ( $scr_sync_registered->definition()->input_schema['properties'] ?? array() ) );
+
+t( 'PROBE: the model cannot name a destination audience', ! in_array( 'audience_id', $scr_sync_props, true ) );
+t( 'PROBE: nor hand over a list of customer ids', ! in_array( 'customer_ids', $scr_sync_props, true ) );
+t(
+	'PROBE: and it takes segment.build\'s criteria, so the two agree on who is in',
+	array() === array_diff( array_keys( (array) $segment->definition()->input_schema['properties'] ), $scr_sync_props )
+);
+t( 'no argument carries personal detail, so redaction cannot alter it', ! in_array( 'email', $scr_sync_props, true ) );
+
+$scr_ctx = new ToolContext( conversation_id: 1, agent_id: MarketingAgent::ID, is_storefront: false );
+
+// Four paid orders and two that must not count: a guest (no account to
+// segment on) and a cancelled order (not customer behaviour).
+$scr_now = time();
+$GLOBALS['scr_orders'] = array(
+	array( 'customer_id' => $scr_yes, 'total' => 120.0, 'created' => $scr_now - ( 30 * 86400 ) ),
+	array( 'customer_id' => $scr_yes, 'total' => 80.0, 'created' => $scr_now - ( 60 * 86400 ) ),
+	array( 'customer_id' => $scr_no, 'total' => 45.0, 'created' => $scr_now - ( 40 * 86400 ) ),
+	array( 'customer_id' => 0, 'total' => 900.0, 'created' => $scr_now - ( 10 * 86400 ) ),
+	array( 'customer_id' => 9003, 'total' => 500.0, 'created' => $scr_now - ( 5 * 86400 ), 'status' => 'cancelled' ),
+);
+
+// No provider connected is a refusal, not an empty sync. Without an ESP nothing
+// in the system holds a consent basis at all, so "sent to nobody" and "sent to
+// everyone" are the same call — and one of them is a complaint.
+$scr_orphan = new SegmentSyncTool( new SegmentQuery(), new EspRegistry() );
+$scr_r      = $scr_orphan->execute( $scr_ctx, array( 'name' => 'Win-back' ) );
+
+t( 'PROBE: with no email provider it refuses', ! $scr_r->is_ok() );
+t( 'PROBE: and says nothing was sent', str_contains( $scr_r->message, 'Nothing was sent' ) );
+
+$scr_sync = new SegmentSyncTool( new SegmentQuery(), $registry );
+
+// An unnamed segment is a tag the merchant cannot tell from the next one.
+$scr_r = $scr_sync->execute( $scr_ctx, array( 'name' => '   ' ) );
+t( 'PROBE: an unnamed segment is refused', ! $scr_r->is_ok() );
+
+$scr_mc_calls = array();
+$scr_r        = $scr_sync->execute( $scr_ctx, array( 'name' => 'Win-back', 'window_days' => 365 ) );
+
+t( 'a named segment syncs', $scr_r->is_ok(), $scr_r->message );
+t( 'two registered customers matched', 2 === ( $scr_r->data['matched'] ?? -1 ) );
+t( 'PROBE: but only the consented one was sent', 1 === ( $scr_r->data['synced'] ?? -1 ) );
+t( 'PROBE: and the other is reported skipped, not quietly dropped', 1 === ( $scr_r->data['skipped'] ?? -1 ) );
+
+// The number a merchant plans a campaign against must be the number that
+// arrived. A model told "400 matched" reaches for 400.
+t( 'the model is told to report the synced figure, not the match', str_contains( $scr_r->message, 'not the segment size' ) );
+t( 'PROBE: and why the rest were left out', str_contains( $scr_r->message, 'no marketing consent' ) );
+
+// The destination is the merchant's setting. `aud1` was chosen above; the tool
+// passes an empty audience precisely so each adapter reads it.
+t(
+	'PROBE: it pushed to the audience the merchant chose',
+	array() !== array_filter( $scr_mc_calls, static fn ( $c ) => str_contains( $c, 'POST' ) && str_contains( $c, '/lists/aud1' ) )
+);
+
+// The invariant that keeps approval honest: what segment.build counts and what
+// segment.sync sends are the same population, because both convert the same
+// named criteria the same way.
+$scr_built = $segment->execute( $scr_ctx, array( 'window_days' => 365 ) );
+t( 'PROBE: segment.build and segment.sync agree on the audience', ( $scr_built->data['customers'] ?? -1 ) === ( $scr_r->data['matched'] ?? -2 ) );
+
+// Criteria nobody matches is an answer, not a failure — and the provider is
+// never called for it.
+$scr_mc_calls = array();
+$scr_r        = $scr_sync->execute( $scr_ctx, array( 'name' => 'Big spenders', 'min_lifetime_value' => 100000 ) );
+
+t( 'an empty segment is reported, not errored', $scr_r->is_ok() );
+t( 'PROBE: nothing was synced', 0 === ( $scr_r->data['synced'] ?? -1 ) );
+t( 'PROBE: and the provider was never called', array() === $scr_mc_calls );
+
+// A provider that has stopped answering must fail loudly. The dangerous version
+// reports a successful sync of nobody.
+$scr_dead_reg = new EspRegistry();
+$scr_dead_reg->register( MailchimpAdapter::ID, static fn (): EspAdapter => $dead );
+$scr_dead_reg->activate( MailchimpAdapter::ID );
+
+$scr_r = ( new SegmentSyncTool( new SegmentQuery(), $scr_dead_reg ) )->execute( $scr_ctx, array( 'name' => 'Win-back' ) );
+
+t( 'PROBE: an unreachable provider is an error', ! $scr_r->is_ok() );
+t( 'PROBE: and claims no one was synced', ! isset( $scr_r->data['synced'] ) );
+
+$GLOBALS['scr_orders'] = array();
+$registry->activate( MailchimpAdapter::ID );
+
 // A more specific source must win — a dedicated consent plugin beats a general
 // ESP read, and filter order is how a merchant says so.
 add_filter( 'storecrew_pro_marketing_consent_bulk', static fn () => array( 'sentinel' => true ), 1 );

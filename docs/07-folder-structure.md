@@ -197,7 +197,7 @@ registry the free plugin exposes, which is the point):
 ```
 src/
   Agents/                      Marketing, Analytics, custom-agent builder
-  Tools/                       coupon.create, segment.build, campaign.send, …
+  Tools/                       coupon.create, segment.build, segment.sync, …
   Workflows/                   Engine, node types, runner
   Integrations/                Mailchimp, Brevo, FluentCRM, Klaviyo,
                                ActiveCampaign adapters

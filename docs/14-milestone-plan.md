@@ -324,9 +324,19 @@ tools' approval defaults:
    email address, and `sync_segment()` filters to consented members inside
    the adapter rather than trusting its caller. Needed the third API
    widening — `Api\Secrets`, four methods, because the boundary rule
-   refused to let Pro name `Security\SecretStore`. **Remaining:** a
-   `segment.sync` agent tool (a write, so it needs the approval path), and
-   neither adapter has been exercised against a live account.
+   refused to let Pro name `Security\SecretStore`. **`segment.sync` closes
+   the loop** (2026-08-08): the Marketing agent can push a sized audience to
+   the connected provider, as a write on the approval path. It takes
+   *criteria, never customer ids* — a model retyping five hundred integers
+   mistypes one eventually, and a mistyped id is a real person tagged into a
+   campaign they are not in, so membership is re-derived at execution the
+   way `execute_approved()` re-derives authorisation. It has no
+   `audience_id` parameter, because the destination list is the merchant's
+   setting rather than a target address composed from model output; and no
+   connected provider is a refusal rather than an empty sync, since without
+   an ESP nothing holds a consent basis at all. 25 harness probes, the two
+   refusals falsified by putting them back. **Remaining:** neither adapter
+   has been exercised against a live account.
 5. **Workflow engine v1** (FR-WF, MAY-priority: only if beta demand
    confirms) — node API stays premium-internal (D6).
 6. Exchange workflow completion (FR-SUPPORT-06) and refund-preparation

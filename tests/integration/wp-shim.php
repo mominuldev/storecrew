@@ -144,6 +144,57 @@ function get_userdata( $id ) {
 	return null === $row ? false : (object) $row;
 }
 
+// Orders, as far as SegmentQuery needs them — the only caller of the CRUD API
+// in either plugin. A suite fills $GLOBALS['scr_orders'] with plain rows; an
+// empty fixture is an empty store, not a broken one, so the function is always
+// defined and only the data varies.
+//
+// Four accessors, because four are what the segment walk uses. A fuller fake
+// would be a second WooCommerce, and a probe that passed against it would be
+// evidence about the fake. Status and date filtering *are* honoured: they are
+// how a segment decides who is in it, so a shim that ignored them would let a
+// broken window silently pass.
+$GLOBALS['scr_orders'] = array();
+
+class SCR_Order {
+	public function __construct( private array $row ) {}
+	public function get_customer_id() { return (int) ( $this->row['customer_id'] ?? 0 ); }
+	public function get_total() { return (float) ( $this->row['total'] ?? 0 ); }
+	public function get_status() { return (string) ( $this->row['status'] ?? 'completed' ); }
+	public function get_date_created() { return new DateTimeImmutable( '@' . (int) ( $this->row['created'] ?? time() ) ); }
+	public function get_items( $types = 'line_item' ) { return array(); }
+}
+
+function wc_get_orders( $args = array() ) {
+	$statuses = (array) ( $args['status'] ?? array() );
+	$after    = 0;
+
+	if ( isset( $args['date_created'] ) && str_starts_with( (string) $args['date_created'], '>=' ) ) {
+		$after = (int) strtotime( substr( (string) $args['date_created'], 2 ) . ' UTC' );
+	}
+
+	$matched = array();
+
+	foreach ( $GLOBALS['scr_orders'] as $row ) {
+		$order = new SCR_Order( $row );
+
+		if ( array() !== $statuses && ! in_array( $order->get_status(), $statuses, true ) ) {
+			continue;
+		}
+
+		if ( $after > 0 && $order->get_date_created()->getTimestamp() < $after ) {
+			continue;
+		}
+
+		$matched[] = $order;
+	}
+
+	$limit = (int) ( $args['limit'] ?? 10 );
+	$page  = max( 1, (int) ( $args['page'] ?? 1 ) );
+
+	return $limit < 1 ? $matched : array_slice( $matched, ( $page - 1 ) * $limit, $limit );
+}
+
 // Transients, in memory. Expiry is ignored: no probe here is testing that WP
 // expires things, and a shim that pretended to would only ever be testing the
 // shim.

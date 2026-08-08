@@ -47,7 +47,7 @@ Contributes only through the API. Contains no copy of free-plugin code.
 | Subsystem | Contents |
 |---|---|
 | Agents | **Marketing agent** (built 2026-08-08, `audience: admin`), **Analytics agent**, custom agent builder |
-| Tools | `segment.build` + `coupon.create` (built), campaign dispatch, forecasting queries |
+| Tools | `segment.build`, `coupon.create`, `metrics.report`, `product.performance`, `segment.sync` (built), campaign dispatch, forecasting queries |
 | Workflows | Visual workflow builder — engine, node types, runner |
 | Integrations | Mailchimp, Brevo, FluentCRM, Klaviyo, ActiveCampaign adapters |
 | Admin | Additional SPA routes and panels, mounted into the free shell |
