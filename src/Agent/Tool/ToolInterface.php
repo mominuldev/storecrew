@@ -23,6 +23,8 @@ defined( 'ABSPATH' ) || exit;
  * call and with what arguments — both untrusted.
  *
  * FR-AGENT-04.
+ *
+ * @api
  */
 interface ToolInterface {
 

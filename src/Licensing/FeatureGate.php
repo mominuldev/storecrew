@@ -29,6 +29,8 @@ defined( 'ABSPATH' ) || exit;
  * should hide a feature, never expose one.
  *
  * @see docs/15-free-premium-split.md § 4.2, § 5
+ *
+ * @api
  */
 final class FeatureGate {
 

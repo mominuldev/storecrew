@@ -18,6 +18,8 @@ defined( 'ABSPATH' ) || exit;
  * something it can react to — "that order number was not found" lets the agent
  * ask for a correct one, whereas an exception ends the turn and leaves the
  * customer with nothing.
+ *
+ * @api
  */
 final readonly class ToolResult {
 

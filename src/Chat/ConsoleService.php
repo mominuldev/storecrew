@@ -42,6 +42,8 @@ defined( 'ABSPATH' ) || exit;
  * cannot read another's.
  *
  * @see docs/08-agent-framework.md § 6, docs/15-free-premium-split.md § 4
+ *
+ * @api
  */
 final class ConsoleService {
 

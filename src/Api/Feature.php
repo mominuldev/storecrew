@@ -21,6 +21,8 @@ defined( 'ABSPATH' ) || exit;
  * which matters because PRD open questions 1 and 3 are still unresolved.
  *
  * @see docs/15-free-premium-split.md § 4.2
+ *
+ * @api
  */
 final readonly class Feature {
 

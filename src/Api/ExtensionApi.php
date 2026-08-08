@@ -35,6 +35,8 @@ defined( 'ABSPATH' ) || exit;
  * stable input.
  *
  * @see docs/15-free-premium-split.md § 3.1, § 4
+ *
+ * @api
  */
 final class ExtensionApi {
 

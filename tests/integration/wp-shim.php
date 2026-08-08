@@ -128,6 +128,10 @@ function register_deactivation_hook( $f, $cb ) { $GLOBALS['scr_deactivation'][ $
 function get_role( $r ) { return null; }
 function home_url( $p = '' ) { return 'http://example.test' . $p; }
 function wp_json_encode( $v, $flags = 0, $depth = 512 ) { return json_encode( $v, $flags, $depth ); }
+// Core's wrapper around parse_url, which is the form WPCS requires callers to
+// use. Its whole job is smoothing over cross-version inconsistency, so
+// delegating is the accurate emulation rather than a stub.
+function wp_parse_url( $url, $component = -1 ) { return parse_url( $url, $component ); }
 
 define( 'DAY_IN_SECONDS', 86400 );
 define( 'WEEK_IN_SECONDS', 604800 );

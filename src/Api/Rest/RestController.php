@@ -29,6 +29,8 @@ defined( 'ABSPATH' ) || exit;
  *    (FR-DIST-09).
  *
  * @see docs/15-free-premium-split.md § 5, § 6
+ *
+ * @api
  */
 abstract class RestController {
 

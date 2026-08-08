@@ -20,6 +20,8 @@ defined( 'ABSPATH' ) || exit;
  * matters: what the model is *told* about a tool and what the harness will
  * *permit* it to do are different questions, and conflating them is how a model
  * ends up appearing to authorise its own calls.
+ *
+ * @api
  */
 final readonly class ToolDefinition {
 

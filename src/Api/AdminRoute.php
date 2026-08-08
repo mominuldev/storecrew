@@ -24,6 +24,8 @@ defined( 'ABSPATH' ) || exit;
  * re-checks entitlement independently.
  *
  * @see docs/15-free-premium-split.md § 5
+ *
+ * @api
  */
 final readonly class AdminRoute {
 

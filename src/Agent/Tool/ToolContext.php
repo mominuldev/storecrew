@@ -21,6 +21,8 @@ defined( 'ABSPATH' ) || exit;
  * customer's orders.
  *
  * @see docs/01-prd.md R-SEC-01, FR-SUPPORT-02
+ *
+ * @api
  */
 final readonly class ToolContext {
 

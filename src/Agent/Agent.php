@@ -32,6 +32,8 @@ defined( 'ABSPATH' ) || exit;
  * not appear in the classifier's catalogue. Without it, contributing a marketing
  * agent through the registry would silently make it answerable to anyone who
  * opens the widget.
+ *
+ * @api
  */
 final readonly class Agent {
 

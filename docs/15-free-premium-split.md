@@ -239,6 +239,19 @@ These constraints are enforced by static analysis during implementation, not lef
 
 Every one of these rules must be **probe-tested** — deliberately violated once to confirm it fires — before being trusted. A clean run on a compliant codebase is not evidence that a rule works.
 
+### 7.1 `storecrew.noCrossPluginImports` — implemented 2026-08-08
+
+Lives in the **Pro** repository (`tools/PhpStan/NoCrossPluginImportsRule.php`), because it constrains Pro and should fail Pro's build. It runs as part of `composer analyse` there.
+
+**The published surface is declared by an `@api` tag on the class docblock**, and the rule reads those docblocks rather than any list. A list living in Pro would let Pro decide what Pro may use, which inverts the relationship the rule exists to enforce: the free plugin publishes, Pro consumes. Eleven classes carry the tag today — the `Api\` namespace (`ExtensionApi`, `Feature`, `AdminRoute`, `Rest\RestController`), the agent and tool contribution types (`Agent\Agent`, `Agent\Tool\ToolInterface`, `ToolContext`, `ToolResult`, `Ai\ToolDefinition`), `Chat\ConsoleService`, and `Licensing\FeatureGate`.
+
+`@api` is a claim about **compatibility, not visibility**. Marking a class means accepting that third-party code depends on it and that breaking it is a major version. Adding the tag is a deliberate act of publication, not a formality to unblock a build — the right response to the rule firing is usually to widen the API on purpose, occasionally to stop using the class, and never to tag whatever the error happened to name.
+
+Two implementation notes, both learned by getting them wrong first:
+
+- **It walks each file's AST rather than hooking `Node\Name`.** A rule registered on that node type receives class-constant fetches and type declarations but *not* `use` statements, `new`, `extends`, or `implements` — so the obvious implementation passes a codebase that imports and subclasses internals freely. It reported 8 of the 11 classes and was silently blind to `AdminRoute`, `RestController`, and `ToolInterface`.
+- **It refuses to answer rather than answer from no evidence.** If the free plugin is absent from the analysis path, every reference fails to resolve and a naive rule reports success. A sentinel check (`Api\ExtensionApi` must be findable) turns that into a loud failure, because a green check that proves nothing is worse than a red one.
+
 ---
 
 ## 8. WordPress.org Compliance Notes
