@@ -84,10 +84,16 @@ $calls_repo = $c->get( ToolCallRepository::class );
 $runs_repo  = $c->get( AgentRunRepository::class );
 $usage_repo = $c->get( UsageRepository::class );
 
-// A negative conversation id keeps this suite's rows clear of any real
-// conversation and of the other suites' `conversation_id = 0` fixtures, so
-// cleanup can delete by exactly this id and touch nothing else.
-$CID = -4242;
+// A high, synthetic conversation id keeps this suite's rows clear of any real
+// conversation (whose ids start low) and of the other suites' `conversation_id
+// = 0` fixtures, so cleanup can delete by exactly this id and touch nothing
+// else. It MUST be positive: `conversation_id` is `bigint unsigned`, and on a
+// non-strict MySQL a negative id is silently clamped to 0 on insert — which
+// collides with the very cid=0 fixtures this is meant to avoid and makes the
+// $CID cleanup delete nothing (every run then leaks, and the leaked writes
+// pile up as phantom pending approvals in the merchant's queue). Belt and
+// braces, cleanup also sweeps by the probe's own agent id below.
+$CID = 2000000042;
 
 // ---------------------------------------------------------------------------
 // Instruments
@@ -686,8 +692,20 @@ if ( ! $live_opt_in ) {
 echo "\n== Cleanup ==\n";
 
 $wpdb = $GLOBALS['wpdb'];
+
+// Sweep by the probe's own agent id, not just $CID: agent_id is immune to any
+// conversation_id surprise, and tool_calls carry no provider/agent column of
+// their own, so they are removed via their parent runs. This is what actually
+// clears the parked order.note approvals the write-boundary item creates.
+$probe_run_ids = $wpdb->get_col( 'SELECT id FROM ' . Tables::name( Tables::AGENT_RUNS ) . " WHERE agent_id = 'probe-adv'" );
+
+if ( array() !== $probe_run_ids ) {
+	$ids = implode( ',', array_map( 'intval', $probe_run_ids ) );
+	$wpdb->query( 'DELETE FROM ' . Tables::name( Tables::TOOL_CALLS ) . " WHERE agent_run_id IN ({$ids})" );
+}
+
 $wpdb->query( 'DELETE FROM ' . Tables::name( Tables::TOOL_CALLS ) . " WHERE conversation_id = {$CID}" );
-$wpdb->query( 'DELETE FROM ' . Tables::name( Tables::AGENT_RUNS ) . " WHERE conversation_id = {$CID}" );
+$wpdb->query( 'DELETE FROM ' . Tables::name( Tables::AGENT_RUNS ) . " WHERE agent_id = 'probe-adv' OR conversation_id = {$CID}" );
 $wpdb->query( 'DELETE FROM ' . Tables::name( Tables::USAGE_EVENTS ) . " WHERE conversation_id = {$CID} OR provider = 'scripted'" );
 $wpdb->query( 'DELETE FROM ' . Tables::name( Tables::AUDIT_LOG ) . " WHERE actor_id = 'probe-adv'" );
 $usage_repo->rebuild_counters();
@@ -700,10 +718,15 @@ if ( $order_b > 0 ) {
 	wp_delete_post( $order_b, true );
 }
 
-$remaining = (int) $wpdb->get_var(
-	'SELECT COUNT(*) FROM ' . Tables::name( Tables::TOOL_CALLS ) . " WHERE conversation_id = {$CID}"
-);
-$t( 'probe tool-call rows removed', 0 === $remaining, (string) $remaining );
+$remaining_runs  = (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Tables::name( Tables::AGENT_RUNS ) . " WHERE agent_id = 'probe-adv'" );
+$remaining_calls = 0;
+if ( 0 === $remaining_runs ) {
+	// No probe runs left, so any parked write is gone with them — confirm the
+	// approval queue holds no probe-owned pending rows regardless of their id.
+	$remaining_calls = (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Tables::name( Tables::TOOL_CALLS ) . " WHERE conversation_id = {$CID}" );
+}
+$t( 'probe agent runs removed', 0 === $remaining_runs, (string) $remaining_runs );
+$t( 'probe tool-call rows removed', 0 === $remaining_calls, (string) $remaining_calls );
 $t( 'probe agent config removed', null === $configs->get( 'probe-adv' ) );
 
 echo "\n" . str_repeat( '-', 60 ) . "\n";

@@ -119,8 +119,11 @@ $wpdb->insert(
 $call_id = (int) $wpdb->insert_id;
 $t( 'tool_calls insert with auth_mode', $call_id > 0, $wpdb->last_error );
 $t(
+	// Scoped to the row just inserted: the query proves the index conditions
+	// match, without asserting an absolute count on a table that legitimately
+	// holds other pending approvals (a real store's queue, other suites' rows).
 	'approval queue query works',
-	1 === (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Tables::name( Tables::TOOL_CALLS ) . " WHERE auth_mode = 'required' AND status = 'pending'" )
+	1 === (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Tables::name( Tables::TOOL_CALLS ) . " WHERE auth_mode = 'required' AND status = 'pending' AND id = {$call_id}" )
 );
 
 echo "\n== Counter upsert is atomic ==\n";
