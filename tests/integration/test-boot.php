@@ -110,29 +110,259 @@ t( '/analytics hidden without storecrew_view_analytics', ! in_array( '/analytics
 
 $GLOBALS['scr_caps'] = true;
 
-echo "\n== Entitlement — Pro licence active ==\n";
-// Fresh gate: the real one memoises per request, which is correct behaviour.
-update_option( StoreCrew\Pro\Licence::OPTION_STATUS, StoreCrew\Pro\Licence::STATUS_ACTIVE );
-update_option( StoreCrew\Pro\Licence::OPTION_TIER, StoreCrew\Api\Feature::TIER_PRO );
+// ---------------------------------------------------------------------------
+// The licence spine (10 § 4, § 5). Everything below drives the REAL
+// Snapshot/LicenceClient code against envelopes signed by a keypair minted
+// for this run — "fixture-signed" means signed here, by a key the code has
+// never seen, exactly as the licence server will sign with a key this code
+// will never see. No canned base64 blobs: a fixture that cannot be re-derived
+// is a fixture nobody can debug.
+// ---------------------------------------------------------------------------
+
+use StoreCrew\Pro\Licence;
+use StoreCrew\Pro\Licensing\LicenceClient;
+use StoreCrew\Pro\Licensing\Snapshot;
+
+$keypair    = sodium_crypto_sign_keypair();
+$secret_key = sodium_crypto_sign_secretkey( $keypair );
+$public_key = base64_encode( sodium_crypto_sign_publickey( $keypair ) );
+
+/** Sign a payload the way the server contract says the server must. */
+$sign = static function ( array $payload ) use ( $secret_key ): array {
+	$bytes = json_encode( $payload );
+
+	return array(
+		'payload'   => base64_encode( $bytes ),
+		'signature' => 'ed25519:' . base64_encode( sodium_crypto_sign_detached( $bytes, $secret_key ) ),
+	);
+};
+
+/** A well-formed Pro payload; override fields per scenario. */
+$payload = static function ( array $overrides = array() ): array {
+	return array_merge(
+		array(
+			'licence'      => 'sc_pro_fixture',
+			'tier'         => 'pro',
+			'status'       => 'active',
+			'site'         => 'http://example.test',
+			'seats'        => array( 'used' => 1, 'max' => 1 ),
+			'entitlements' => array(
+				'agent.marketing'        => true,
+				'agent.analytics'        => true,
+				'workflow.builder'       => true,
+				'integrations.email'     => true,
+				'conversations.monthly'  => null,
+			),
+			'issued_at'    => gmdate( 'c', time() ),
+			'valid_until'  => gmdate( 'c', time() + 14 * DAY_IN_SECONDS ),
+		),
+		$overrides
+	);
+};
+
+/** Install an envelope as the stored licence and boot a fixture-keyed client. */
+$install = static function ( ?array $envelope, string $key = 'sc_pro_fixture' ) use ( $public_key ): LicenceClient {
+	if ( null === $envelope ) {
+		delete_option( LicenceClient::OPTION_KEY );
+		delete_option( LicenceClient::OPTION_SNAPSHOT );
+	} else {
+		update_option( LicenceClient::OPTION_KEY, $key );
+		update_option( LicenceClient::OPTION_SNAPSHOT, $envelope );
+	}
+
+	$client = new LicenceClient( $public_key );
+	Licence::boot( $client );
+
+	return $client;
+};
+
+echo "\n== Entitlement — a signed Pro snapshot ==\n";
+// Fresh gate per scenario: the real one memoises per request, which is
+// correct behaviour.
+$install( $sign( $payload() ) );
 
 $gate2 = new StoreCrew\Licensing\FeatureGate( $features, $routes );
 
-t( 'agent.marketing ENABLED with pro licence', $gate2->enabled( 'agent.marketing' ) );
-t( 'agent.analytics ENABLED with pro licence', $gate2->enabled( 'agent.analytics' ) );
-t( 'agency.multisite still DISABLED on pro tier', ! $gate2->enabled( 'agency.multisite' ) );
+t( 'agent.marketing ENABLED by snapshot entitlement', $gate2->enabled( 'agent.marketing' ) );
+t( 'agent.analytics ENABLED by snapshot entitlement', $gate2->enabled( 'agent.analytics' ) );
+t( 'agency.multisite still DISABLED — the map does not name it', ! $gate2->enabled( 'agency.multisite' ) );
 t( 'free features unaffected', $gate2->enabled( 'agent.sales' ) );
+t( 'licence status reads active', Licence::STATUS_ACTIVE === Licence::status(), Licence::status() );
+t( 'tier reads pro', StoreCrew\Api\Feature::TIER_PRO === Licence::tier() );
 
-echo "\n== Entitlement — Agency licence ==\n";
-update_option( StoreCrew\Pro\Licence::OPTION_TIER, StoreCrew\Api\Feature::TIER_AGENCY );
+// The quota half of the same snapshot: conversations.monthly => null is the
+// paid tiers' shape, and the free side's loosen-only clamp lets null through.
+t(
+	'quota loosens to unlimited through storecrew_quota',
+	null === apply_filters( 'storecrew_quota', 100, 'conversations.monthly' )
+);
+t(
+	'a quota the snapshot does not name passes through untouched',
+	100 === apply_filters( 'storecrew_quota', 100, 'sites' )
+);
+
+echo "\n== Entitlement — Agency snapshot ==\n";
+$agency = $payload(
+	array(
+		'tier'         => 'agency',
+		'entitlements' => array(
+			'agent.marketing'       => true,
+			'agent.analytics'       => true,
+			'workflow.builder'      => true,
+			'integrations.email'    => true,
+			'agency.multisite'      => true,
+			'agency.whitelabel'     => true,
+			'conversations.monthly' => null,
+		),
+	)
+);
+$install( $sign( $agency ) );
 $gate3 = new StoreCrew\Licensing\FeatureGate( $features, $routes );
-t( 'agency.multisite ENABLED on agency tier', $gate3->enabled( 'agency.multisite' ) );
-t( 'pro features included in agency tier', $gate3->enabled( 'agent.marketing' ) );
+t( 'agency.multisite ENABLED when the map names it', $gate3->enabled( 'agency.multisite' ) );
+t( 'pro features included in the agency map', $gate3->enabled( 'agent.marketing' ) );
 
-echo "\n== Licence lapse must not revoke free features ==\n";
-update_option( StoreCrew\Pro\Licence::OPTION_STATUS, StoreCrew\Pro\Licence::STATUS_INVALID );
+echo "\n== PROBE: the signature is the boundary ==\n";
+// Tamper with one byte of the payload and keep the valid signature. This is
+// exactly what editing the stored option looks like, and it must read as no
+// licence at all (FR-LIC-03).
+$envelope   = $sign( $payload() );
+$bytes      = base64_decode( $envelope['payload'] );
+$tampered   = str_replace( '"tier":"pro"', '"tier":"agency"', $bytes );
+$envelope['payload'] = base64_encode( $tampered );
+
+$install( $envelope );
 $gate4 = new StoreCrew\Licensing\FeatureGate( $features, $routes );
-t( 'agent.sales survives licence lapse', $gate4->enabled( 'agent.sales' ) );
-t( 'agent.marketing revoked on lapse', ! $gate4->enabled( 'agent.marketing' ) );
+t( 'PROBE: a tampered payload grants nothing', ! $gate4->enabled( 'agent.marketing' ) );
+t( 'PROBE: and reads as invalid, not as a crash', Licence::STATUS_INVALID === Licence::status(), Licence::status() );
+t( 'PROBE: free features survive the tamper', $gate4->enabled( 'agent.sales' ) );
+
+echo "\n== PROBE: a misspelt entitlement key grants nothing, silently ==\n";
+// 10 § 2.1's defect shape, observed on purpose: the snapshot is perfectly
+// signed, the merchant paid, and the grant never happens. This probe exists
+// so the failure is at least *known* to be silent.
+$misspelt = $payload( array( 'entitlements' => array( 'agent.marketting' => true ) ) );
+$install( $sign( $misspelt ) );
+$gate5 = new StoreCrew\Licensing\FeatureGate( $features, $routes );
+t( 'PROBE: agent.marketing not granted by agent.marketting', ! $gate5->enabled( 'agent.marketing' ) );
+t( 'the snapshot itself still verifies and reads active', Licence::STATUS_ACTIVE === Licence::status() );
+
+echo "\n== PROBE: a snapshot for another site grants nothing here ==\n";
+$install( $sign( $payload( array( 'site' => 'https://someone-elses.shop' ) ) ) );
+$gate6 = new StoreCrew\Licensing\FeatureGate( $features, $routes );
+t( 'PROBE: wrong-site snapshot grants nothing', ! $gate6->enabled( 'agent.marketing' ) );
+t( 'and reads invalid', Licence::STATUS_INVALID === Licence::status() );
+
+echo "\n== Grace and expiry (10 § 4) ==\n";
+// Yesterday's valid_until: inside the 7-day grace window. Entitlements
+// continue; the status word changes so the notice can fire.
+$install( $sign( $payload( array( 'valid_until' => gmdate( 'c', time() - DAY_IN_SECONDS ) ) ) ) );
+$gate7 = new StoreCrew\Licensing\FeatureGate( $features, $routes );
+t( 'inside grace, entitlements continue', $gate7->enabled( 'agent.marketing' ) );
+t( 'and the status says grace', Licence::STATUS_GRACE === Licence::status(), Licence::status() );
+$GLOBALS['scr_caps'] = array( 'storecrew_manage' );
+t( 'grace raises an admin notice', str_contains( scr_collect_notices(), 'could not be revalidated' ) );
+$GLOBALS['scr_caps'] = true;
+
+// Eight days past: grace is over. Degrade to free — data intact, free intact.
+$install( $sign( $payload( array( 'valid_until' => gmdate( 'c', time() - 8 * DAY_IN_SECONDS ) ) ) ) );
+$gate8 = new StoreCrew\Licensing\FeatureGate( $features, $routes );
+t( 'PROBE: past grace, entitlements end', ! $gate8->enabled( 'agent.marketing' ) );
+t( 'status says expired', Licence::STATUS_EXPIRED === Licence::status(), Licence::status() );
+t( 'agent.sales survives licence lapse', $gate8->enabled( 'agent.sales' ) );
+t(
+	'an expired snapshot leaves quotas at the free tier',
+	100 === apply_filters( 'storecrew_quota', 100, 'conversations.monthly' )
+);
+
+// The grace boundary itself, exact to the second, via injected time.
+$snapshot = ( $install( $sign( $payload( array( 'valid_until' => gmdate( 'c', 1000000 ) ) ) ) ) )->snapshot();
+t( 'the last second of grace still grants', Snapshot::STATE_GRACE === $snapshot->state( 1000000 + 7 * DAY_IN_SECONDS ) );
+t( 'the second after does not', Snapshot::STATE_EXPIRED === $snapshot->state( 1000000 + 7 * DAY_IN_SECONDS + 1 ) );
+
+echo "\n== PROBE: a refund is a signed revocation, not an absence ==\n";
+$install( $sign( $payload( array( 'status' => 'revoked' ) ) ) );
+$gate9 = new StoreCrew\Licensing\FeatureGate( $features, $routes );
+t( 'PROBE: a revoked snapshot grants nothing, even in date', ! $gate9->enabled( 'agent.marketing' ) );
+
+echo "\n== Activation, over a fixture transport ==\n";
+$install( null );
+
+$served    = $sign( $payload() );
+$activated = ( new LicenceClient(
+	$public_key,
+	static fn ( string $route, array $body ): array => $served
+) );
+Licence::boot( $activated );
+
+$result = $activated->activate( 'sc_pro_fixture' );
+t( 'activation succeeds against a verifiable response', true === $result['ok'], $result['error'] );
+t( 'the key is stored', 'sc_pro_fixture' === get_option( LicenceClient::OPTION_KEY ) );
+t( 'the envelope is stored verbatim', $served === get_option( LicenceClient::OPTION_SNAPSHOT ) );
+t( 'weekly revalidation is scheduled', false !== wp_next_scheduled( LicenceClient::CRON_HOOK ) );
+t( 'state reads active', 'active' === $activated->state() );
+
+echo "\n== PROBE: activation refuses what it cannot verify ==\n";
+$install( null );
+
+$garbled = ( new LicenceClient(
+	$public_key,
+	static fn ( string $route, array $body ): array => array( 'payload' => base64_encode( '{"tier":"pro"}' ), 'signature' => 'ed25519:' . base64_encode( str_repeat( 'x', 64 ) ) )
+) );
+$result  = $garbled->activate( 'sc_pro_fixture' );
+t( 'PROBE: an unverifiable response is refused', false === $result['ok'] && 'unverifiable' === $result['error'], $result['error'] );
+t( 'PROBE: and nothing was stored', false === get_option( LicenceClient::OPTION_SNAPSHOT ) && false === get_option( LicenceClient::OPTION_KEY ) );
+
+$wrong_site = ( new LicenceClient(
+	$public_key,
+	static fn ( string $route, array $body ): array => $sign( $payload( array( 'site' => 'https://someone-elses.shop' ) ) )
+) );
+$result     = $wrong_site->activate( 'sc_pro_fixture' );
+t( 'PROBE: a snapshot for another site is refused at activation', 'site_mismatch' === $result['error'] );
+
+$down   = ( new LicenceClient(
+	$public_key,
+	static fn ( string $route, array $body ) => new WP_Error( 'http_request_failed', 'could not resolve host' )
+) );
+$result = $down->activate( 'sc_pro_fixture' );
+t( 'a dead server surfaces its error code', 'http_request_failed' === $result['error'] );
+
+echo "\n== Revalidation: outage keeps the snapshot, revocation replaces it ==\n";
+update_option( LicenceClient::OPTION_KEY, 'sc_pro_fixture' );
+update_option( LicenceClient::OPTION_SNAPSHOT, $sign( $payload() ) );
+
+$offline = new LicenceClient(
+	$public_key,
+	static fn ( string $route, array $body ) => new WP_Error( 'http_request_failed', 'down' )
+);
+t( 'PROBE: revalidation over a dead server reports failure', false === $offline->revalidate() );
+t( 'PROBE: and the stored snapshot survives — our outage is not their lapse', 'active' === $offline->state() );
+
+$revoking = new LicenceClient(
+	$public_key,
+	static fn ( string $route, array $body ): array => $sign( $payload( array( 'status' => 'revoked' ) ) )
+);
+t( 'a signed revocation is accepted', true === $revoking->revalidate() );
+t( 'and entitlement ends with it', null === $revoking->granting_snapshot() );
+
+echo "\n== Deactivation releases everything local ==\n";
+$offline->deactivate();
+t( 'key and snapshot are gone', false === get_option( LicenceClient::OPTION_KEY ) && false === get_option( LicenceClient::OPTION_SNAPSHOT ) );
+t( 'the cron event is gone', false === wp_next_scheduled( LicenceClient::CRON_HOOK ) );
+
+echo "\n== PROBE: the shipping build is fail-closed until the public key exists ==\n";
+// Production wires LicenceClient::PUBLIC_KEY, which is empty until the
+// licence server is stood up. With a key pasted and a perfectly signed
+// snapshot stored, an empty public key must grant nothing and say why.
+update_option( LicenceClient::OPTION_KEY, 'sc_pro_fixture' );
+update_option( LicenceClient::OPTION_SNAPSHOT, $sign( $payload() ) );
+$unconfigured = new LicenceClient( LicenceClient::PUBLIC_KEY );
+Licence::boot( $unconfigured );
+$gate10 = new StoreCrew\Licensing\FeatureGate( $features, $routes );
+t( 'PROBE: no public key, no grants — fail closed', ! $gate10->enabled( 'agent.marketing' ) );
+t( 'PROBE: and the state is named, not mysterious', LicenceClient::STATE_UNCONFIGURED === $unconfigured->state() );
+
+// Leave the licence spine as the boot wiring had it: no licence at all.
+$install( null );
 
 echo "\n== Container ==\n";
 $c = $plugin->container();

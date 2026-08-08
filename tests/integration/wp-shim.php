@@ -126,6 +126,26 @@ function load_plugin_textdomain( $d, $a = false, $p = '' ) {
 function register_activation_hook( $f, $cb ) { $GLOBALS['scr_activation'][ $f ] = $cb; }
 function register_deactivation_hook( $f, $cb ) { $GLOBALS['scr_deactivation'][ $f ] = $cb; }
 function get_role( $r ) { return null; }
+function home_url( $p = '' ) { return 'http://example.test' . $p; }
+function wp_json_encode( $v, $flags = 0, $depth = 512 ) { return json_encode( $v, $flags, $depth ); }
+
+define( 'DAY_IN_SECONDS', 86400 );
+define( 'WEEK_IN_SECONDS', 604800 );
+
+/** Just enough WP_Error for the licence client's transport contract. */
+class WP_Error {
+	public function __construct( private $code = '', private $message = '', private $data = null ) {}
+	public function get_error_code() { return $this->code; }
+	public function get_error_message() { return $this->message; }
+	public function get_error_data() { return $this->data; }
+}
+function is_wp_error( $x ) { return $x instanceof WP_Error; }
+
+/** Single-event cron surface, observable so scheduling is assertable. */
+$GLOBALS['scr_cron'] = array();
+function wp_next_scheduled( $hook, $args = array() ) { return $GLOBALS['scr_cron'][ $hook ] ?? false; }
+function wp_schedule_event( $ts, $recurrence, $hook, $args = array() ) { $GLOBALS['scr_cron'][ $hook ] = $ts; return true; }
+function wp_clear_scheduled_hook( $hook, $args = array() ) { unset( $GLOBALS['scr_cron'][ $hook ] ); return 0; }
 function wp_roles() { return (object) array( 'roles' => array() ); }
 function wp_die( $m, $t = '', $a = array() ) { throw new RuntimeException( 'wp_die: ' . $m ); }
 function as_unschedule_all_actions( $h, $a = array(), $g = '' ) { return 0; }

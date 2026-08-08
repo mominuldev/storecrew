@@ -6,12 +6,16 @@ reader, cap — § 5, § 8), the remote half is not (licence server,
 `LicenceClient`, updates)
 **Version:** 0.2
 
-Unlike 03–09, this document designed ahead of code. What exists today:
-`FeatureGate` (built, tested), the § 5 meter with its quota reader and cap
-enforcement (built 2026-08-08, probe-tested), and a `Pro\Licence` stub that
-must not ship. It consumes strategy decisions D1–D5 (02 § 9) as inputs; if
-Gate 1 amends those, the tier table here changes but the machinery does not —
-that separation is the design's main claim.
+Unlike 03–09, this document designed ahead of code. What exists today
+(all built 2026-08-08, probe-tested): `FeatureGate` (earlier), the § 5
+meter with its quota reader and cap enforcement, and the § 4/§ 6
+`Snapshot`/`LicenceClient` pair that replaced the stub — verified against
+fixture-signed envelopes, awaiting only the server (§ 6.1) and its public
+key. It consumes strategy decisions D1–D5 (02 § 9) as inputs; if Gate 1
+amends those, the tier table here changes but the machinery does not —
+that separation is the design's main claim, and it is now structural: a
+tier change is an entitlements-payload change, because grants come from
+the snapshot's map, never from a tier lookup in code.
 
 ---
 
@@ -126,6 +130,17 @@ The unit of trust. Returned by activation and each revalidation:
   signature-valid snapshot — this is what makes FR-LIC-03 true even though
   evaluation is local: editing the stored option breaks the signature and
   the gate falls back to free.
+- **The signature covers bytes, not structure** (built 2026-08-08). On the
+  wire and in storage the snapshot travels as an envelope —
+  `{ "payload": base64(JSON bytes), "signature": "ed25519:" + base64(sig) }`
+  — with the detached signature over the *decoded payload bytes*, and the
+  stored option is that envelope verbatim, never re-encoded. Schemes that
+  sign "the JSON minus the signature field" require canonical
+  re-serialisation on both sides, and every whitespace, key-order, or
+  escaping difference between the server's encoder and PHP's becomes a
+  paying customer whose licence stopped verifying. `Pro\Licensing\Snapshot`
+  is the only reader; it fails closed (any malformed field → null → free),
+  and the fixture probes tamper one byte and watch it die.
 - **`valid_until` is the grace mechanism** (FR-LIC-01): snapshots outlive
   their revalidation interval (weekly check, 14-day validity), so our
   server being down never lapses a paying customer. Expired snapshot →
@@ -134,14 +149,16 @@ The unit of trust. Returned by activation and each revalidation:
 - Premium hands the snapshot to free through an extension-API filter;
   free's `FeatureGate` stays the single evaluation point, and the SPA's
   manifest remains a rendering hint re-checked per request (FR-DIST-09).
-- **The filter is grant-only, and stays that way.** The built stub already
-  answers `storecrew_feature_enabled` per feature and only ever returns true,
-  because an expired Pro licence must never switch off a free-tier agent —
-  the same one-direction reasoning as `storecrew_tool_authorized`, which may
-  only deny. The snapshot changes *what premium grants*, not the shape of the
-  filter: `LicenceClient` replaces the stub's local option with a
-  signature-verified answer to the same question, and a feature free owns is
-  never one of premium's to withdraw.
+- **The filter is grant-only, and stays that way.** Pro's
+  `storecrew_feature_enabled` callback only ever returns true, because an
+  expired Pro licence must never switch off a free-tier agent — the same
+  one-direction reasoning as `storecrew_tool_authorized`, which may only
+  deny. As built, the grant consults the verified snapshot's **entitlements
+  map by slug** (§ 2.1), never a tier lookup in code: a snapshot that
+  misspells a slug grants nothing, which the harness probes on purpose, and
+  a feature free owns is never one of premium's to withdraw. The
+  `storecrew_quota` callback follows the same shape — passthrough unless a
+  granting snapshot names the key.
 
 ---
 
@@ -205,7 +222,33 @@ premium to sell).
   against version skew between the two.
 - **Renewal/refund**: subscription renewal re-signs a fresh snapshot on next
   validation; refund revokes → next validation degrades to free with the
-  data intact.
+  data intact. **A revocation is a signed snapshot whose `status` says so**,
+  never an absence or an error: the client treats an unreachable or
+  unverifiable validation response as our problem (stored snapshot stays,
+  grace decides), so the only thing that may end entitlement early is a
+  statement the server provably made.
+
+### 6.1 The server contract (fixed by the client, 2026-08-08)
+
+`Pro\Licensing\LicenceClient` is built and probe-tested against
+fixture-signed envelopes; the licence server, when stood up, must implement
+what the client already speaks:
+
+- Root `https://decentthemes.com/wp-json/storecrew-licence/v1` (filterable
+  client-side via `storecrew_pro_licence_server` for staging).
+- `POST /activate`, `POST /validate`, `POST /deactivate` — JSON body
+  `{ "key": "...", "site": "https://..." }`.
+- Success: HTTP 200 with the § 4 envelope. Failure: non-200 with
+  `{ "code": "...", "message": "..." }`; the client surfaces `code` verbatim.
+- Signing: Ed25519 detached over the payload bytes
+  (`sodium_crypto_sign_detached`); the keypair is generated when the server
+  is stood up and the secret half never leaves it.
+  `LicenceClient::PUBLIC_KEY` (base64, 32 bytes) is set in the same release —
+  **it is empty today, which is fail-closed and ship-blocking**: with no key
+  nothing verifies, every answer is free, and the status word is
+  `unconfigured` rather than a mystery.
+- The client revalidates weekly (WP-Cron `storecrew_pro_licence_revalidate`)
+  and stores whatever verifies — including a revocation.
 
 ---
 
@@ -237,10 +280,11 @@ could take a paying store down on a network failure — R-COST-01's lesson
 | Conversation counting substrate | ✅ **Built, probe-tested** (2026-08-08): `record_conversation()` written on first agent *answer*, idempotent per conversation; failed turns charge nothing | — |
 | Quota reader (`conversations.monthly`) | ✅ **Built, probe-tested**: `Licensing\Quota`, loosen-only `storecrew_quota` filter, null = unlimited. `sites` joins when something reads it — inventing the key now would be the built-but-unconsumed defect | — (`sites`: 3) |
 | Cap enforcement at the widget | ✅ **Built, probe-tested**: `/chat/session` refuses new conversations at cap; resume and send never gated; count on the Overview all month | — |
-| Licence server + store webhook | ⬜ | 2 |
-| `LicenceClient` (replace the stub), snapshot verification | ⬜ | 2 — **ship-blocking for Pro**; the stub is not a security boundary |
+| Licence server + store webhook | ⬜ Must implement § 6.1, which the built client fixes | 2 |
+| `LicenceClient` (replace the stub), snapshot verification | ✅ **Built, probe-tested against fixture-signed envelopes** (2026-08-08): Ed25519 envelope verification failing closed, grace to the second, site binding, activation/revalidation/deactivation over an injectable transport, weekly cron, grant-from-entitlements-map, quota loosening. The stub is gone. **Still ship-blocking:** `PUBLIC_KEY` is empty until the server exists — fail-closed (`unconfigured`), probed | 2 |
 | Update server + premium updater | ⬜ | 2 |
 | Agency seats, remote release, white-label flag | ⬜ | 3 |
 
-The stub's replacement is the first premium engineering task; everything
-else in premium can be built behind it but not shipped before it.
+The stub's replacement was the first premium engineering task, and it is
+done up to the wire: what remains of the spine is standing the server up
+(§ 6.1) and setting the public key, then the updater.

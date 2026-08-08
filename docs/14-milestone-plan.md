@@ -246,9 +246,16 @@ tools' approval defaults:
    `Licensing\Quota` reads `conversations.monthly` (free default 100,
    loosen-only `storecrew_quota` filter, null = unlimited), `/chat/session`
    declines new conversations at cap while resume and in-progress turns are
-   never gated, and the Overview shows the count all month (R-MKT-01). What
-   remains of this item is the remote half: the licence server, the client
-   that turns a signed snapshot into that filter, and updates.
+   never gated, and the Overview shows the count all month (R-MKT-01).
+   **The client half of the spine is also built** (2026-08-08, second
+   change-set): `Pro\Licensing\Snapshot` + `LicenceClient` replaced the
+   stub — Ed25519 envelope verification failing closed, grace to the
+   second, site binding, grant-from-entitlements-map, quota loosening, all
+   probe-tested against fixture-signed envelopes in the integration
+   harness (37 → 73 assertions). What remains is the remote half: the
+   licence server implementing 10 § 6.1's contract, the production keypair
+   (`PUBLIC_KEY` empty = fail-closed `unconfigured`, still ship-blocking),
+   the activation UI, and updates.
 2. **Marketing agent** (FR-MKT): segments from Woo data, coupon tool
    (approval-gated — FR-SALES-06/FR-MKT-03), abandoned-cart sequence with
    consent discipline (FR-MKT-06 is a MUST before any send).

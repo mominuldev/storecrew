@@ -20,6 +20,8 @@ switch ( $scenario ) {
 		update_option( 'storecrew_pro_licence_tier', 'pro' );
 		update_option( 'storecrew_pro_licence_key', 'sc_pro_test' );
 		update_option( 'storecrew_pro_licence_status', 'active' );
+		update_option( 'storecrew_pro_snapshot', array( 'payload' => 'x', 'signature' => 'y' ) );
+		wp_schedule_event( time(), 'weekly', 'storecrew_pro_licence_revalidate' );
 		// Decoys: free-plugin state that must survive an add-on's removal.
 		update_option( 'storecrew_model_policy', array( 'chat' => array( 'provider' => 'x' ) ) );
 		update_option( 'storecrew_delete_data_on_uninstall', '0' );
@@ -31,6 +33,8 @@ switch ( $scenario ) {
 		t( 'licence tier removed', false === get_option( 'storecrew_pro_licence_tier' ) );
 		t( 'licence key removed', false === get_option( 'storecrew_pro_licence_key' ) );
 		t( 'licence status removed', false === get_option( 'storecrew_pro_licence_status' ) );
+		t( 'snapshot removed', false === get_option( 'storecrew_pro_snapshot' ) );
+		t( 'revalidation event removed', false === wp_next_scheduled( 'storecrew_pro_licence_revalidate' ) );
 		t( 'PROBE: the free plugin\'s options survive', false !== get_option( 'storecrew_model_policy' ) );
 		t( 'PROBE: the free plugin\'s uninstall opt-in is untouched', '0' === get_option( 'storecrew_delete_data_on_uninstall' ) );
 		break;

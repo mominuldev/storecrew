@@ -444,8 +444,14 @@ ciphertext, ragged embedding vectors, and the migration lock.
 - ~~No failover execution~~ — done (2026-08-07): one switch to the configured
   fallback mid-turn, continuing from the request state so executed tools never
   re-run; both attempts on the run record.
-- `Pro\Licence` is a **stub** — local option, no remote validation, no grace
-  period. Not a security boundary; must not ship as-is.
+- ~~`Pro\Licence` is a stub~~ — **replaced** (2026-08-08):
+  `Pro\Licensing\Snapshot` + `LicenceClient` verify Ed25519-signed
+  entitlement envelopes locally, with grace, site binding, and
+  grant-from-entitlements-map; probe-tested against fixture-signed
+  envelopes in the integration harness. **Still ship-blocking:**
+  `LicenceClient::PUBLIC_KEY` is empty until the licence server exists
+  (10 § 6.1 is its contract) — fail-closed as status `unconfigured`, and
+  the activation UI and updater are unbuilt.
 - **The storefront chat surface is live-verified** (21 REST routes). Five turns
   through the widget against real Gemini: routing picked Sales then Support,
   `product.search` and `policy.lookup` grounded the answers, a wrong email did

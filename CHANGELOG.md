@@ -14,6 +14,18 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**The integration harness now probes the licence spine** — 2026-08-08
+
+- Pro's `Snapshot`/`LicenceClient` replaced the licence stub (see the Pro
+  changelog for the substance); the boot suite here grew from 37 to 73
+  assertions, driving the real verification code with envelopes signed by
+  an Ed25519 keypair minted per run. The shim gained `home_url`,
+  `WP_Error`/`is_wp_error`, `wp_json_encode`, and an observable
+  single-event cron surface so scheduling is assertable.
+- Docs 10 and 14 updated in the same change-set: § 4 records the
+  sign-the-bytes envelope decision, § 6.1 fixes the server contract the
+  built client now dictates, § 8's client row flips to built.
+
 **The conversation meter, its quota reader, and the free-tier cap
 (FR-LIC-02, 10 § 5 — M4.1's substrate)** — 2026-08-08
 
