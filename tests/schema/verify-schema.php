@@ -134,14 +134,18 @@ for ( $i = 0; $i < 3; $i++ ) {
 			"INSERT INTO {$counters} (metric, period, total, cost_micros, updated_at)
 			 VALUES (%s, %s, %d, 0, %s)
 			 ON DUPLICATE KEY UPDATE total = total + VALUES(total), updated_at = VALUES(updated_at)",
-			'conversation',
-			'2026-08',
+			// A synthetic metric and period so the atomic-upsert probe never
+			// touches a real counter: 'conversation' in the current period is a
+			// live metric, and asserting an absolute 15 on it — then deleting
+			// the row — would break and wipe the merchant's own count.
+			'probe_counter',
+			'1970-01',
 			5,
 			$now
 		)
 	);
 }
-$total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT total FROM {$counters} WHERE metric = %s AND period = %s", 'conversation', '2026-08' ) );
+$total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT total FROM {$counters} WHERE metric = %s AND period = %s", 'probe_counter', '1970-01' ) );
 $t( 'three +5 upserts accumulate to 15', 15 === $total, (string) $total );
 
 echo "\n== Migration lock ==\n";
@@ -162,7 +166,7 @@ $t( 'PROBE: lock older than TTL is broken', array( 1 ) === $result2['applied'], 
 echo "\n== Cleanup ==\n";
 $wpdb->delete( Tables::name( Tables::INDEX_RUNS ), array( 'id' => $run_id ), array( '%d' ) );
 $wpdb->delete( Tables::name( Tables::TOOL_CALLS ), array( 'id' => $call_id ), array( '%d' ) );
-$wpdb->delete( $counters, array( 'metric' => 'conversation', 'period' => '2026-08' ), array( '%s', '%s' ) );
+$wpdb->delete( $counters, array( 'metric' => 'probe_counter', 'period' => '1970-01' ), array( '%s', '%s' ) );
 $t( 'probe rows removed', 0 === (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Tables::name( Tables::TOOL_CALLS ) . " WHERE tool_id = 'probe.tool'" ) );
 
 echo "\n" . str_repeat( '-', 60 ) . "\n";

@@ -483,9 +483,15 @@ $conversations->delete( (int) $conv->id );
 wp_delete_user( (int) $sub_id );
 
 $GLOBALS['wpdb']->query(
-	"DELETE FROM " . Tables::name( Tables::AUDIT_LOG ) . " WHERE action LIKE 'provider.key_%' OR action = 'settings.updated'"
+	// Includes the agent enable/disable audit rows the toggle probes write —
+	// without them, ~4 `agent.*` rows survived every run.
+	"DELETE FROM " . Tables::name( Tables::AUDIT_LOG ) . " WHERE action LIKE 'provider.key_%' OR action = 'settings.updated' OR action IN ( 'agent.enabled', 'agent.disabled' )"
 );
-$GLOBALS['wpdb']->query( "DELETE FROM " . Tables::name( Tables::INDEX_RUNS ) . " WHERE type = 'full'" );
+// Only the run this suite started — deleting every `type = 'full'` row would
+// erase the merchant's real full-index history alongside the probe's.
+if ( $run_id > 0 ) {
+	$GLOBALS['wpdb']->query( $GLOBALS['wpdb']->prepare( 'DELETE FROM ' . Tables::name( Tables::INDEX_RUNS ) . ' WHERE id = %d', $run_id ) );
+}
 $restore = static function ( string $option, $value ): void {
 	if ( false === $value ) {
 		delete_option( $option );

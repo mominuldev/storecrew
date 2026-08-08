@@ -959,7 +959,10 @@ $wpdb = $GLOBALS['wpdb'];
 $wpdb->query( 'DELETE FROM ' . Tables::name( Tables::TOOL_CALLS ) . " WHERE tool_id LIKE 'probe.%' OR conversation_id = 0" );
 $wpdb->query( 'DELETE FROM ' . Tables::name( Tables::AGENT_RUNS ) . " WHERE agent_id = 'probe-agent'" );
 $wpdb->query( 'DELETE FROM ' . Tables::name( Tables::AUDIT_LOG ) . " WHERE actor_id = 'probe-agent'" );
-$wpdb->query( 'DELETE FROM ' . Tables::name( Tables::USAGE_EVENTS ) . " WHERE provider = 'scripted'" );
+// Every synthetic provider this suite meters: the failover section records
+// against 'backup' and the streaming section against 'streamer'. Deleting only
+// 'scripted' left those events behind, inflating the merchant's usage counters.
+$wpdb->query( 'DELETE FROM ' . Tables::name( Tables::USAGE_EVENTS ) . " WHERE provider IN ( 'scripted', 'backup', 'streamer' )" );
 $c->get( StoreCrew\Database\Repositories\UsageRepository::class )->rebuild_counters();
 
 $t( 'probe tool calls removed', 0 === count( $calls_repo->approval_queue( 50 ) ) );

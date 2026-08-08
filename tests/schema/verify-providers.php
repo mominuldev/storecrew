@@ -447,6 +447,12 @@ $usage_repo = StoreCrew\Plugin::instance()->container()->get(
 );
 $guard = new SpendGuard( $usage_repo );
 
+// Snapshot the merchant's real spend cap before the probes overwrite it — a
+// blind delete_option in cleanup would silently unconfigure a store that had
+// one set (the same family as the model-policy-wipe bug).
+$saved_cap    = get_option( SpendGuard::OPTION_CAP_MICROS, false );
+$saved_breach = get_option( SpendGuard::OPTION_ON_BREACH, false );
+
 $guard->set_cap( 0 );
 $t( 'no cap means calls always allowed', $guard->allows_call() );
 
@@ -484,8 +490,16 @@ if ( false === $saved_secrets ) {
 		update_option( SecretStore::OPTION_DATA_KEY, $saved_data_key, false );
 	}
 }
-delete_option( SpendGuard::OPTION_CAP_MICROS );
-delete_option( SpendGuard::OPTION_ON_BREACH );
+if ( false === $saved_cap ) {
+	delete_option( SpendGuard::OPTION_CAP_MICROS );
+} else {
+	update_option( SpendGuard::OPTION_CAP_MICROS, $saved_cap, false );
+}
+if ( false === $saved_breach ) {
+	delete_option( SpendGuard::OPTION_ON_BREACH );
+} else {
+	update_option( SpendGuard::OPTION_ON_BREACH, $saved_breach, false );
+}
 $GLOBALS['wpdb']->delete(
 	StoreCrew\Database\Tables::name( StoreCrew\Database\Tables::USAGE_EVENTS ),
 	array( 'agent_id' => 'probe' ),

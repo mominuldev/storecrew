@@ -46,6 +46,17 @@ $chunks    = $c->get( KnowledgeChunkRepository::class );
 // Start clean; a previous run's queue would make dedup assertions meaningless.
 $scheduler->cancel();
 
+// Highest index_runs id before this suite runs, so cleanup deletes exactly the
+// runs it creates rather than every `type = 'full'` row (which would erase the
+// merchant's real full-index history).
+$max_index_run = (int) $GLOBALS['wpdb']->get_var( 'SELECT COALESCE(MAX(id),0) FROM ' . Tables::name( Tables::INDEX_RUNS ) );
+
+// Same idea for usage: indexing the probe pages records a `document_indexed`
+// event each, which carries no test marker (provider is empty). Snapshotting the
+// id lets cleanup remove exactly those, so the suite stops inflating the
+// merchant's usage counters one run at a time.
+$max_usage_event = (int) $GLOBALS['wpdb']->get_var( 'SELECT COALESCE(MAX(id),0) FROM ' . Tables::name( Tables::USAGE_EVENTS ) );
+
 echo "\n== Deadline ==\n";
 $budget = Deadline::detect_budget();
 $t( 'derives a budget from the host limit', $budget >= 5 && $budget <= 60, (string) $budget );
@@ -384,8 +395,25 @@ foreach ( $page_ids as $page_id ) {
 }
 
 $GLOBALS['wpdb']->query(
-	'DELETE FROM ' . Tables::name( Tables::INDEX_RUNS ) . " WHERE type = 'full'"
+	$GLOBALS['wpdb']->prepare(
+		'DELETE FROM ' . Tables::name( Tables::INDEX_RUNS ) . ' WHERE type = %s AND id > %d',
+		'full',
+		$max_index_run
+	)
 );
+
+// InnoDB keeps deleted rows' terms — and their IDF weight — in the FULLTEXT
+// index until OPTIMIZE. Without this, each run's probe pages decay the ranking
+// of the merchant's real corpus (CLAUDE.md's ghost-doc bug; the other
+// FULLTEXT suites already do this).
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- OPTIMIZE on a Tables::name() identifier; maintenance, not a query.
+$GLOBALS['wpdb']->query( 'OPTIMIZE TABLE ' . Tables::name( Tables::KNOWLEDGE_CHUNKS ) );
+
+// The document_indexed events this suite's indexing recorded (single-threaded,
+// so everything past the snapshot id is ours), then rebuild the counters from
+// the cleaned log so the merchant's usage totals are exactly as they were.
+$GLOBALS['wpdb']->query( $GLOBALS['wpdb']->prepare( 'DELETE FROM ' . Tables::name( Tables::USAGE_EVENTS ) . ' WHERE id > %d', $max_usage_event ) );
+$c->get( StoreCrew\Database\Repositories\UsageRepository::class )->rebuild_counters();
 
 $t( 'queue drained', 0 === $scheduler->health()['pending'] );
 $t( 'probe pages removed', null === get_post( $page_ids[0] ) );
