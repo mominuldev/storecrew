@@ -42,7 +42,7 @@ final class ControllerRegistry extends Registry {
 	protected function validate( mixed $item ): void {
 		if ( ! is_callable( $item ) ) {
 			throw new \InvalidArgumentException(
-				sprintf( 'Expected a controller factory, got %s.', get_debug_type( $item ) )
+				esc_html( sprintf( 'Expected a controller factory, got %s.', get_debug_type( $item ) ) )
 			);
 		}
 	}

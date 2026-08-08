@@ -40,7 +40,7 @@ final readonly class ToolDefinition {
 			// wrongly. Descriptions are the single largest factor in tool
 			// selection quality, so an empty one is a defect, not a shortcut.
 			throw new \InvalidArgumentException(
-				sprintf( 'Tool "%s" needs a description saying when to use it.', $name )
+				esc_html( sprintf( 'Tool "%s" needs a description saying when to use it.', $name ) )
 			);
 		}
 	}

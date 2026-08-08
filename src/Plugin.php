@@ -9,6 +9,8 @@ declare( strict_types=1 );
 
 namespace StoreCrew;
 
+defined( 'ABSPATH' ) || exit; // Guard placed here (not after the use block) so it sits in the file header where Plugin Check looks for it.
+
 use StoreCrew\Ai\Http\CurlSseClient;
 use StoreCrew\Ai\Http\HttpClient;
 use StoreCrew\Ai\ModelPolicy;
@@ -81,8 +83,6 @@ use StoreCrew\Database\Repositories\MessageRepository;
 use StoreCrew\Database\Repositories\ToolCallRepository;
 use StoreCrew\Database\Repositories\UsageRepository;
 use StoreCrew\Licensing\FeatureGate;
-
-defined( 'ABSPATH' ) || exit;
 
 /**
  * Builds the container, opens the extension API, and closes it again.
@@ -918,6 +918,10 @@ final class Plugin {
 	 * domain is loaded before the point translations are actually available.
 	 */
 	public function load_textdomain(): void {
+		// Kept intentionally: WordPress.org auto-loads language packs, but this
+		// also loads translations a site ships in the plugin's own /languages
+		// (e.g. before a .org language pack exists, or for a private build).
+		// phpcs:ignore PluginCheck.CodeAnalysis.DiscouragedFunctions.load_plugin_textdomainFound -- see above; intentional support for local translations.
 		load_plugin_textdomain(
 			'storecrew',
 			false,

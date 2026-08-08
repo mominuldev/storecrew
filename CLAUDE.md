@@ -373,6 +373,18 @@ ciphertext, ragged embedding vectors, and the migration lock.
   protected.
 - **No silent caps.** If something truncates, log it —
   `storecrew_retrieval_truncated` exists for exactly this.
+- **Escape exception messages** — `throw new X( esc_html( sprintf( … ) ) )`.
+  Plugin Check's `EscapeOutput.ExceptionNotEscaped` flags every variable in a
+  `throw`; the developer message gets `esc_html()`, but typed structured args
+  (an HTTP status, a previous exception) must **not** be escaped — those get a
+  justified `phpcs:ignore` (see `Ai\Http\HttpClient`/`CurlSseClient`, which
+  disable the sniff file-wide because every throw there is provider metadata).
+  The dist is **Plugin Check clean, 0/0**; keep it that way.
+- **The .org dist ships less than the repo.** `.distignore` excludes `tests/`,
+  `tools/`, `docs/`, `admin-app/`, `widget-app/`, `node_modules/`, and the
+  static-analysis config; `composer install --no-dev` slims `vendor/` to the
+  autoloader + `psr/container`. `readme.txt` is the .org-format readme (distinct
+  from `CHANGELOG.md`). Verify against the *built dist*, not the working tree.
 - Verify with the suites above. `wp-cli` is available; the site runs
   WordPress 7.0.3 / PHP 8.4.7 / WooCommerce 11.0.0.
 

@@ -14,6 +14,35 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**WordPress.org compliance pass** — 2026-08-08
+
+- **Plugin Check is clean on the built dist: 0 errors, 0 warnings.** The bulk
+  (53 `WordPress.Security.EscapeOutput.ExceptionNotEscaped` errors) was resolved
+  by wrapping the developer-facing exception messages in `esc_html()`; the two
+  HTTP-transport files (`HttpClient`, `CurlSseClient`), where every throw carries
+  typed provider metadata (status code, retryability) that cannot be escaped
+  without breaking its type, carry a justified file-scoped `phpcs:disable` for
+  that one sniff. `Plugin.php`'s direct-access guard moved into the file header
+  where the check looks for it; the migration and uninstall DB queries got the
+  Plugin-Check sniff codes added to their existing justified ignores.
+- `readme.txt` in WordPress.org format (header, description, FAQ, screenshots,
+  changelog), distinct from `CHANGELOG.md`.
+- `.distignore` so the distributed zip ships only `src/`, the built `assets/`,
+  `languages/`, `readme.txt`, `storecrew.php`, `uninstall.php`, `composer.json`,
+  and a `--no-dev` `vendor/` (autoloader + `psr/container`) — not the tests,
+  tools, docs, app sources, or static-analysis config.
+- **No-egress audit** written for review (docs/12 § 9.1): every outbound call in
+  the shipped code enumerated (two sites, both the merchant's configured
+  provider), with confirmation there is no telemetry, no web fonts, no update
+  server, and no request at all until a provider key is set.
+
+### Notes
+
+- GPL-2.0-or-later headers were already present and are confirmed. The remaining
+  .org task is the marketing artwork (icon, banner, screenshots) for the SVN
+  `assets/` directory — a design deliverable, not code; `readme.txt` names the
+  screenshots it expects.
+
 **Internationalisation pass — customer-facing and server surfaces (i18n)** — 2026-08-08
 
 - All user-facing PHP strings are wrapped in `__()`/`esc_html__()` under the

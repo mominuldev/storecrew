@@ -46,7 +46,7 @@ final class ToolRegistry extends Registry {
 	protected function validate( mixed $item ): void {
 		if ( ! is_callable( $item ) ) {
 			throw new \InvalidArgumentException(
-				sprintf( 'Expected a tool factory, got %s.', get_debug_type( $item ) )
+				esc_html( sprintf( 'Expected a tool factory, got %s.', get_debug_type( $item ) ) )
 			);
 		}
 	}

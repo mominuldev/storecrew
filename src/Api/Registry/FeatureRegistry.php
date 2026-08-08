@@ -34,11 +34,7 @@ final class FeatureRegistry extends Registry {
 	protected function validate( mixed $item ): void {
 		if ( ! $item instanceof Feature ) {
 			throw new \InvalidArgumentException(
-				sprintf(
-					'Expected %s, got %s.',
-					Feature::class,
-					get_debug_type( $item )
-				)
+				esc_html( sprintf( 'Expected %s, got %s.', Feature::class, get_debug_type( $item ) ) )
 			);
 		}
 	}

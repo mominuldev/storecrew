@@ -191,7 +191,7 @@ abstract class Registry {
 	 */
 	protected function reject( string $message ): void {
 		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-			throw new \LogicException( $message );
+			throw new \LogicException( esc_html( $message ) );
 		}
 
 		if ( function_exists( 'do_action' ) ) {

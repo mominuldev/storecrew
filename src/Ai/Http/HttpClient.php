@@ -13,6 +13,13 @@ use StoreCrew\Ai\Exception\ProviderException;
 
 defined( 'ABSPATH' ) || exit;
 
+// Every throw here is a ProviderException carrying structured transport metadata
+// (provider id, HTTP status, retryability, retry-after) and is caught by the
+// provider/agent layer, never echoed. The extra constructor arguments are typed
+// data, not output, and escaping them would break their types — so the
+// exception-output sniff is a false positive across this transport file.
+// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
 /**
  * JSON-over-HTTP with retry and backoff.
  *

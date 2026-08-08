@@ -32,7 +32,7 @@ final class ExtractorRegistry extends Registry {
 	protected function validate( mixed $item ): void {
 		if ( ! $item instanceof ExtractorInterface ) {
 			throw new \InvalidArgumentException(
-				sprintf( 'Expected %s, got %s.', ExtractorInterface::class, get_debug_type( $item ) )
+				esc_html( sprintf( 'Expected %s, got %s.', ExtractorInterface::class, get_debug_type( $item ) ) )
 			);
 		}
 	}

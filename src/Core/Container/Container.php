@@ -90,16 +90,18 @@ final class Container implements ContainerInterface {
 
 		if ( ! array_key_exists( $id, $this->definitions ) ) {
 			throw new NotFoundException(
-				sprintf( 'StoreCrew: service "%s" is not registered.', $id )
+				esc_html( sprintf( 'StoreCrew: service "%s" is not registered.', $id ) )
 			);
 		}
 
 		if ( isset( $this->resolving[ $id ] ) ) {
 			throw new ContainerException(
-				sprintf(
-					'StoreCrew: circular dependency resolving "%s". Chain: %s.',
-					$id,
-					implode( ' -> ', array_keys( $this->resolving ) ) . ' -> ' . $id
+				esc_html(
+					sprintf(
+						'StoreCrew: circular dependency resolving "%s". Chain: %s.',
+						$id,
+						implode( ' -> ', array_keys( $this->resolving ) ) . ' -> ' . $id
+					)
 				)
 			);
 		}
@@ -116,8 +118,9 @@ final class Container implements ContainerInterface {
 			unset( $this->resolving[ $id ] );
 
 			throw new ContainerException(
-				sprintf( 'StoreCrew: factory for "%s" threw: %s', $id, $e->getMessage() ),
+				esc_html( sprintf( 'StoreCrew: factory for "%s" threw: %s', $id, $e->getMessage() ) ),
 				0,
+				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- previous exception, structured metadata, not output.
 				$e
 			);
 		}

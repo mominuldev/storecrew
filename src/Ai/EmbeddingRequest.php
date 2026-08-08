@@ -53,7 +53,7 @@ final readonly class EmbeddingRequest {
 		}
 
 		if ( ! in_array( $task, array( self::TASK_DOCUMENT, self::TASK_QUERY ), true ) ) {
-			throw new \InvalidArgumentException( sprintf( 'Unknown embedding task "%s".', $task ) );
+			throw new \InvalidArgumentException( esc_html( sprintf( 'Unknown embedding task "%s".', $task ) ) );
 		}
 	}
 

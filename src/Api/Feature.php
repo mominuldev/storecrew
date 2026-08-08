@@ -46,7 +46,7 @@ final readonly class Feature {
 
 		if ( ! in_array( $tier, self::tiers(), true ) ) {
 			throw new \InvalidArgumentException(
-				sprintf( 'Unknown tier "%s" for feature "%s".', $tier, $slug )
+				esc_html( sprintf( 'Unknown tier "%s" for feature "%s".', $tier, $slug ) )
 			);
 		}
 	}

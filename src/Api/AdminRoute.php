@@ -47,13 +47,13 @@ final readonly class AdminRoute {
 	) {
 		if ( ! str_starts_with( $path, '/' ) ) {
 			throw new \InvalidArgumentException(
-				sprintf( 'Admin route path must start with "/", got "%s".', $path )
+				esc_html( sprintf( 'Admin route path must start with "/", got "%s".', $path ) )
 			);
 		}
 
 		if ( '' === trim( $label ) ) {
 			throw new \InvalidArgumentException(
-				sprintf( 'Admin route "%s" needs a label.', $path )
+				esc_html( sprintf( 'Admin route "%s" needs a label.', $path ) )
 			);
 		}
 	}

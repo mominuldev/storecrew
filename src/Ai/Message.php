@@ -47,7 +47,7 @@ final readonly class Message {
 	) {
 		if ( ! in_array( $role, array( self::ROLE_USER, self::ROLE_ASSISTANT, self::ROLE_TOOL ), true ) ) {
 			throw new \InvalidArgumentException(
-				sprintf( 'Unsupported message role "%s".', $role )
+				esc_html( sprintf( 'Unsupported message role "%s".', $role ) )
 			);
 		}
 

@@ -47,7 +47,7 @@ final readonly class Agent {
 
 		if ( '' === trim( $mission ) ) {
 			throw new \InvalidArgumentException(
-				sprintf( 'Agent "%s" needs a mission — it becomes the system prompt.', $id )
+				esc_html( sprintf( 'Agent "%s" needs a mission — it becomes the system prompt.', $id ) )
 			);
 		}
 	}

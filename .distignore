@@ -1,0 +1,55 @@
+# Files and directories excluded from the distributed plugin (wp dist-archive).
+#
+# The shipped zip is: storecrew.php, uninstall.php, readme.txt, src/, the built
+# assets/ and languages/, plus a --no-dev vendor/ (psr/container + the composer
+# autoloader). Everything below is development-only and must not ship.
+#
+# Before archiving: `composer install --no-dev --optimize-autoloader` to strip
+# the dev dependencies (phpstan, phpcs, stubs) that would otherwise bloat vendor/.
+
+# Version control and OS cruft
+/.git
+/.github
+/.gitignore
+/.gitattributes
+/.distignore
+/.DS_Store
+.DS_Store
+Thumbs.db
+
+# Build sources — only the compiled output in assets/ ships
+/admin-app
+/widget-app
+/node_modules
+/package.json
+/package-lock.json
+/tsconfig.json
+/tsconfig.node.json
+/vite.config.ts
+/vite.widget.config.ts
+/tailwind.config.js
+/tailwind.config.cjs
+/postcss.config.js
+
+# Tests, tooling, and static-analysis config
+/tests
+/tools
+/phpstan.neon
+/phpstan-baseline.neon
+/phpcs.xml
+/phpcs.xml.dist
+/.phpcs.xml.dist
+
+# Project docs and working notes — not part of the plugin
+/docs
+/CLAUDE.md
+/CHANGELOG.md
+/README.md
+/.claude
+
+# composer.json ships alongside the built vendor/ (Plugin Check expects it when
+# a vendor/ directory is present); the lockfile is development-only.
+/composer.lock
+
+# The translation template ships (translators need it); nothing else in the
+# source tree does.

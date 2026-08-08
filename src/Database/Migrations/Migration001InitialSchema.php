@@ -51,7 +51,7 @@ final class Migration001InitialSchema implements MigrationInterface {
 
 			if ( ! Tables::exists( $table ) ) {
 				throw new \RuntimeException(
-					sprintf( 'Table %s was not created.', Tables::name( $table ) )
+					esc_html( sprintf( 'Table %s was not created.', Tables::name( $table ) ) )
 				);
 			}
 		}

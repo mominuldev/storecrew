@@ -46,7 +46,7 @@ $storecrew_tables = array(
 foreach ( $storecrew_tables as $storecrew_table ) {
 	$storecrew_name = $wpdb->prefix . 'scr_' . $storecrew_table;
 
-	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange
+	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- DROP on a plugin-owned table name built from $wpdb->prefix; not user input.
 	$wpdb->query( 'DROP TABLE IF EXISTS ' . $storecrew_name );
 }
 

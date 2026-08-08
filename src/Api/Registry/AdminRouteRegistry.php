@@ -32,11 +32,7 @@ final class AdminRouteRegistry extends Registry {
 	protected function validate( mixed $item ): void {
 		if ( ! $item instanceof AdminRoute ) {
 			throw new \InvalidArgumentException(
-				sprintf(
-					'Expected %s, got %s.',
-					AdminRoute::class,
-					get_debug_type( $item )
-				)
+				esc_html( sprintf( 'Expected %s, got %s.', AdminRoute::class, get_debug_type( $item ) ) )
 			);
 		}
 	}

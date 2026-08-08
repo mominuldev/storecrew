@@ -177,6 +177,36 @@ costKnown false with no rates.)*
   with the provider; the architecture's job is that nothing flows there
   except what a turn requires.
 
+### 9.1 Egress audit (for .org review, 2026-08-08)
+
+The claim above is checkable. Every outbound network call in the shipped code
+is one of exactly two sites, and both are the merchant's configured provider:
+
+| Call site | Mechanism | Destination | When |
+|---|---|---|---|
+| `Ai\Http\HttpClient::request` | `wp_remote_post` / `wp_remote_get` (WP HTTP API) | The provider base URL the merchant configured | Only with a configured provider key, during chat, routing, or embedding |
+| `Ai\Http\CurlSseClient` | `curl` (the one sanctioned raw-cURL site — `wp_remote_*` cannot stream) | Same provider, streaming endpoint | Only when the merchant enabled streaming on a configured provider |
+
+The destinations are the five provider base URLs (`api.anthropic.com`,
+`api.openai.com`, `generativelanguage.googleapis.com`, `openrouter.ai`,
+`api.deepseek.com`), reached only via the two calls above and only with the
+merchant's own key. Using the WP HTTP API is deliberate: it honours the proxy
+constants and `http_request_args` filters a locked-down host relies on (10 § 10).
+
+What is **not** present, verified by search across the shipped tree:
+
+- **No telemetry, analytics, or phone-home** of any kind.
+- **No web fonts or external assets** — the widget uses `system-ui`; nothing
+  loads from a CDN. The provider-key URLs in the admin (`ProviderMark`) are
+  hyperlinks the merchant clicks, not requests the plugin makes.
+- **No update server** — updates ride WordPress.org.
+- **No egress at all until the merchant configures a provider** — a fresh
+  install with no key makes no outbound request.
+
+IP addresses are never stored raw: rate-limiting and audit keep only a salted
+SHA-256. This section is the standing artifact a reviewer (or the merchant's
+DPO) can audit against the code.
+
 ---
 
 ## 10. Before Launch (the honest list)
