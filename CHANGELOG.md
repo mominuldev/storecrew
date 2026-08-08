@@ -14,6 +14,118 @@ The plugin is **pre-release**. Everything below is under `[Unreleased]` until
 
 ### Added
 
+**Agents declare who they answer, and merchants get a console to talk to
+them in** — 2026-08-08
+
+- `Agent::$audience` — `storefront` (the default) or `admin`. Routing, the
+  classifier's catalogue, and `agent.handoff`'s target list all read
+  `Orchestrator::available_agents()`, which defaults to the storefront set,
+  so a merchant-facing agent cannot be routed to from the widget, cannot be
+  handed a conversation, and is never described to the classifier. It is
+  reached by name through the new `Orchestrator::converse()` and by nothing
+  else.
+- The reason is concrete rather than architectural. Premium's first agent
+  reads customer purchase history and creates coupons; registering it into
+  the shared registry without this would have made it answerable to anyone
+  who opened the chat widget. An unrecognised audience **throws** at
+  construction rather than defaulting, because a misspelling falling back to
+  `storefront` fails in the one direction that costs the merchant.
+- `handoff()` now resolves its target from the storefront availability set
+  rather than the raw registry. The tool already validated against that
+  list, but a handoff must not be the single path where entitlement, the
+  merchant's enable switch, and the audience boundary do not apply.
+- `ToolContext::is_storefront` — declared since the executor was written and
+  read by nothing — is now derived from the agent's audience and is real
+  substrate. It was computed as `! is_admin()`, and both surfaces arrive
+  over REST where that is false either way, so every merchant turn would
+  have described itself as a storefront turn.
+- `Chat\ConsoleService`: one merchant turn, end to end, on the new `console`
+  conversation channel. No routing (the merchant chose a screen), no
+  identity verification (they are an authenticated user), no escalation (the
+  human is typing), and **no conversation quota** — the free-tier unit is a
+  *customer* conversation, and charging a merchant for asking their own
+  agent a question is the fabricated-figure rule pointed at the merchant.
+  Tokens and spend are still metered, because those are real.
+- The two channels are kept apart in the *lookups*, not just the labels:
+  `find_open_for_session()`, `find_open_for_customer()`, and `recent()` are
+  channel-scoped, and `ChatService::authorise()` refuses any non-widget
+  conversation outright. A shop manager holds one WordPress user id on both
+  surfaces, so an unscoped lookup — or the FR-CHAT-05 cross-device path,
+  which is reached by uuid and keyed on that id — would have handed the
+  storefront widget the merchant's own console thread, and then answered it
+  with a storefront agent.
+- The agent roster (`GET /agents`) now reports `audience`. The console lists
+  every agent side by side, and an on/off switch over an agent whose reach
+  you cannot see is a switch you cannot reason about.
+- Two suites were counting the *global* registry rather than what the free
+  plugin owns, so an add-on contributing an agent or a tool failed them —
+  reporting a healthy platform as broken on exactly the installation the
+  extension API exists to serve. Both now count by owner.
+
+**Approving a write now carries it out** — 2026-08-08
+
+- `ToolExecutor::execute_approved()`, and `POST /approvals/{id}` calls it.
+  Until now approval stamped the row and stopped: the model was told the
+  write was queued, the merchant approved it, the card left the queue, and
+  **nothing happened**. It hid because the only write tool that shipped was
+  `order.note`, and a missing note reads as the agent choosing not to leave
+  one. Found while building the Marketing agent, whose whole point is a
+  coupon that exists afterwards.
+- **Approval is the claim.** `approve()`'s `required → approved` transition
+  carries the pending state in its WHERE, so it is the mutex: a double-click,
+  a double-submit, and two administrators deciding at once all lose the race
+  quietly. Nothing executes twice.
+- **Authorisation is re-derived, never replayed.** The tool, the agent's
+  allow-list, its audience, the per-tool mode, the conversation's identity
+  state, and the capability check are read at approval time. Verification
+  revoked between queueing and approval — a different customer signing in on
+  a shared device — revokes the write with it. The capability checked is the
+  approver's, because they are the one taking responsibility.
+- A failure between the claim and the result leaves the row `approved` +
+  `pending`, which `approve()` never matches again: a stuck row a merchant
+  can re-ask for, rather than a coupon issued twice.
+- **A write whose arguments redaction altered can no longer be queued at
+  all.** Arguments are stored redacted (04 § 11), so replaying them would
+  carry out something different from what was approved — an order note with
+  the customer's email replaced by `[redacted]`. `execute()` compares the two
+  forms, refuses to queue when they differ, and tells the model to re-ask
+  without the personal detail. The design rule that falls out: an
+  approval-gated tool should take an id, not an email.
+- The route reports what actually happened. A refusal or failure comes back
+  as an error, which the Inbox already renders on the card the merchant
+  clicked — a write that quietly did not happen is precisely what this
+  stopped being possible.
+- Verified live end to end: the marketing agent was asked for a coupon, the
+  write queued, `POST /approvals/{id}` returned `executed: true`, and
+  WooCommerce had the coupon with the right code, discount, expiry, and
+  per-customer limit. Re-approving returned 409 and created no second coupon.
+
+**Still open:** `tool_modes` is stored with no route and no UI, so a merchant
+cannot set a tool to `auto` and skip the queue. With approval executing, that
+is a convenience rather than a blocker.
+
+**Settings grows a tab seam, and the licence pane moves into it** — 2026-08-08
+
+- `window.storecrew.registerSettingsTab(id, { label, mount })` is the
+  client-side registry's second surface: an add-on contributes a pane to
+  the Settings screen's tab bar instead of a whole sidebar route. Same
+  DOM-mount contract as `registerScreen`; the label arrives already
+  translated because the shell has no catalog for words it has never heard
+  of. A contributed tab joins the `?tab=<id>` URL contract, so a deep link
+  pasted into a support thread lands on the pane, and the Settings screen
+  subscribes to the registry — a tab registered after first render appears
+  without a refresh.
+- The reasoning is placement, not plumbing: a sidebar entry is for a place
+  the merchant works, and a form they visit twice a year belongs with the
+  rest of the configuration. First consumer: Pro's licence pane, which
+  dropped its `/licence` AdminRoute the same day it gained one (see the
+  Pro changelog for the redesign).
+- The harness now asserts the seam from both ends, the same shape as the
+  Update URI/filter-name probe: the built shell bundle exposes
+  `registerSettingsTab`, the licence bundle calls it and no longer calls
+  `registerScreen`, and `/licence` is *not* a declared route. Boot suite:
+  98 → 99 assertions.
+
 **The harness probes the updater's whole failure surface** — 2026-08-08
 
 - Pro's licence-gated updater (see the Pro changelog) is probed here through

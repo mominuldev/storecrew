@@ -135,6 +135,12 @@ final class AgentController extends RestController {
 			'mission'    => $agent->mission,
 			'feature'    => $agent->feature,
 			'toolIds'    => $agent->tool_ids,
+			// Who this agent answers. The console lists every agent side by
+			// side, and without this a merchant has no way to tell that one of
+			// them never picks up a storefront conversation — an on/off switch
+			// over an agent whose reach you cannot see is a switch you cannot
+			// reason about.
+			'audience'   => $agent->audience,
 			'entitled'   => '' === $agent->feature || $this->features->enabled( $agent->feature ),
 			// No row means shipped defaults, which are on — the same reading
 			// the orchestrator takes, so the console cannot disagree with the

@@ -35,6 +35,22 @@ final class ConversationRepository extends Repository {
 	 */
 	public const LIVE_STATUSES = array( self::STATUS_OPEN, self::STATUS_ESCALATED );
 
+	/**
+	 * The storefront widget — a customer talking to the store.
+	 */
+	public const CHANNEL_WIDGET = 'widget';
+
+	/**
+	 * The merchant console in wp-admin — the store talking to its own agents.
+	 *
+	 * Kept apart from the widget everywhere a conversation is *found*, not
+	 * merely labelled. A shop manager is both a merchant and, on the same
+	 * WordPress user id, a potential customer: without the channel in the
+	 * lookups, opening the widget while signed in would resume their own
+	 * console thread and show campaign planning in the storefront chat.
+	 */
+	public const CHANNEL_CONSOLE = 'console';
+
 	protected function table(): string {
 		return Tables::CONVERSATIONS;
 	}
@@ -42,7 +58,7 @@ final class ConversationRepository extends Repository {
 	/**
 	 * Open a conversation. Returns its public uuid.
 	 */
-	public function start( string $session_token, int $customer_id = 0, string $channel = 'widget', string $locale = '' ): ?string {
+	public function start( string $session_token, int $customer_id = 0, string $channel = self::CHANNEL_WIDGET, string $locale = '' ): ?string {
 		$uuid = wp_generate_uuid4();
 		$now  = $this->now();
 
@@ -86,8 +102,12 @@ final class ConversationRepository extends Repository {
 	 * The token stored here is a **hash** of the one the visitor holds, so a
 	 * dump of this table hands an attacker nothing they can present. Callers
 	 * pass the hash; the raw token never reaches a repository.
+	 *
+	 * Scoped to one channel, defaulting to the widget: resuming is a
+	 * per-surface question, and a lookup that could cross channels is how a
+	 * console thread ends up in the storefront.
 	 */
-	public function find_open_for_session( string $session_token_hash ): ?object {
+	public function find_open_for_session( string $session_token_hash, string $channel = self::CHANNEL_WIDGET ): ?object {
 		if ( '' === $session_token_hash ) {
 			return null;
 		}
@@ -96,8 +116,8 @@ final class ConversationRepository extends Repository {
 		$row = $this->db->get_row(
 			$this->db->prepare(
 				'SELECT * FROM ' . $this->table_name()
-					. ' WHERE session_token = %s AND status IN (' . $this->live_placeholders() . ') ORDER BY id DESC LIMIT 1',
-				array_merge( array( $session_token_hash ), self::LIVE_STATUSES )
+					. ' WHERE session_token = %s AND channel = %s AND status IN (' . $this->live_placeholders() . ') ORDER BY id DESC LIMIT 1',
+				array_merge( array( $session_token_hash, $channel ), self::LIVE_STATUSES )
 			)
 		);
 
@@ -111,8 +131,13 @@ final class ConversationRepository extends Repository {
 	 * identified customer — a new browser, or a cleared cookie, must not lose
 	 * the thread. Anonymous visitors have no such handle, which is why this is
 	 * keyed on the WordPress user id rather than on the session token.
+	 *
+	 * The channel is part of the key for the same reason, and here it is load
+	 * bearing rather than tidy: a shop manager holds one WordPress user id
+	 * across both surfaces, so an unscoped lookup would hand the storefront
+	 * widget the merchant's own console conversation.
 	 */
-	public function find_open_for_customer( int $customer_id ): ?object {
+	public function find_open_for_customer( int $customer_id, string $channel = self::CHANNEL_WIDGET ): ?object {
 		if ( $customer_id <= 0 ) {
 			return null;
 		}
@@ -121,8 +146,8 @@ final class ConversationRepository extends Repository {
 		$row = $this->db->get_row(
 			$this->db->prepare(
 				'SELECT * FROM ' . $this->table_name()
-					. ' WHERE customer_id = %d AND status IN (' . $this->live_placeholders() . ') ORDER BY id DESC LIMIT 1',
-				array_merge( array( $customer_id ), self::LIVE_STATUSES )
+					. ' WHERE customer_id = %d AND channel = %s AND status IN (' . $this->live_placeholders() . ') ORDER BY id DESC LIMIT 1',
+				array_merge( array( $customer_id, $channel ), self::LIVE_STATUSES )
 			)
 		);
 
@@ -296,29 +321,39 @@ final class ConversationRepository extends Repository {
 	/**
 	 * Recent conversations, newest first.
 	 *
+	 * Defaults to the widget channel, because the inbox is a list of *customer*
+	 * conversations: the merchant's own console threads are their side of the
+	 * desk, and mixing them in would have the merchant reading their own
+	 * questions as if a shopper had asked them. Pass an empty channel for
+	 * every conversation regardless of surface.
+	 *
 	 * @return list<object>
 	 */
-	public function recent( int $limit = 25, int $offset = 0, string $status = '' ): array {
-		$table = $this->table_name();
+	public function recent( int $limit = 25, int $offset = 0, string $status = '', string $channel = self::CHANNEL_WIDGET ): array {
+		$table  = $this->table_name();
+		$where  = array();
+		$params = array();
 
 		if ( '' !== $status ) {
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
-			return $this->db->get_results(
-				$this->db->prepare(
-					"SELECT * FROM {$table} WHERE status = %s ORDER BY last_activity_at DESC LIMIT %d OFFSET %d",
-					$status,
-					$limit,
-					$offset
-				)
-			);
+			$where[]  = 'status = %s';
+			$params[] = $status;
 		}
+
+		if ( '' !== $channel ) {
+			$where[]  = 'channel = %s';
+			$params[] = $channel;
+		}
+
+		$clause = array() === $where ? '' : ' WHERE ' . implode( ' AND ', $where );
+
+		$params[] = $limit;
+		$params[] = $offset;
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
 		return $this->db->get_results(
 			$this->db->prepare(
-				"SELECT * FROM {$table} ORDER BY last_activity_at DESC LIMIT %d OFFSET %d",
-				$limit,
-				$offset
+				"SELECT * FROM {$table}{$clause} ORDER BY last_activity_at DESC LIMIT %d OFFSET %d",
+				$params
 			)
 		);
 	}

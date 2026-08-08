@@ -172,6 +172,16 @@ final class ChatService {
 			return null;
 		}
 
+		// The storefront resolves storefront conversations and nothing else.
+		// The cross-device path below is keyed on the WordPress user id, and a
+		// shop manager holds the same id on both surfaces — so without this
+		// line, a merchant who knew their own console thread's uuid could pull
+		// it into the widget, where it would then be answered by a storefront
+		// agent. Refused as "not found", like every other unowned uuid.
+		if ( ConversationRepository::CHANNEL_WIDGET !== (string) $conversation->channel ) {
+			return null;
+		}
+
 		if ( $this->owns( $conversation, $token ) ) {
 			return $conversation;
 		}

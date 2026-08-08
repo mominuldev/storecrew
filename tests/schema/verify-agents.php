@@ -40,6 +40,7 @@ use StoreCrew\Api\Registry\ToolRegistry;
 use StoreCrew\Database\Repositories\AgentConfigRepository;
 use StoreCrew\Database\Repositories\AgentRunRepository;
 use StoreCrew\Database\Repositories\AuditLogRepository;
+use StoreCrew\Database\Repositories\ConversationRepository;
 use StoreCrew\Database\Repositories\ToolCallRepository;
 use StoreCrew\Database\Tables;
 
@@ -93,7 +94,29 @@ $spy = new class() implements ToolInterface {
 $tools = new ToolRegistry();
 $tools->register( $spy->id(), static fn () => $spy );
 
-$executor = new ToolExecutor( $tools, $calls_repo, $configs, $audit );
+// The registry the executor consults when running an *approved* write: it has
+// to re-check the agent's allow-list and audience from live state rather than
+// trusting the queued row.
+$probe_agents = new AgentRegistry();
+$probe_agents->register(
+	new StoreCrew\Agent\Agent(
+		id: 'probe-agent',
+		label: 'Probe',
+		mission: 'A probe agent.',
+		persona: '',
+		tool_ids: array( 'probe.spy' )
+	)
+);
+
+$executor = new ToolExecutor(
+	$tools,
+	$calls_repo,
+	$configs,
+	$audit,
+	$probe_agents,
+	$runs_repo,
+	$c->get( ConversationRepository::class )
+);
 
 echo "\n== Tool authorisation ==\n";
 $open_context = new ToolContext( 0, 0, false, 0, 'probe-agent' );
@@ -188,6 +211,103 @@ $t( 'PROBE: a disabled tool is refused outright', ToolResult::STATUS_DISABLED ==
 $t( 'the disabled tool never executed', 0 === $spy->runs );
 
 $configs->delete_for_agent( 'probe-agent' );
+
+echo "\n== Approval executes the write (FR-AGENT-05, second half) ==\n";
+// For a long time approving only stamped the row: the merchant agreed and
+// nothing ran, and the card left the queue looking successful. These probes
+// exist because "the queue works" was never evidence that the write happened.
+$conversations = $c->get( ConversationRepository::class );
+$probe_uuid    = $conversations->start( hash( 'sha256', 'probe-approval' ), 0, 'widget' );
+$probe_conv    = $conversations->find_by_uuid( (string) $probe_uuid );
+$probe_ctx     = new ToolContext( (int) $probe_conv->id, 0, false, 0, 'probe-agent' );
+
+// A real run, so the executor can find the agent the call belongs to.
+$probe_run = $runs_repo->start( (int) $probe_conv->id, 'probe-agent', 'scripted', 'scripted-1', 'hash' );
+
+$spy->runs = 0;
+$result    = $executor->execute( new ToolCall( 'a1', 'probe.spy', array( 'note' => 'do the thing' ) ), $probe_ctx, $probe_run );
+$t( 'the write queues', ToolResult::STATUS_PENDING === $result->status, $result->status );
+$t( 'and has not run', 0 === $spy->runs );
+
+$queued = $calls_repo->for_run( $probe_run );
+$queued = end( $queued );
+
+$approved = $executor->execute_approved( (int) $queued->id, 1 );
+$t( 'approving executes it', null !== $approved && $approved->is_ok(), null === $approved ? 'not claimed' : $approved->message );
+$t( 'PROBE: the write actually ran', 1 === $spy->runs );
+$t( 'with the arguments it was queued with', 'do the thing' === ( $spy->last_input['note'] ?? '' ) );
+$t( 'and the row records the result', ToolCallRepository::STATUS_SUCCEEDED === (string) $calls_repo->find( (int) $queued->id )->status );
+$t( 'the queue is empty again', array() === array_filter( $calls_repo->approval_queue( 50 ), static fn ( $r ): bool => (int) $r->id === (int) $queued->id ) );
+
+// PROBE: the claim is the transition, so a second approval cannot run it again.
+$spy->runs = 0;
+$t( 'PROBE: approving twice cannot execute twice', null === $executor->execute_approved( (int) $queued->id, 1 ) );
+$t( 'PROBE: and nothing ran the second time', 0 === $spy->runs );
+
+// PROBE: authorisation is re-derived at approval time, not replayed. A tool the
+// agent has lost since queueing must not come back through the queue.
+$executor->execute( new ToolCall( 'a2', 'probe.spy', array() ), $probe_ctx, $probe_run );
+$lost   = $calls_repo->for_run( $probe_run );
+$lost   = end( $lost );
+$narrow = new AgentRegistry();
+$narrow->register(
+	new StoreCrew\Agent\Agent( id: 'probe-agent', label: 'Probe', mission: 'A probe agent.', persona: '', tool_ids: array() )
+);
+$narrowed = new ToolExecutor( $tools, $calls_repo, $configs, $audit, $narrow, $runs_repo, $conversations );
+
+$spy->runs = 0;
+$verdict   = $narrowed->execute_approved( (int) $lost->id, 1 );
+$t( 'PROBE: a tool the agent no longer holds is denied at approval', null !== $verdict && ToolResult::STATUS_DENIED === $verdict->status );
+$t( 'PROBE: and did not run', 0 === $spy->runs );
+
+// PROBE: identity is re-read from the conversation, so verification revoked
+// between queueing and approval revokes the write with it.
+$spy->needs_identity = true;
+$conversations->mark_verified( (int) $probe_conv->id, 1042 );
+
+// Queued while verification stood, so it genuinely reaches the queue rather
+// than being denied on the way in.
+$verified_ctx = new ToolContext( (int) $probe_conv->id, 0, true, 1042, 'probe-agent' );
+$executor->execute( new ToolCall( 'a3', 'probe.spy', array() ), $verified_ctx, $probe_run );
+$identity_call = $calls_repo->for_run( $probe_run );
+$identity_call = end( $identity_call );
+$t( 'PROBE: it did reach the queue while identity stood', ToolCallRepository::STATUS_PENDING === (string) $identity_call->status );
+
+// The shared-device case: a different customer signs in, and the platform
+// revokes the verification the queued write was authorised under.
+$conversations->assign_customer( (int) $probe_conv->id, 77 );
+
+$spy->runs = 0;
+$verdict   = $executor->execute_approved( (int) $identity_call->id, 1 );
+$t( 'PROBE: identity revoked after queueing revokes the write', null !== $verdict && ToolResult::STATUS_DENIED === $verdict->status );
+$t( 'PROBE: and it did not run', 0 === $spy->runs );
+$spy->needs_identity = false;
+
+// PROBE: a queued write must be replayable exactly. Arguments are stored
+// redacted, so a call carrying personal data cannot be — and is refused at
+// queue time rather than executed later with "[redacted]" in place of the
+// value the merchant thought they were approving.
+$spy->runs = 0;
+$result    = $executor->execute(
+	new ToolCall( 'a4', 'probe.spy', array( 'note' => 'refund shopper@example.com today' ) ),
+	$probe_ctx,
+	$probe_run
+);
+$t( 'PROBE: an unreplayable write is refused rather than queued', ToolResult::STATUS_ERROR === $result->status, $result->status );
+$t( 'PROBE: it never ran', 0 === $spy->runs );
+$t(
+	'PROBE: and it is not sitting in the approval queue',
+	array() === array_filter(
+		$calls_repo->approval_queue( 50 ),
+		static fn ( $r ): bool => (int) $r->conversation_id === (int) $probe_conv->id
+	)
+);
+
+$configs->delete_for_agent( 'probe-agent' );
+$runs_repo->delete_for_conversations( array( (int) $probe_conv->id ) );
+$calls_repo->delete_for_conversations( array( (int) $probe_conv->id ) );
+$conversations->delete_ids( array( (int) $probe_conv->id ) );
+
 $spy->tool_intent = ToolInterface::INTENT_READ;
 
 echo "\n== Arguments are redacted before storage (04 § 11) ==\n";
@@ -922,8 +1042,12 @@ $configs->delete_for_agent( 'probe-agent' );
 
 echo "\n== Registries ==\n";
 $api = StoreCrew\Plugin::instance()->api();
-$t( 'two agents shipped', 2 === count( $api->agents()->all() ) );
-$t( 'seven tools shipped', 7 === count( $api->tools()->all() ) );
+// Counted by owner, not by total. An add-on contributing an agent or a tool is
+// the extension API working as designed, and a suite asserting the global total
+// fails on exactly the installation the API exists to support — reporting a
+// healthy platform as broken because premium happens to be active.
+$t( 'two agents shipped', 2 === count( $api->agents()->owned_by( 'storecrew' ) ), (string) count( $api->agents()->owned_by( 'storecrew' ) ) );
+$t( 'seven tools shipped', 7 === count( $api->tools()->owned_by( 'storecrew' ) ), (string) count( $api->tools()->owned_by( 'storecrew' ) ) );
 $t( 'agent registry is frozen', $api->agents()->is_frozen() );
 $t( 'tool registry is frozen', $api->tools()->is_frozen() );
 $t( 'write tools are identifiable', array_key_exists( 'order.note', $api->tools()->write_tools() ) );

@@ -253,10 +253,12 @@ tools' approval defaults:
    second, site binding, grant-from-entitlements-map, quota loosening, all
    probe-tested against fixture-signed envelopes in the integration
    harness (37 → 73 assertions). **The activation UI is built** (2026-08-08,
-   third change-set): Pro's `/licence` screen arrives through the extension
-   seam — AdminRoute + contributed REST controller + plain-JS bundle on the
-   shell's new DOM-mount screen registry (06 § 2.3) — live-verified through
-   the real REST server. **The updater's client half is built**
+   third change-set): Pro's licence pane arrives through the extension
+   seam — a contributed REST controller + plain-JS bundle on the shell's
+   new DOM-mount registry (06 § 2.3) — live-verified through the real REST
+   server. Later the same day it moved from its own `/licence` route into a
+   Settings tab (`registerSettingsTab`, the registry's second surface) and
+   was redesigned in the shell's card language. **The updater's client half is built**
    (2026-08-08, fourth change-set): the `Update URI` header locks
    WordPress.org out of the slug and routes checks to `Licensing\Updater`,
    probe-tested through every failure mode and a live
@@ -264,9 +266,28 @@ tools' approval defaults:
    licence + update server implementing 10 § 6.1's contract, and the
    production keypair (`PUBLIC_KEY` empty = fail-closed `unconfigured`,
    still ship-blocking).
-2. **Marketing agent** (FR-MKT): segments from Woo data, coupon tool
-   (approval-gated — FR-SALES-06/FR-MKT-03), abandoned-cart sequence with
-   consent discipline (FR-MKT-06 is a MUST before any send).
+2. **Marketing agent** (FR-MKT) — **FR-MKT-01/02/03 built 2026-08-08**:
+   `segment.build` sizes audiences from Woo order data through named
+   criteria rather than a query, returning counts and customer ids and
+   never a name, email, or order; campaign copy grounds on the platform's
+   own `product.search` / `product.lookup`; `coupon.create` writes through
+   the CRUD API with a required expiry and no overwrite of an existing
+   code. The free plugin gained two things to make it possible, both
+   through the extension API rather than around it: `Agent::$audience`,
+   which keeps a merchant-facing agent out of storefront routing, the
+   classifier catalogue, and handoff targets; and `Chat\ConsoleService`,
+   the merchant-side turn (08 § 6b). It also forced **FR-AGENT-05's second
+   half** out of hiding: the approval loop recorded the decision and never
+   ran the call, so the merchant approved a coupon that was never created.
+   `ToolExecutor::execute_approved()` closes it (08 § 4b) — the claim is the
+   `approve()` transition, authorisation is re-derived at approval time, and
+   a write whose arguments redaction altered can no longer be queued at all,
+   because it could not be replayed faithfully. Live-verified end to end:
+   asked, queued, approved, coupon in WooCommerce on the agreed terms.
+   **Remaining:** the abandoned-cart sequence with consent discipline
+   (FR-MKT-05; FR-MKT-06 is a MUST before any send, and the consent basis
+   currently defaults to unknown behind `storecrew_pro_marketing_consent`
+   because Woo core records none).
 3. **Analytics agent** (FR-ANALYTICS): constrained query surface — never
    free-form SQL (FR-ANALYTICS-02); every figure traceable
    (FR-ANALYTICS-06).

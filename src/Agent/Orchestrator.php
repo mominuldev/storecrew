@@ -34,6 +34,13 @@ defined( 'ABSPATH' ) || exit;
  * returns something unrecognised, the turn falls through to the default agent.
  * A customer asking a question must get an answer from *somebody*.
  *
+ * **Routing only ever sees storefront agents.** `handle()`, the classifier
+ * catalogue, and `handoff()` all read `available_agents()`, which defaults to
+ * `Agent::AUDIENCE_STOREFRONT`. Merchant-facing agents are reached by name
+ * through `converse()` and by nothing else — so contributing one through the
+ * registry adds a screen, not a way for a shopper to reach the tool that
+ * creates coupons.
+ *
  * @see docs/01-prd.md FR-AGENT-02, FR-AGENT-03
  */
 final class Orchestrator {
@@ -89,7 +96,13 @@ final class Orchestrator {
 		array $history,
 		SharedContext $context
 	): AgentTurn {
-		$agent = $this->agents->get( $to_agent_id );
+		// Resolved from the storefront availability set, not from the registry.
+		// The tool already validates its target against this same list, but a
+		// handoff must not be the one path where entitlement, the merchant's
+		// enable switch, and the audience boundary do not apply — that would
+		// make "hand over to marketing" a way into a merchant-facing agent
+		// from the widget.
+		$agent = $this->available_agents()[ $to_agent_id ] ?? null;
 
 		if ( ! $agent instanceof Agent ) {
 			return AgentTurn::failed( $to_agent_id, 'unknown_agent', 'That agent does not exist.' );
@@ -112,11 +125,62 @@ final class Orchestrator {
 	}
 
 	/**
-	 * Agents that are entitled and enabled.
+	 * Run one named agent, with no routing.
+	 *
+	 * The merchant-facing counterpart to `handle()`. There is nothing to
+	 * classify — the merchant chose who they are talking to by opening a
+	 * screen — so no routing call is made and no classifier tokens are spent.
+	 *
+	 * The agent is resolved out of the **admin** availability set rather than
+	 * from the registry directly, which is the security property: entitlement
+	 * and the merchant's own enable switch still decide, and a storefront
+	 * agent id handed to this method resolves to nothing rather than being run
+	 * outside the routing that shapes it.
+	 *
+	 * @param list<Message> $history Prior turns, oldest first.
+	 */
+	public function converse( string $agent_id, string $message, array $history, SharedContext $context ): AgentTurn {
+		$available = $this->available_agents( Agent::AUDIENCE_ADMIN );
+
+		if ( ! isset( $available[ $agent_id ] ) ) {
+			return AgentTurn::failed(
+				$agent_id,
+				'unavailable_agent',
+				'That agent is not available on this installation.'
+			);
+		}
+
+		$agent = $available[ $agent_id ];
+
+		$history[] = Message::user( $message );
+
+		$turn = $this->runner->run( $agent, $history, $context );
+
+		/**
+		 * Fires after an agent finishes a turn.
+		 *
+		 * @param AgentTurn     $turn    The outcome.
+		 * @param Agent         $agent   Who handled it.
+		 * @param SharedContext $context Conversation context.
+		 */
+		do_action( 'storecrew_agent_turn_completed', $turn, $agent, $context );
+
+		return $turn;
+	}
+
+	/**
+	 * Agents that are entitled and enabled, for one audience.
+	 *
+	 * Defaults to the storefront, so every caller that has not thought about
+	 * audience — routing, the handoff catalogue, the onboarding state — gets
+	 * the set that answers customers, and a merchant-facing agent has to be
+	 * asked for deliberately.
+	 *
+	 * @param string $audience `Agent::AUDIENCE_*`.
 	 *
 	 * @return array<string, Agent>
 	 */
-	public function available_agents(): array {
+	public function available_agents( string $audience = Agent::AUDIENCE_STOREFRONT ): array {
 		return $this->agents->available(
 			fn ( string $feature ): bool => $this->features->enabled( $feature ),
 			function ( string $agent_id ): bool {
@@ -124,7 +188,8 @@ final class Orchestrator {
 
 				// Absent configuration means shipped defaults, which are on.
 				return null === $config || $config['enabled'];
-			}
+			},
+			$audience
 		);
 	}
 

@@ -445,8 +445,16 @@ echo "\n== Agents (FR-ADMIN-02 step 4) ==\n";
 [ $status, $body ] = $call( 'GET', '/storecrew/v1/agents' );
 $t( 'agents returns 200', 200 === $status, (string) $status );
 $roster = $body['data'] ?? array();
-$t( 'the roster carries the shipped agents', array( 'sales', 'support' ) === array_column( $roster, 'id' ), wp_json_encode( array_column( $roster, 'id' ) ) );
+$roster_ids = array_column( $roster, 'id' );
+// Containment, not equality. The roster is every registered agent, so an
+// add-on contributing one is the extension API working — asserting the exact
+// list would fail on the installation the API exists to serve.
+$t( 'the roster carries the shipped agents', array() === array_diff( array( 'sales', 'support' ), $roster_ids ), wp_json_encode( $roster_ids ) );
 $t( 'an agent reports its feature and its tools', isset( $roster[0]['feature'], $roster[0]['toolIds'] ) );
+$t(
+	'and who it answers, so the console can tell a storefront agent from a merchant-facing one',
+	'storefront' === ( $roster[ array_search( 'support', $roster_ids, true ) ]['audience'] ?? null )
+);
 $t(
 	'PROBE: an agent with no configuration row reads as on, matching the orchestrator',
 	true === ( $roster[0]['enabled'] ?? null ) && false === ( $roster[0]['configured'] ?? null )
@@ -545,11 +553,37 @@ $t( 'the pending write is listed', in_array( $call_id, array_column( $body['data
 [ $status ] = $call( 'POST', '/storecrew/v1/approvals/' . $call_id, array( 'decision' => 'sideways' ) );
 $t( 'PROBE: an invalid decision is rejected', 400 === $status, (string) $status );
 
-[ $status ] = $call( 'POST', '/storecrew/v1/approvals/' . $call_id, array( 'decision' => 'approve' ) );
-$t( 'approving returns 200', 200 === $status );
+// Approval now *executes* the write (FR-AGENT-05), so this row — fabricated
+// with no agent run behind it — cannot be carried out: there is no agent whose
+// allow-list and audience could be re-checked. It must be refused with a
+// reason rather than reported as approved, which is the whole failure this
+// route used to have. The happy path lives in verify-agents, where a spy tool
+// can prove the write actually ran.
+[ $status, $body ] = $call( 'POST', '/storecrew/v1/approvals/' . $call_id, array( 'decision' => 'approve' ) );
+$t( 'PROBE: a call whose agent cannot be resolved is refused, not silently approved', 409 === $status, (string) $status );
+$t( 'and says why', str_contains( strtolower( (string) ( $body['message'] ?? '' ) ), 'agent' ), (string) ( $body['message'] ?? '' ) );
+$t(
+	'PROBE: the refusal resolved the row rather than leaving it queued forever',
+	ToolCallRepository::STATUS_PENDING !== (string) $calls_repo->find( $call_id )->status,
+	(string) $calls_repo->find( $call_id )->status
+);
 
 [ $status ] = $call( 'POST', '/storecrew/v1/approvals/' . $call_id, array( 'decision' => 'approve' ) );
 $t( 'PROBE: approving twice is a 409, not a silent success', 409 === $status, (string) $status );
+
+// Declining is still pure bookkeeping — nothing runs, so nothing can fail.
+$declined = $calls_repo->record(
+	0,
+	(int) $conv->id,
+	'coupon.create',
+	array( 'amount' => 10 ),
+	ToolCallRepository::INTENT_WRITE,
+	ToolCallRepository::AUTH_REQUIRED
+);
+
+[ $status ] = $call( 'POST', '/storecrew/v1/approvals/' . $declined, array( 'decision' => 'deny' ) );
+$t( 'declining returns 200', 200 === $status, (string) $status );
+$t( 'and skips the call', ToolCallRepository::STATUS_SKIPPED === (string) $calls_repo->find( $declined )->status );
 
 echo "\n== Registry ==\n";
 $registry = $c->get( ControllerRegistry::class );

@@ -45,7 +45,7 @@ $routes   = $api->admin_routes();
 
 t( 'Free registered 4 features', 4 === count( $features->owned_by( 'storecrew' ) ), (string) count( $features->owned_by( 'storecrew' ) ) );
 t( 'Pro registered 6 features', 6 === count( $features->owned_by( 'storecrew-pro' ) ), (string) count( $features->owned_by( 'storecrew-pro' ) ) );
-t( 'Pro registered 4 admin routes', 4 === count( $routes->owned_by( 'storecrew-pro' ) ) );
+t( 'Pro registered 3 admin routes', 3 === count( $routes->owned_by( 'storecrew-pro' ) ) );
 t( 'Ownership tracked', 'storecrew-pro' === $features->owner( 'agent.marketing' ) );
 t( 'Free owns agent.sales', 'storecrew' === $features->owner( 'agent.sales' ) );
 
@@ -361,28 +361,18 @@ $gate10 = new StoreCrew\Licensing\FeatureGate( $features, $routes );
 t( 'PROBE: no public key, no grants — fail closed', ! $gate10->enabled( 'agent.marketing' ) );
 t( 'PROBE: and the state is named, not mysterious', LicenceClient::STATE_UNCONFIGURED === $unconfigured->state() );
 
-echo "\n== The licence screen: route, controller, and bundle all arrive through the seam ==\n";
-// The activation UI is Pro's, delivered through three published surfaces —
-// an AdminRoute declaration, a REST controller factory, and the
-// storecrew_admin_assets action. Each is asserted here because each is a
-// separate way for the screen to silently not exist.
+echo "\n== The licence tab: controller, bundle, and registry all arrive through the seam ==\n";
+// The activation UI is Pro's, delivered through two published surfaces — a
+// REST controller factory and the storecrew_admin_assets action — plus the
+// shell's client-side settings-tab registry. It is deliberately NOT an
+// AdminRoute: a sidebar entry is for a place the merchant works, and a form
+// they visit twice a year belongs on the Settings screen with the rest of
+// the configuration. The tab is never feature-gated either way — the REST
+// controller behind it requires only storecrew_manage, because an activation
+// form that renders as "part of a paid plan" is a door that locks its own
+// key inside.
 
-$licence_route = $routes->has( '/licence' ) ? $routes->get( '/licence' ) : null;
-
-t( 'the /licence route is declared', null !== $licence_route );
-t(
-	'PROBE: it is capability-gated but NOT feature-gated — an activation screen must never render as "part of a paid plan"',
-	null !== $licence_route && null === $licence_route->feature && 'storecrew_manage' === $licence_route->capability
-);
-
-$manifest_routes = ( new StoreCrew\Licensing\FeatureGate( $features, $routes ) )->manifest()['routes'];
-$licence_locked  = null;
-foreach ( $manifest_routes as $r ) {
-	if ( '/licence' === $r['path'] ) {
-		$licence_locked = $r['locked'];
-	}
-}
-t( 'the manifest serves it unlocked with no licence at all', false === $licence_locked );
+t( 'PROBE: /licence is not a route — the screen moved into Settings', ! $routes->has( '/licence' ) );
 
 $controllers = $api->controllers();
 t( 'the licence controller is registered', $controllers->has( 'licence' ) );
@@ -403,6 +393,103 @@ t(
 	'its strings arrive translated from PHP, not from an i18n runtime',
 	isset( $GLOBALS['scr_localized']['storecrew-pro-licence']['storecrewProLicence']['strings']['activate'] )
 );
+t(
+	'the tab label travels with them — the shell cannot translate a label it has never heard of',
+	isset( $GLOBALS['scr_localized']['storecrew-pro-licence']['storecrewProLicence']['strings']['tab'] )
+);
+
+// Two halves of one seam, like the Update URI header and the updater's HOOK:
+// the shell exposes window.storecrew.registerSettingsTab and the bundle calls
+// it. Neither side can see the other at build time, and if either name drifts
+// the tab silently never appears — so assert the two files agree.
+$licence_bundle = (string) file_get_contents( $plugins . '/storecrew-pro/assets/admin/licence.js' );
+$shell_bundle   = (string) file_get_contents( $plugins . '/storecrew/assets/admin/app.js' );
+t( 'the bundle registers a Settings tab, not a routed screen', str_contains( $licence_bundle, 'registerSettingsTab' ) && ! str_contains( $licence_bundle, 'registerScreen' ) );
+t( 'PROBE: the built shell actually exposes registerSettingsTab', str_contains( $shell_bundle, 'registerSettingsTab' ) );
+
+echo "\n== The Marketing agent: contributed through the registries, kept off the storefront ==\n";
+
+use StoreCrew\Agent\Agent;
+use StoreCrew\Agent\Tool\ToolInterface;
+use StoreCrew\Pro\Agent\MarketingAgent;
+
+$tools  = $api->tools();
+$agents = $api->agents();
+
+t( 'Pro registered segment.build', $tools->has( 'segment.build' ) && 'storecrew-pro' === $tools->owner( 'segment.build' ) );
+t( 'Pro registered coupon.create', $tools->has( 'coupon.create' ) && 'storecrew-pro' === $tools->owner( 'coupon.create' ) );
+
+$segment = $tools->get( 'segment.build' );
+$coupon  = $tools->get( 'coupon.create' );
+
+t( 'the tool factories build real tools', $segment instanceof ToolInterface && $coupon instanceof ToolInterface );
+
+// The executor's second line of defence. Even if the audience boundary below
+// were undone, a storefront visitor holds none of our capabilities, so both of
+// these refuse before running.
+t( 'PROBE: segment.build demands storecrew_manage', 'storecrew_manage' === $segment->required_capability() );
+t( 'PROBE: coupon.create demands storecrew_manage', 'storecrew_manage' === $coupon->required_capability() );
+t( 'PROBE: coupon.create is a write, so it queues for approval by default', ToolInterface::INTENT_WRITE === $coupon->intent() );
+
+$marketing = $agents->get( MarketingAgent::ID );
+
+t( 'Pro registered the marketing agent', $marketing instanceof Agent && 'storecrew-pro' === $agents->owner( MarketingAgent::ID ) );
+t( 'gated on agent.marketing', $marketing instanceof Agent && 'agent.marketing' === $marketing->feature );
+t( 'and it talks to the merchant, not the storefront', $marketing instanceof Agent && Agent::AUDIENCE_ADMIN === $marketing->audience );
+
+// A named tool that is not registered is skipped silently when definitions are
+// built — so an agent naming the catalogue tools by string id must be checked
+// against the registry, or a rename in the free plugin would quietly leave the
+// marketing agent unable to look a product up.
+$missing = array_values( array_diff( $marketing->tool_ids, $tools->ids() ) );
+t( 'PROBE: every tool it names actually exists', array() === $missing, implode( ', ', $missing ) );
+
+// The boundary itself. Both callables answer yes, so entitlement and the
+// merchant's enable switch are held constant and the audience is the only
+// thing deciding.
+$yes        = static fn ( string $x ): bool => true;
+$storefront = $agents->available( $yes, $yes );
+$admin      = $agents->available( $yes, $yes, Agent::AUDIENCE_ADMIN );
+
+t( 'PROBE: routing cannot see the marketing agent', ! array_key_exists( MarketingAgent::ID, $storefront ) );
+t( 'PROBE: and neither can the handoff tool, which reads the same list', ! array_key_exists( MarketingAgent::ID, $storefront ) );
+t( 'the console can, by asking for the admin audience', array_key_exists( MarketingAgent::ID, $admin ) );
+t( 'PROBE: sales and support stay on the storefront side', array_key_exists( 'sales', $storefront ) && ! array_key_exists( 'sales', $admin ) );
+
+// PROBE: a misspelt audience must not fall back to the storefront, which is
+// the direction that would put a merchant-facing agent in front of shoppers.
+$bad_audience = false;
+try {
+	new Agent( id: 'typo', label: 'Typo', mission: 'Mission.', persona: '', audience: 'admn' );
+} catch ( InvalidArgumentException $e ) {
+	$bad_audience = str_contains( $e->getMessage(), 'audience' );
+}
+t( 'PROBE: an unknown audience throws rather than defaulting', $bad_audience );
+
+// The console screen, through the same two published surfaces as the licence
+// tab — but a routed screen this time, because Marketing is a place the
+// merchant works rather than a form they fill in twice a year.
+t( '/marketing is a sidebar route', $routes->has( '/marketing' ) );
+t( 'the marketing controller is registered', $controllers->has( 'marketing' ) && 'storecrew-pro' === $controllers->owner( 'marketing' ) );
+
+$marketing_bundle_path = $plugins . '/storecrew-pro/assets/admin/marketing.js';
+$marketing_enqueued    = $GLOBALS['scr_scripts']['storecrew-pro-marketing'] ?? null;
+
+t( 'its bundle is enqueued when the shell announces itself', null !== $marketing_enqueued );
+t( 'PROBE: depending on the shell handle, so registerScreen exists first', null !== $marketing_enqueued && in_array( 'storecrew-admin', $marketing_enqueued['deps'], true ) );
+t( 'the file it points at exists', is_file( $marketing_bundle_path ) );
+t(
+	'its strings arrive translated from PHP, not from an i18n runtime',
+	isset( $GLOBALS['scr_localized']['storecrew-pro-marketing']['storecrewProMarketing']['strings']['send'] )
+);
+
+$marketing_bundle = (string) file_get_contents( $marketing_bundle_path );
+t( 'the bundle registers a routed screen, not a Settings tab', str_contains( $marketing_bundle, "registerScreen('/marketing'" ) );
+t( 'PROBE: the built shell actually exposes registerScreen', str_contains( $shell_bundle, 'registerScreen' ) );
+
+// Model prose reaches this screen. The widget's rule applies unchanged: that
+// text was written by something that has been reading customer reviews.
+t( 'PROBE: the console never assigns innerHTML', ! str_contains( $marketing_bundle, 'innerHTML' ) );
 
 echo "\n== The licence-gated updater (FR-DIST-08) ==\n";
 

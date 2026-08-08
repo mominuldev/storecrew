@@ -49,18 +49,44 @@ export const useTheme = create<{ theme: Theme; toggle: () => void; apply: () => 
  */
 export type ExtensionScreen = { mount: (el: HTMLElement) => (() => void) | void };
 
+/**
+ * A tab contributed to the Settings screen. Same mount contract as a screen,
+ * plus the label the tab bar shows — it arrives already translated, because
+ * the add-on localises its own strings server-side.
+ */
+export type ExtensionSettingsTab = ExtensionScreen & { label: string };
+
 const screens = new Map<string, ExtensionScreen>();
+const settingsTabs = new Map<string, ExtensionSettingsTab>();
 const listeners = new Set<() => void>();
 let revision = 0;
 
-export function registerScreen(path: string, screen: ExtensionScreen): void {
-  screens.set(path, screen);
+function bump(): void {
   revision += 1;
   listeners.forEach((fn) => fn());
 }
 
+export function registerScreen(path: string, screen: ExtensionScreen): void {
+  screens.set(path, screen);
+  bump();
+}
+
 export function getScreen(path: string): ExtensionScreen | undefined {
   return screens.get(path);
+}
+
+/**
+ * Contribute a tab to the Settings screen rather than a whole route. This is
+ * where an add-on's configuration belongs — a sidebar entry is for a place the
+ * merchant *works*, not a form they visit twice a year.
+ */
+export function registerSettingsTab(id: string, tab: ExtensionSettingsTab): void {
+  settingsTabs.set(id, tab);
+  bump();
+}
+
+export function settingsTabList(): Array<{ id: string; tab: ExtensionSettingsTab }> {
+  return Array.from(settingsTabs, ([id, tab]) => ({ id, tab }));
 }
 
 /** For useSyncExternalStore: re-render route tables when a screen arrives. */
@@ -74,5 +100,5 @@ export function screenRevision(): number {
 }
 
 if (typeof window !== 'undefined') {
-  (window as unknown as { storecrew: unknown }).storecrew = { registerScreen };
+  (window as unknown as { storecrew: unknown }).storecrew = { registerScreen, registerSettingsTab };
 }

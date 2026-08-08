@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { screenRevision, settingsTabList, subscribeScreens } from '../lib/store';
 import type { ChatSettings, Provider, Settings as SettingsData } from '../lib/types';
+import { ExtensionMount } from '../components/ExtensionMount';
 import { Icon } from '../components/Icon';
 import { ProviderMark, providerKeysUrl } from '../components/ProviderMark';
 import { Button, Card, IconChip, Label, PageHeader, Pill, Problem, Spinner } from '../components/primitives';
@@ -18,20 +20,25 @@ const TABS = [
   { id: 'connections', label: 'Connections' },
   { id: 'models', label: 'Models' },
   { id: 'storefront', label: 'Storefront' },
-] as const;
+];
 
-type TabId = (typeof TABS)[number]['id'];
+type TabId = string;
 
 /**
  * The segmented tab bar, the reference's filter-tab treatment. A tab that
  * needs the merchant's attention carries a dot — the tab bar is the only
  * thing visible from every pane, so it is where the warning has to live.
+ *
+ * The list is a prop because add-ons contribute tabs (a licence pane, say)
+ * through the client-side registry, and those arrive after first render.
  */
 function Tabs({
+  tabs,
   value,
   onChange,
   alerts,
 }: {
+  tabs: Array<{ id: string; label: string }>;
   value: TabId;
   onChange: (tab: TabId) => void;
   alerts: Partial<Record<TabId, boolean>>;
@@ -41,7 +48,7 @@ function Tabs({
       className="mb-6 inline-flex items-center gap-1 rounded-2xl p-1"
       style={{ background: 'var(--surface-2)', border: '1px solid var(--line)' }}
     >
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const active = tab.id === value;
 
         return (
@@ -76,11 +83,17 @@ export function Settings() {
   const qc = useQueryClient();
   const [keys, setKeys] = useState<Record<string, string>>({});
 
+  // Tabs contributed by add-ons. Their bundles load after this one, so the
+  // registry is subscribed — a tab registered late appears without a refresh.
+  useSyncExternalStore(subscribeScreens, screenRevision);
+  const contributed = settingsTabList();
+  const tabs = [...TABS, ...contributed.map(({ id, tab }) => ({ id, label: tab.label }))];
+
   // The active tab lives in the URL, so a refresh — or a link pasted into a
   // support thread — lands on the same pane.
   const [params, setParams] = useSearchParams();
   const rawTab = params.get('tab');
-  const tab: TabId = TABS.some((t) => t.id === rawTab) ? (rawTab as TabId) : 'connections';
+  const tab: TabId = tabs.some((t) => t.id === rawTab) ? (rawTab as TabId) : 'connections';
   const setTab = (next: TabId) => setParams({ tab: next }, { replace: true });
 
   const providers = useQuery({ queryKey: ['providers'], queryFn: () => api.get<Provider[]>('/providers') });
@@ -130,6 +143,7 @@ export function Settings() {
       <PageHeader title="Settings" sub="Providers, the models each job uses, and the storefront widget." />
 
       <Tabs
+        tabs={tabs}
         value={tab}
         onChange={setTab}
         alerts={{
@@ -265,6 +279,10 @@ export function Settings() {
       {'storefront' === tab ? (
         <Storefront chat={s.chat} canAnswer={canAnswer} save={saveChat.mutate} busy={saveChat.isPending} />
       ) : null}
+
+      {contributed.map(({ id, tab: contributedTab }) =>
+        id === tab ? <ExtensionMount key={id} screen={contributedTab} /> : null,
+      )}
     </>
   );
 }

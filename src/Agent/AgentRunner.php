@@ -406,7 +406,12 @@ final class AgentRunner {
 			(bool) $context->recall( 'identity_verified', false ),
 			(int) $context->recall( 'verified_order_id', 0 ),
 			$agent->id,
-			! is_admin()
+			// From the agent's declared audience, not from `is_admin()`. Both
+			// the widget and the merchant console arrive over REST, where
+			// `is_admin()` is false either way — so the old derivation called
+			// every merchant turn a storefront turn, which is the answer a
+			// tool must not be given.
+			$agent->is_storefront()
 		);
 	}
 

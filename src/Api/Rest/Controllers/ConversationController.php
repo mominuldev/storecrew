@@ -9,6 +9,7 @@ declare( strict_types=1 );
 
 namespace StoreCrew\Api\Rest\Controllers;
 
+use StoreCrew\Agent\Tool\ToolExecutor;
 use StoreCrew\Api\Rest\RestController;
 use StoreCrew\Core\Capabilities\Capabilities;
 use StoreCrew\Database\Repositories\AgentRunRepository;
@@ -39,6 +40,7 @@ final class ConversationController extends RestController {
 		private readonly MessageRepository $messages,
 		private readonly AgentRunRepository $runs,
 		private readonly ToolCallRepository $calls,
+		private readonly ToolExecutor $executor,
 	) {
 		parent::__construct( $features );
 	}
@@ -218,30 +220,69 @@ final class ConversationController extends RestController {
 		return $this->ok( $rows );
 	}
 
+	/**
+	 * Approve or decline a queued write — and, on approval, run it.
+	 *
+	 * Approving used to record the decision and stop, which meant the merchant
+	 * agreed to a write that never happened and the card left the queue
+	 * looking successful. Approval now *is* the execution (FR-AGENT-05): the
+	 * executor claims the row and carries the action out, re-deriving every
+	 * authorisation from live state on the way.
+	 *
+	 * A refusal or a failure comes back as an error rather than a 200, because
+	 * the Inbox shows a failed decision on the card the merchant clicked. A
+	 * write that quietly did not happen is the thing this route exists to stop
+	 * being possible.
+	 */
 	public function decide( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 		$id       = (int) $request->get_param( 'id' );
 		$decision = (string) $request->get_param( 'decision' );
 
-		$ok = 'approve' === $decision
-			? $this->calls->approve( $id, get_current_user_id() )
-			: $this->calls->deny( $id, get_current_user_id() );
+		if ( 'approve' !== $decision ) {
+			if ( ! $this->calls->deny( $id, get_current_user_id() ) ) {
+				return $this->not_pending();
+			}
 
-		if ( ! $ok ) {
-			// The repository only transitions a genuinely pending call, so this
-			// covers both "already decided" and "never existed" — deciding an
-			// executed call would be a lie in the audit trail.
-			return $this->error(
-				'not_pending',
-				__( 'That action is no longer awaiting approval.', 'storecrew' ),
-				409
+			return $this->ok(
+				array(
+					'id'       => $id,
+					'decision' => $decision,
+				)
 			);
+		}
+
+		$result = $this->executor->execute_approved( $id, get_current_user_id() );
+
+		// Null means the row could not be claimed: already decided, already
+		// run, or never pending. Deciding an executed call would be a lie in
+		// the audit trail.
+		if ( null === $result ) {
+			return $this->not_pending();
+		}
+
+		if ( ! $result->is_ok() ) {
+			// The tool's own sentence, verbatim. It was written for a model,
+			// but it is the only account of what actually stopped the write,
+			// and a merchant reading "That action is no longer permitted"
+			// learns more than they would from a generic failure.
+			return $this->error( 'approval_failed', $result->message, 409 );
 		}
 
 		return $this->ok(
 			array(
 				'id'       => $id,
 				'decision' => $decision,
+				'executed' => true,
+				'result'   => $result->message,
 			)
+		);
+	}
+
+	private function not_pending(): \WP_Error {
+		return $this->error(
+			'not_pending',
+			__( 'That action is no longer awaiting approval.', 'storecrew' ),
+			409
 		);
 	}
 }

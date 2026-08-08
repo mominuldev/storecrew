@@ -29,8 +29,9 @@ Owns the entire platform. It is a complete product, not a demo.
 |---|---|
 | Kernel | Bootstrap, PSR-11 container, module loader, activation/deactivation, migration runner |
 | **Extension API** | Every registry and hook in §4. This is the free plugin's most important export |
-| Agents | Agent framework, orchestrator, **Sales agent**, **Support agent** |
+| Agents | Agent framework, orchestrator, the audience boundary, **Sales agent**, **Support agent** |
 | Tools | Product search, catalogue read, order lookup (identity-verified), policy lookup, order notes |
+| Chat (merchant) | `ConsoleService` — the turn loop for `audience: admin` agents, on its own conversation channel |
 | Knowledge base | Extractors, chunking, embeddings, hybrid retrieval, incremental re-index |
 | Providers | OpenAI, Anthropic, Gemini, OpenRouter, DeepSeek |
 | Chat | Storefront widget, SSE streaming, session handling, rate limiting |
@@ -45,8 +46,8 @@ Contributes only through the API. Contains no copy of free-plugin code.
 
 | Subsystem | Contents |
 |---|---|
-| Agents | **Marketing agent**, **Analytics agent**, custom agent builder |
-| Tools | Coupon creation, segment building, campaign dispatch, forecasting queries |
+| Agents | **Marketing agent** (built 2026-08-08, `audience: admin`), **Analytics agent**, custom agent builder |
+| Tools | `segment.build` + `coupon.create` (built), campaign dispatch, forecasting queries |
 | Workflows | Visual workflow builder — engine, node types, runner |
 | Integrations | Mailchimp, Brevo, FluentCRM, Klaviyo, ActiveCampaign adapters |
 | Admin | Additional SPA routes and panels, mounted into the free shell |

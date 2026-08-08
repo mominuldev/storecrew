@@ -91,7 +91,7 @@ server-authoritative; the manifest is a rendering hint and every controller
 re-checks (FR-DIST-09).
 
 **The registration contract is a DOM mount, not a React component**
-(built 2026-08-08, first consumed by Pro's licence screen):
+(built 2026-08-08, first consumed by Pro's licence UI):
 `window.storecrew.registerScreen(path, { mount(el) → cleanup? })`. This
 follows from the shell bundling its own React — an add-on's bundle has no
 React instance to build elements with, and a component contract would force
@@ -104,6 +104,19 @@ shell (via the `storecrew_admin_assets` action, which passes the shell's
 script handle for dependency declarations and fires only after
 `window.storecrew` exists), so a screen registered after first render
 appears without a refresh.
+
+**Settings tabs are the second registry surface** (2026-08-08):
+`window.storecrew.registerSettingsTab(id, { label, mount(el) → cleanup? })`
+contributes a pane to the Settings screen's tab bar instead of a whole
+route. Same mount contract, plus the label — which arrives already
+translated, because the add-on localises its own strings server-side and
+the shell has no catalog for words it has never heard of. This is where an
+add-on's *configuration* belongs: a sidebar route is for a place the
+merchant works, not a form they visit twice a year. Pro's licence pane
+moved here from a dedicated `/licence` route the same day it was built —
+the route registration is gone, not merely unlinked. A contributed tab
+joins the URL contract too (`?tab=<id>`), so a deep link pasted into a
+support thread lands on the pane.
 
 **The shell renders from the manifest** (G4-D1, ratified and built
 2026-08-07). `Layout` appends every contributed route with `inMenu`, in

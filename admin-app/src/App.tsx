@@ -1,10 +1,10 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { api } from './lib/api';
 import { getScreen, screenRevision, subscribeScreens, useTheme } from './lib/store';
-import type { ExtensionScreen } from './lib/store';
 import type { Approval, Bootstrap } from './lib/types';
+import { ExtensionMount } from './components/ExtensionMount';
 import { Layout } from './components/Layout';
 import { Card, Spinner } from './components/primitives';
 import { Overview } from './pages/Overview';
@@ -14,31 +14,6 @@ import { Inbox } from './pages/Inbox';
 import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
 import { ConversationDetail } from './pages/ConversationDetail';
-
-/**
- * Hosts an add-on's DOM-mounted screen inside the shell's layout.
- *
- * The add-on's bundle has no React (deliberately — see lib/store.ts), so the
- * shell owns the element's lifecycle: mount on attach, run the returned
- * cleanup on detach, remount if a different screen object arrives for the
- * same path.
- */
-function ExtensionMount({ screen }: { screen: ExtensionScreen }) {
-  const host = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!host.current) return;
-
-    const cleanup = screen.mount(host.current);
-
-    return () => {
-      if (cleanup) cleanup();
-      if (host.current) host.current.replaceChildren();
-    };
-  }, [screen]);
-
-  return <div ref={host} />;
-}
 
 /**
  * Routing is hash-based. WordPress owns the admin URL, and a history-based

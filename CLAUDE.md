@@ -119,13 +119,42 @@ with the decision already made in `ToolExecutor`. Authorisation derives from
 session capabilities, never from model output. Retrieved text enters the prompt
 as user-role content, never as system.
 
-Three further invariants live in the agent layer, each probe-tested:
+Four further invariants live in the agent layer, each probe-tested:
 
 - An agent's `tool_ids` is an allow-list checked *before* the executor, so a
   tool an agent never declared cannot reach the security boundary at all.
 - A merchant-edited persona cannot strip guardrails — they are appended after it.
 - Identity verification proves *one* identity. `order.lookup` refuses any order
   other than the one confirmed.
+- **An agent's `audience` decides who can reach it.** Routing, the classifier
+  catalogue, and `agent.handoff`'s targets all read
+  `Orchestrator::available_agents()`, which defaults to `storefront` — so a
+  merchant-facing agent is unreachable from the widget and is only ever run by
+  name through `converse()`. An unknown audience throws at construction rather
+  than defaulting, because a misspelling falling back to `storefront` would
+  fail in the direction that puts customer data in front of shoppers. Added
+  2026-08-08 for premium's Marketing agent, which reads purchase history and
+  creates coupons: registering it without this would have made it answerable to
+  anyone who opened the chat widget. `ToolContext::is_storefront` derives from
+  it too — both surfaces arrive over REST, where `is_admin()` is false either
+  way, so the old derivation called every merchant turn a storefront turn.
+
+### 7b. The storefront and the console never share a conversation
+
+`ConsoleService` is the merchant-side counterpart to `ChatService`, on the
+`console` channel (08 § 6b). The channel is part of the *lookup*, not just a
+label: `find_open_for_session()`, `find_open_for_customer()`, and `recent()`
+are channel-scoped, and `ChatService::authorise()` refuses any non-widget
+conversation outright. A shop manager holds one WordPress user id on both
+surfaces, so an unscoped lookup — or the FR-CHAT-05 cross-device path, which is
+reached by uuid and keyed on that id — would hand the storefront widget the
+merchant's own console thread and then answer it with a storefront agent.
+
+The console consumes **no conversation quota**. The free-tier unit is a
+*customer* conversation (FR-LIC-02); charging a merchant for asking their own
+agent a question is the fabricated-figure rule pointed at the merchant. Tokens
+and spend are still metered, because those are real. It also never escalates —
+escalation summons a human, and the human is typing.
 
 ### 8. Inside wp-admin, layered CSS always loses
 
@@ -221,6 +250,7 @@ src/
                            order.lookup, order.note, agent.handoff
   Chat/
     ChatService            One customer turn, end to end
+    ConsoleService         One merchant turn, for admin-audience agents
     Session                Session token: issue, digest, cookie
     RateLimiter            Per session and per IP (FR-CHAT-06)
     ChatSettings           Widget appearance and placement
@@ -394,6 +424,39 @@ ciphertext, ragged embedding vectors, and the migration lock.
 
 ## Known gaps
 
+- ~~**Approval is recorded but never executed**~~ — **closed 2026-08-08**.
+  `ToolExecutor::execute_approved()` is the second half of FR-AGENT-05, and
+  `POST /approvals/{id}` now runs the write rather than stamping a row and
+  reporting success. Four properties carry it, each probed: **approval is
+  the claim** (`approve()`'s `required → pending` transition is the mutex, so
+  a double-click, a double-submit, or two administrators cannot execute
+  twice); **authorisation is re-derived, never replayed** (the agent's
+  allow-list, its audience, the per-tool mode, the conversation's identity
+  state, and the capability check all read live state — verification revoked
+  since queueing revokes the write with it); **the capability checked is the
+  approver's**, because they are the one taking responsibility; and a crash
+  between claim and result leaves the row `approved` + `pending`, which
+  `approve()` never matches again — a stuck row rather than a coupon issued
+  twice. Verified live: the marketing agent was asked for a coupon, the write
+  queued, `POST /approvals/{id}` returned it executed, and WooCommerce had
+  the coupon with the right terms.
+- **A queued write must be replayable exactly, so one cannot be queued at
+  all.** Arguments are stored redacted (04 § 11), and executing a redacted
+  argument later would carry out something *different* from what the merchant
+  approved — an order note with the customer's email silently replaced by
+  `[redacted]`. `ToolExecutor::execute()` therefore refuses to queue a write
+  whose arguments redaction altered, tells the model to re-ask without the
+  personal detail, and resolves the row so it never reaches the queue. This
+  is a real constraint on write-tool design: **an approval-gated tool should
+  take an id, not an email.**
+- `tool_modes` is still stored by `AgentConfigRepository` with **no REST
+  route and no UI**, so a merchant cannot set a tool to `auto` and skip the
+  queue. With approval now executing, that is a convenience rather than the
+  blocker it was.
+- **A console turn cannot stream.** `Orchestrator::converse()` takes no
+  `$on_delta`, and a segment scan over thousands of orders is exactly the turn
+  a merchant would like to watch arrive. The SSE machinery exists on the
+  storefront path; this is wiring, not design.
 - **i18n is done for the customer-facing and server surfaces** (2026-08-08):
   user-facing PHP strings are `__()`-wrapped under `storecrew`, `languages/storecrew.pot`
   is generated, and the widget's own chrome (aria-labels, error messages) is
@@ -451,9 +514,10 @@ ciphertext, ragged embedding vectors, and the migration lock.
   envelopes in the integration harness. **Still ship-blocking:**
   `LicenceClient::PUBLIC_KEY` is empty until the licence server exists
   (10 § 6.1 is its contract) — fail-closed as status `unconfigured`. The
-  activation UI exists (2026-08-08): Pro's `/licence` screen, the first
-  consumer of the shell's DOM-mount screen registry and the
-  `storecrew_admin_assets` action (06 § 2.3). The updater's client half
+  activation UI exists (2026-08-08): a Licence tab on the Settings screen
+  (moved there from a `/licence` route the same day), the first consumer of
+  the shell's DOM-mount registries and the `storecrew_admin_assets` action
+  (06 § 2.3). The updater's client half
   exists too (`Pro\Licensing\Updater` + the `Update URI` header, FR-DIST-08);
   only the server side of the spine remains.
 - **The storefront chat surface is live-verified** (21 REST routes). Five turns

@@ -59,6 +59,7 @@ use StoreCrew\Api\Registry\ToolRegistry;
 use StoreCrew\Database\Repositories\AgentConfigRepository;
 use StoreCrew\Database\Repositories\AgentRunRepository;
 use StoreCrew\Database\Repositories\AuditLogRepository;
+use StoreCrew\Database\Repositories\ConversationRepository;
 use StoreCrew\Database\Repositories\ToolCallRepository;
 use StoreCrew\Database\Repositories\UsageRepository;
 use StoreCrew\Database\Tables;
@@ -413,7 +414,18 @@ $build = static function ( array $item, ProviderRegistry $providers, ModelPolicy
 	$tools->register( OrderLookupTool::ID, static fn () => $lookup_spy );
 	$tools->register( OrderNoteTool::ID, static fn () => $note_spy );
 
-	$executor = new ToolExecutor( $tools, $calls_repo, $configs, $audit );
+	// The last three are consulted only when an *approved* write runs later,
+	// which this corpus never does — it drives live turns. Passed real anyway,
+	// so what the attacks meet is the shipping executor and not a variant.
+	$executor = new ToolExecutor(
+		$tools,
+		$calls_repo,
+		$configs,
+		$audit,
+		$c->get( AgentRegistry::class ),
+		$runs_repo,
+		$c->get( ConversationRepository::class )
+	);
 
 	$runner = new AgentRunner(
 		$providers,

@@ -48,17 +48,33 @@ final class AgentRegistry extends Registry {
 	}
 
 	/**
-	 * Agents whose feature is entitled and whose config has them enabled.
+	 * Agents for one audience whose feature is entitled and whose config has
+	 * them enabled.
+	 *
+	 * The audience filter is first and is not optional-by-omission: the
+	 * parameter defaults to the storefront, so every existing caller — routing,
+	 * the handoff catalogue, the onboarding check — keeps considering exactly
+	 * the agents that answer customers. A merchant-facing agent has to be asked
+	 * for by name.
 	 *
 	 * @param callable(string): bool $is_entitled Feature gate.
 	 * @param callable(string): bool $is_enabled  Merchant configuration.
+	 * @param string                 $audience    `Agent::AUDIENCE_*`.
 	 *
 	 * @return array<string, Agent>
 	 */
-	public function available( callable $is_entitled, callable $is_enabled ): array {
+	public function available(
+		callable $is_entitled,
+		callable $is_enabled,
+		string $audience = Agent::AUDIENCE_STOREFRONT
+	): array {
 		return array_filter(
 			$this->items,
-			static function ( Agent $agent ) use ( $is_entitled, $is_enabled ): bool {
+			static function ( Agent $agent ) use ( $is_entitled, $is_enabled, $audience ): bool {
+				if ( $agent->audience !== $audience ) {
+					return false;
+				}
+
 				if ( '' !== $agent->feature && ! $is_entitled( $agent->feature ) ) {
 					return false;
 				}

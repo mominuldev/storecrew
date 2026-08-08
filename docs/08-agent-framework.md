@@ -34,11 +34,31 @@ An agent is **data, not a subclass** — `Agent` is a readonly value:
 | `guardrails` | Behavioural constraints, appended after the persona |
 | `model_task` | Which ModelPolicy task resolves its model (default `chat`) |
 | `feature` | Entitlement slug gating availability |
+| `audience` | **Who it answers** — `storefront` (default) or `admin` |
 
 Consequences: a merchant editing a persona edits a row, not code; premium
 contributes agents through the same registry core uses (15 § 4.1); and the
 suite can construct throwaway agents freely, which is what makes the security
 properties probe-testable.
+
+**`audience` is a boundary, not a label** (added 2026-08-08 with the Marketing
+agent). Routing, the classifier's catalogue, and `agent.handoff`'s target list
+all read `Orchestrator::available_agents()`, which defaults to the storefront
+set — so a merchant-facing agent cannot be routed to from the widget, cannot be
+named as a handoff target, and is never described to the classifier. It is
+reached by name through `converse()` and by nothing else. Without this, the
+first premium agent — one that reads customer purchase history and creates
+coupons — would have become answerable to anyone who opened the chat widget,
+purely by being registered. An unrecognised audience **throws** at construction
+rather than defaulting: a misspelling that fell back to `storefront` would fail
+in the one direction that costs the merchant. *(Probed: the marketing agent is
+absent from the storefront set and present in the admin one with entitlement
+and enablement held constant; a typo'd audience throws.)*
+
+`ToolContext::is_storefront` derives from this rather than from `is_admin()`.
+Both surfaces arrive over REST, where `is_admin()` is false either way, so the
+old derivation described every merchant turn as a storefront turn — the answer
+a tool must not be given.
 
 Both `agent_configs` override surfaces are consumed (14 § M1, 2026-08-07).
 **Merchant guardrails** are additive-only: they compose *after* every shipped
@@ -217,6 +237,38 @@ from its own arguments, an injection could claim `identity_verified: true`.
 
 ---
 
+## 4b. Executing an Approved Write (FR-AGENT-05, second half)
+
+Queueing was built long before running. `approve()` stamped the row and
+nothing carried the action out, so a merchant agreed to a coupon that was
+never created — and the card left the queue, which is what a success looks
+like. `ToolExecutor::execute_approved()` closes it, and `POST /approvals/{id}`
+calls it instead of the repository.
+
+| Property | How |
+|---|---|
+| Runs exactly once | `approve()`'s `required → approved` UPDATE carries the pending state in its WHERE, so it is the mutex. Double-click, double-submit, and two administrators deciding at once all lose the race quietly |
+| Authorisation is re-derived | Tool resolution, the agent's `tool_ids` allow-list, its audience, the per-tool mode, the conversation's identity state, and the capability check are all read **now**. Nothing is replayed from the queued row except the arguments |
+| The approver is the subject | `current_user_can()` sees the merchant. That is what approval means; the route already required `storecrew_manage_agents` |
+| Crash-safe in one direction | A failure between claim and result leaves the row `approved` + `pending`, which `approve()` never matches again. A write that did not happen, never one that happened twice |
+
+Refusals resolve the row rather than returning it to the queue, and each is a
+state a merchant can actually reach: an add-on deactivated since queueing, an
+agent that lost the tool from its allow-list, a tool switched off, identity
+revoked by a different customer signing in, a conversation pruned by
+retention. All probed.
+
+**A queued write must be replayable exactly, which means one kind cannot be
+queued at all.** Arguments are stored redacted (§ 4), so executing them later
+would carry out something *different* from what was approved — an order note
+with the customer's email replaced by `[redacted]`. `execute()` compares the
+redacted form with what the model sent and, if they differ, refuses to queue:
+the model is told to re-ask without the personal detail and the row is
+resolved. The design consequence is worth stating plainly: **an
+approval-gated tool should take an id, not an email.**
+
+---
+
 ## 5. Identity (FR-SUPPORT-01/02, R-SEC-02)
 
 Identity is a *conversation* property proven by `identity.verify` (order
@@ -272,6 +324,44 @@ Six tools ship in total: the five above plus `agent.handoff`, which is a read
 in the executor's sense — it changes which agent answers, not store state, so
 queueing it for approval would strand the customer mid-turn.
 
+Both shipped agents are `storefront`. The first `admin`-audience agent is
+premium's Marketing agent (15 § 2.2), which is what the § 1 boundary was built
+for.
+
+---
+
+## 6b. The Merchant Console (`ConsoleService`)
+
+`ChatService`'s counterpart for `audience: admin` agents, on the `console`
+conversation channel. It is a separate class rather than a flag because almost
+every decision inverts, and each inversion would be a defect if shared:
+
+| | Storefront (`ChatService`) | Console (`ConsoleService`) |
+|---|---|---|
+| Who answers | Classifier routes among available agents | The merchant chose a screen; no routing call, no classifier tokens |
+| Authorisation | Session token in an HttpOnly cookie | `storecrew_manage` plus a `customer_id` match on the thread |
+| Identity | Verified by order number + email | Already an authenticated WordPress user |
+| Escalation | Summons a human (FR-SUPPORT-07) | None — the human is typing |
+| Conversation quota | Consumes one (FR-LIC-02) | **Never.** Charging a merchant for asking their own agent a question is the fabricated-figure defect pointed at the merchant |
+| Token/spend metering | Yes | Yes — those costs are real either way |
+
+One thread per (user, agent) pair, keyed by a digest in `session_token`. The
+channel is 32 characters and an add-on agent id long enough to overflow it
+would collide with another agent's thread *silently*, which is the failure
+class this design is avoiding; the digest is not a credential and is never
+presented as proof of anything.
+
+**The two channels do not meet.** `find_open_for_session()`,
+`find_open_for_customer()`, and `recent()` are all channel-scoped, and
+`ChatService::authorise()` refuses any non-widget conversation outright. A shop
+manager holds one WordPress user id across both surfaces, so an unscoped
+lookup — or the FR-CHAT-05 cross-device path reached by uuid — would have
+handed the storefront widget the merchant's own console thread, and then
+answered it with a storefront agent. The inbox is widget-only for a softer
+reason: it is a list of *customer* conversations, and the merchant reading
+their own questions back as if a shopper had asked them is confusing rather
+than dangerous.
+
 ---
 
 ## 7. Extension Points
@@ -305,4 +395,22 @@ only, and the frozen registries are the contract.
   against a hostile rule.
 - Exchange workflow (FR-SUPPORT-06), coupons (FR-SALES-06), and the Phase 2
   agents are tool-and-agent additions on this framework, not framework
-  changes — that is the test the framework was built to pass.
+  changes — that is the test the framework was built to pass. **Partly
+  answered 2026-08-08 by the Marketing agent** (FR-MKT-01/02/03), which
+  arrived as two premium tools and one `Agent` value through the published
+  registries. The framework did need two additions, and both were gaps rather
+  than bad predictions: agents had no way to say *who they answer*, and there
+  was no merchant-side path to run one at all. Everything else — the turn
+  loop, the executor, approval-gating for the coupon write, prompt
+  composition, metering — took the new agent unchanged.
+- **A console turn cannot stream.** `ConsoleService` calls
+  `Orchestrator::converse()`, which takes no `$on_delta`; a segment scan over
+  thousands of orders is exactly the turn a merchant would like to watch
+  arrive. The SSE machinery already exists on the storefront path, so this is
+  wiring rather than design.
+- ~~Approval is recorded but never executed~~ — **closed 2026-08-08**; see
+  § 4b. It had hidden because the only write tool that shipped was
+  `order.note`, whose absence reads as the agent choosing not to leave one.
+- `tool_modes` remains stored by `AgentConfigRepository` with no REST route
+  and no UI, so a merchant cannot set a tool to `auto` and skip the queue.
+  With approval executing, that is a convenience rather than a blocker.

@@ -285,7 +285,15 @@ $tools->register(
 );
 $tools->register( OrderLookupTool::ID, static fn () => new OrderLookupTool() );
 
-$executor = new ToolExecutor( $tools, $c->get( ToolCallRepository::class ), $configs, $audit );
+$executor = new ToolExecutor(
+	$tools,
+	$c->get( ToolCallRepository::class ),
+	$configs,
+	$audit,
+	$c->get( AgentRegistry::class ),
+	$c->get( AgentRunRepository::class ),
+	$conversations
+);
 
 $runner = new AgentRunner(
 	$providers,

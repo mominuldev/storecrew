@@ -60,6 +60,7 @@ use StoreCrew\Knowledge\Retriever;
 use StoreCrew\Knowledge\SourceSelection;
 use StoreCrew\Security\SecretStore;
 use StoreCrew\Chat\ChatService;
+use StoreCrew\Chat\ConsoleService;
 use StoreCrew\Chat\EscalationNotifier;
 use StoreCrew\Chat\Widget;
 use StoreCrew\Core\Admin\AdminPage;
@@ -286,7 +287,13 @@ final class Plugin {
 				$c->get( ToolRegistry::class ),
 				$c->get( ToolCallRepository::class ),
 				$c->get( AgentConfigRepository::class ),
-				$c->get( AuditLogRepository::class )
+				$c->get( AuditLogRepository::class ),
+				// For executing an approved write later: the agent's allow-list
+				// and audience, the run that names the agent, and the
+				// conversation whose identity state is re-read at that point.
+				$c->get( AgentRegistry::class ),
+				$c->get( AgentRunRepository::class ),
+				$c->get( ConversationRepository::class )
 			)
 		);
 
@@ -324,6 +331,15 @@ final class Plugin {
 				$c->get( MessageRepository::class ),
 				$c->get( Orchestrator::class ),
 				$c->get( UsageRepository::class )
+			)
+		);
+
+		$this->container->set(
+			ConsoleService::class,
+			static fn ( Container $c ): ConsoleService => new ConsoleService(
+				$c->get( ConversationRepository::class ),
+				$c->get( MessageRepository::class ),
+				$c->get( Orchestrator::class )
 			)
 		);
 
@@ -805,7 +821,8 @@ final class Plugin {
 				$c->get( ConversationRepository::class ),
 				$c->get( MessageRepository::class ),
 				$c->get( AgentRunRepository::class ),
-				$c->get( ToolCallRepository::class )
+				$c->get( ToolCallRepository::class ),
+				$c->get( ToolExecutor::class )
 			)
 		);
 	}
